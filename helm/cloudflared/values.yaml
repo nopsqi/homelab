@@ -1,0 +1,18 @@
+image:
+  repository: cloudflare/cloudflared
+  tag: latest
+
+resources:
+  limits:
+    cpu: "0.5"
+    memory: "256Mi"
+  requests:
+    cpu: "0.25"
+    memory: "128Mi"
+
+tunnel_id: 97c7ebb0-842d-4ab0-96bb-6a119dd3bec3
+
+ingress:
+  - hostname: actual-new.nopsqi.dev
+    service: http://actual-service.actual.svc.cluster.local:5006
+

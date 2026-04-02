@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared-deployment
+  labels:
+    app: cloudflared
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cloudflared
+  template:
+    metadata:
+      labels:
+        app: cloudflared
+    spec:
+      containers:
+      - name: cloudflared
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        command: ["cloudflared", "tunnel", "--config", "/etc/cloudflared/config.yaml", "run"]
+        volumeMounts:
+          - name: cloudflared-config
+            mountPath: /etc/cloudflared/config.yaml
+            subPath: config.yaml
+          - name: cloudflared-secret
+            mountPath: /etc/cloudflared/credentials.json
+            subPath: credentials.json
+        resources: {{- toYaml .Values.resources | nindent 10 }}
+      volumes:
+      - name: cloudflared-config
+        configMap:
+          name: cloudflared-config
+      - name: cloudflared-secret
+        secret:
+          secretName: cloudflared-secret

@@ -7,5 +7,5 @@ spec:
     app: actual
   ports:
     - protocol: TCP
-      port: 80
+      port: 5006
       targetPort: 5006

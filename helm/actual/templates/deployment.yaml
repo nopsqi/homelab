@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: actual-deployment
+  labels:
+    app: actual
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: actual
+  template:
+    metadata:
+      labels:
+        app: actual
+    spec:
+      containers:
+      - name: actual
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        ports:
+        - containerPort: 5006
+        volumeMounts:
+          - name: actual-data
+            mountPath: /data
+        resources: {{- toYaml .Values.resources | nindent 10 }}
+      volumes:
+      - name: actual-data
+        persistentVolumeClaim:
+          claimName: actual-pvc

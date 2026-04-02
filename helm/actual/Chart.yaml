@@ -1,0 +1,5 @@
+name: actual
+description: actualbudget
+version: 0.1.0
+apiVersion: v2
+appVersion: latest

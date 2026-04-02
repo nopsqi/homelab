@@ -17,7 +17,7 @@ spec:
       containers:
       - name: minio
         image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
-        command: ["server", "/data", "--console-address", ":9001"]
+        command: ["minio", "server", "/data", "--console-address", ":9001"]
         env:
         - name: MINIO_ROOT_USER
           valueFrom:

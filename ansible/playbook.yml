@@ -20,6 +20,15 @@
     ansible.builtin.shell: curl -fsSL https://tailscale.com/install.sh | sh
     args:
       creates: /usr/bin/tailscale
+  - name: get hetzner tailscale ipv4
+    ansible.builtin.shell: tailscale ip -4
+    register: tailscale_ipv4
+  - name: create k3s config
+    ansible.builtin.copy:
+      content: |
+        tls-san:
+          - {{ tailscale_ipv4.stdout }}
+      dest: /etc/rancher/k3s/config.yaml
   - name: install k3s
     ansible.builtin.shell: curl -sfL https://get.k3s.io | sh -
     args:

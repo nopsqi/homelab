@@ -24,3 +24,13 @@
     ansible.builtin.shell: curl -sfL https://get.k3s.io | sh -
     args:
       creates: /usr/local/bin/k3s
+
+- name: install and apply argocd manifest
+  hosts: hetzner
+  remote_user: root
+
+  tasks:
+  - name: install argocd
+    ansible.builtin.shell: kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+  - name: apply argocd manifest
+    ansible.builtin.shell: kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml

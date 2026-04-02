@@ -1,0 +1,5 @@
+name: minio
+description: High-Performance Object Store
+version: 0.1.0
+apiVersion: v2
+appVersion: latest

@@ -1,6 +1,6 @@
 image:
   repository: actualbudget/actual-server
-  tag: latest
+  tag: 26.3.0
 
 resources:
   limits:

@@ -2,4 +2,4 @@ name: astro
 description: Personal portfolio and blog site
 version: 0.1.0
 apiVersion: v2
-appVersion: latest
+appVersion: sha-526256bad11016e5c9d3cb2c8cfe22c895713400

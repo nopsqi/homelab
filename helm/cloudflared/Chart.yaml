@@ -2,4 +2,4 @@ name: cloudflared
 description: clooudflare tunnel
 version: 0.1.0
 apiVersion: v2
-appVersion: latest
+appVersion: "2026.3.0"

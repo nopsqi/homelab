@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: actual
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:nopsqi/homelab.git
+    targetRevision: HEAD
+    path: helm/actual
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: actual
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -15,4 +15,7 @@ tunnel_id: 97c7ebb0-842d-4ab0-96bb-6a119dd3bec3
 ingress:
   - hostname: actual.nopsqi.dev
     service: http://actual-service.actual.svc.cluster.local:5006
-
+  - hostname: minio.nopsqi.dev
+    service: http://minio-service.minio.svc.cluster.local:9000
+  - hostname: minio-console.nopsqi.dev
+    service: http://minio-service.minio.svc.cluster.local:9001

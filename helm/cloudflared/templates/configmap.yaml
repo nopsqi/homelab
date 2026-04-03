@@ -7,8 +7,5 @@ data:
     tunnel: {{ .Values.tunnel_id }}
     credentials-file: /etc/cloudflared/credentials.json
     ingress:
-      {{- range .Values.ingress }}
-      - hostname: {{ .hostname }}
-        service: {{ .service }}
-      {{- end }}
+      {{- toYaml .Values.ingress | nindent 6 }}
       - service: http_status:404

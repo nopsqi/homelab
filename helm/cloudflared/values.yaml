@@ -21,3 +21,5 @@ ingress:
     service: http://minio-service.minio.svc.cluster.local:9001
   - hostname: argocd.nopsqi.dev
     service: https://argocd-server.argocd.svc.cluster.local:443
+    originRequest:
+      noTLSVerify: true

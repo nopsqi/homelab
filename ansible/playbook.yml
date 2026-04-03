@@ -16,19 +16,26 @@
   remote_user: root
 
   tasks:
+  - name: install curl
+    ansible.builtin.apt:
+      name: curl
+      state: present
   - name: install tailscale
     ansible.builtin.shell: curl -fsSL https://tailscale.com/install.sh | sh
     args:
       creates: /usr/bin/tailscale
+    when: install_tailscale
   - name: get hetzner tailscale ipv4
     ansible.builtin.shell: tailscale ip -4
     register: tailscale_ipv4
+    when: install_tailscale
   - name: create k3s config
     ansible.builtin.copy:
       content: |
         tls-san:
           - {{ tailscale_ipv4.stdout }}
       dest: /etc/rancher/k3s/config.yaml
+    when: install_tailscale
   - name: install k3s
     ansible.builtin.shell: curl -sfL https://get.k3s.io | sh -
     args:
@@ -40,6 +47,6 @@
 
   tasks:
   - name: create argocd namespace
-    ansible.builtin.shell: kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+    ansible.builtin.shell: /usr/local/bin/kubectl create namespace argocd --dry-run=client -o yaml | /usr/local/bin/kubectl apply -f -
   - name: apply argocd manifest
-    ansible.builtin.shell: kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.3.6/manifests/install.yaml
+    ansible.builtin.shell: /usr/local/bin/kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.3.6/manifests/install.yaml

@@ -13,6 +13,8 @@ resources:
 tunnel_id: 97c7ebb0-842d-4ab0-96bb-6a119dd3bec3
 
 ingress:
+  - hostname: nopsqi.dev
+    service: http://astro-service.astro.svc.cluster.local:80
   - hostname: actual.nopsqi.dev
     service: http://actual-service.actual.svc.cluster.local:5006
   - hostname: minio.nopsqi.dev

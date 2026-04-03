@@ -19,3 +19,5 @@ ingress:
     service: http://minio-service.minio.svc.cluster.local:9000
   - hostname: minio-console.nopsqi.dev
     service: http://minio-service.minio.svc.cluster.local:9001
+  - hostname: argocd.nopsqi.dev
+    service: https://argocd-server.argocd.svc.cluster.local:443

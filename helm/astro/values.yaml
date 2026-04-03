@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/nopsqi/astro
-  tag: sha-526256bad11016e5c9d3cb2c8cfe22c895713400
+  tag: sha-1691660
 
 resources:
   limits:

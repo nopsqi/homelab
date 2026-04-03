@@ -4,11 +4,11 @@ image:
 
 resources:
   limits:
-    cpu: "1"
-    memory: "512Mi"
-  requests:
     cpu: "0.5"
-    memory: "256Mi"
+    memory: "128Mi"
+  requests:
+    cpu: "0.05"
+    memory: "64Mi"
 
 storage:
   size: "1Gi"

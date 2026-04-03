@@ -1,0 +1,5 @@
+image:
+  tag: sha-5bcd806
+
+storage:
+  size: "500Mi"

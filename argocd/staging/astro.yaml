@@ -1,18 +1,24 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: root
+  name: astro
   namespace: argocd
 spec:
   project: default
   source:
     repoURL: git@github.com:nopsqi/homelab.git
     targetRevision: HEAD
-    path: argocd/prod
+    path: helm/astro
+    helm:
+      valueFiles:
+        - values.yaml
+        - values.staging.yaml
   destination:
     server: https://kubernetes.default.svc
-    namespace: argocd
+    namespace: astro
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

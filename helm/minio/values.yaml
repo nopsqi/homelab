@@ -1,6 +1,5 @@
 image:
   repository: minio/minio
-  tag: RELEASE.2025-09-07T16-13-09Z
 
 resources:
   limits:
@@ -9,6 +8,3 @@ resources:
   requests:
     cpu: "0.1"
     memory: "128Mi"
-
-storage:
-  size: "1Gi"

@@ -1,6 +1,5 @@
 image:
   repository: actualbudget/actual-server
-  tag: 26.3.0
 
 resources:
   limits:
@@ -9,6 +8,3 @@ resources:
   requests:
     cpu: "0.1"
     memory: "128Mi"
-
-storage:
-  size: "1Gi"

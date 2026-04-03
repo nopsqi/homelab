@@ -1,17 +1,21 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: minio
+  name: astro
   namespace: argocd
 spec:
   project: default
   source:
     repoURL: git@github.com:nopsqi/homelab.git
     targetRevision: HEAD
-    path: helm/minio
+    path: helm/astro
+    helm:
+      valueFiles:
+        - values.yaml
+        - values.prod.yaml
   destination:
     server: https://kubernetes.default.svc
-    namespace: minio
+    namespace: astro
   syncPolicy:
     automated:
       prune: true

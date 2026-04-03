@@ -39,7 +39,7 @@
   remote_user: root
 
   tasks:
-  - name: install argocd
+  - name: create argocd namespace
     ansible.builtin.shell: kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
   - name: apply argocd manifest
     ansible.builtin.shell: kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.3.6/manifests/install.yaml

@@ -20,8 +20,8 @@ spec:
         ports:
         - containerPort: 80
         volumeMounts:
-          - name: astro-data
-            mountPath: /usr/share/nginx/html/public
+        - name: astro-data
+          mountPath: /usr/share/nginx/html/public
         resources: {{- toYaml .Values.resources | nindent 10 }}
       volumes:
       - name: astro-data

@@ -20,8 +20,8 @@ spec:
         ports:
         - containerPort: 5006
         volumeMounts:
-          - name: actual-data
-            mountPath: /data
+        - name: actual-data
+          mountPath: /data
         resources: {{- toYaml .Values.resources | nindent 10 }}
       volumes:
       - name: actual-data

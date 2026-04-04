@@ -1,6 +1,8 @@
 kube-prometheus-stack:
   alertmanager:
-    enabled: false
+    enabled: true
+    alertmanagerSpec:
+      configSecret: alertmanager-discord
 
   prometheusOperator:
     resources:
@@ -36,6 +38,11 @@ kube-prometheus-stack:
       limits:
         cpu: "200m"
         memory: "256Mi"
+    additionalDataSources:
+      - name: Loki
+        type: loki
+        url: http://loki.loki.svc.cluster.local:3100
+        access: proxy
 
   nodeExporter:
     enabled: true

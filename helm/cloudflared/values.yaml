@@ -25,3 +25,5 @@ ingress:
     service: https://argocd-server.argocd.svc.cluster.local:443
     originRequest:
       noTLSVerify: true
+  - hostname: grafana.nopsqi.dev
+    service: http://monitoring-grafana.monitoring.svc.cluster.local:80

@@ -1,0 +1,4 @@
+loki:
+  singleBinary:
+    persistence:
+      enabled: false

@@ -1,0 +1,7 @@
+loki:
+  singleBinary:
+    persistence:
+      enabled: true
+      size: 5Gi
+      annotations:
+        argocd.argoproj.io/sync-options: Delete=false

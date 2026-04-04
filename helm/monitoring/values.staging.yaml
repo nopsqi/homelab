@@ -1,4 +1,7 @@
 kube-prometheus-stack:
+  alertmanager:
+    enabled: false
+
   prometheus:
     prometheusSpec:
       storageSpec: {}

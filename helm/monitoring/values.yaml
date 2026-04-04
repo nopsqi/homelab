@@ -44,6 +44,9 @@ kube-prometheus-stack:
         url: http://loki.loki.svc.cluster.local:3100
         access: proxy
 
+  kubeProxy:
+    enabled: false
+
   nodeExporter:
     enabled: true
 

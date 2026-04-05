@@ -21,11 +21,16 @@ spec:
         image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
         command: ["cloudflared", "tunnel", "--metrics", "localhost:2000", "--config", "/etc/cloudflared/config.yaml", "run"]
         {{- if .Values.probes.enabled }}
+        startupProbe:
+          httpGet:
+            path: /ready
+            port: 2000
+          periodSeconds: 5
+          failureThreshold: 12
         livenessProbe:
           httpGet:
             path: /ready
             port: 2000
-          initialDelaySeconds: 10
           periodSeconds: 10
           failureThreshold: 3
         {{- end }}

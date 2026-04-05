@@ -47,6 +47,12 @@ kube-prometheus-stack:
   kubeProxy:
     enabled: false
 
+  kubeControllerManager:
+    enabled: false
+
+  kubeScheduler:
+    enabled: false
+
   nodeExporter:
     enabled: true
 

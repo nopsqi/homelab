@@ -32,6 +32,22 @@ spec:
         ports:
         - containerPort: 9000
         - containerPort: 9001
+        {{- if .Values.probes.enabled }}
+        livenessProbe:
+          httpGet:
+            path: /minio/health/live
+            port: 9000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /minio/health/live
+            port: 9000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        {{- end }}
         volumeMounts:
         - name: minio-data
           mountPath: /data

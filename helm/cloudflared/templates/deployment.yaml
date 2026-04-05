@@ -19,7 +19,7 @@ spec:
       containers:
       - name: cloudflared
         image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
-        command: ["cloudflared", "tunnel", "--metrics", "localhost:2000", "--config", "/etc/cloudflared/config.yaml", "run"]
+        command: ["cloudflared", "tunnel", "--metrics", "0.0.0.0:2000", "--config", "/etc/cloudflared/config.yaml", "run"]
         {{- if .Values.probes.enabled }}
         startupProbe:
           httpGet:

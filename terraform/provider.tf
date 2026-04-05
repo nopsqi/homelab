@@ -1,4 +1,11 @@
 terraform {
+  cloud {
+    organization = "nopsqi"
+    workspaces {
+      name = "homelab"
+    }
+  }
+
   required_providers {
     hcloud = {
       source  = "hetznercloud/hcloud"

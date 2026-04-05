@@ -1,1 +1,5 @@
 install_tailscale: false
+k3s_tls_san: "192.168.56.10"
+environment_name: staging
+argocd_deploy_key: "{{ playbook_dir }}/secrets/argocd-homelab"
+sealed_secrets_key_backup: "{{ playbook_dir }}/../helm/sealed-secrets/sealed-secrets-staging-backup.yaml"

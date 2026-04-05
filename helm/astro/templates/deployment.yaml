@@ -19,6 +19,22 @@ spec:
         image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
         ports:
         - containerPort: 80
+        {{- if .Values.probes.enabled }}
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        {{- end }}
         volumeMounts:
         - name: astro-data
           mountPath: /usr/share/nginx/html/public

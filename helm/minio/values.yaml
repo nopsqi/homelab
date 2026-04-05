@@ -1,6 +1,9 @@
 image:
   repository: minio/minio
 
+probes:
+  enabled: false
+
 resources:
   limits:
     cpu: "0.5"

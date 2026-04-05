@@ -1,6 +1,9 @@
 image:
   repository: actualbudget/actual-server
 
+probes:
+  enabled: false
+
 resources:
   limits:
     cpu: "1"

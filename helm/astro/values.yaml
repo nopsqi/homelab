@@ -1,6 +1,9 @@
 image:
   repository: ghcr.io/nopsqi/astro
 
+probes:
+  enabled: false
+
 resources:
   limits:
     cpu: "0.5"

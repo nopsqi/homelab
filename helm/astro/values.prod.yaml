@@ -1,5 +1,8 @@
 image:
   tag: sha-cb03165
 
+probes:
+  enabled: true
+
 storage:
   size: "1Gi"

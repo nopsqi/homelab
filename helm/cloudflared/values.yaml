@@ -11,7 +11,7 @@ resources:
     memory: "64Mi"
 
 probes:
-  enabled: false
+  enabled: true
 
 tunnel_id: 97c7ebb0-842d-4ab0-96bb-6a119dd3bec3
 

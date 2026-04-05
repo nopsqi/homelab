@@ -1,1 +1,4 @@
 install_tailscale: true
+environment_name: prod
+argocd_deploy_key: "{{ playbook_dir }}/secrets/argocd-homelab"
+sealed_secrets_key_backup: "{{ playbook_dir }}/../helm/sealed-secrets/sealed-secrets-prod-backup.yaml"

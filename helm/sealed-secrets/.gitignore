@@ -1,1 +1,3 @@
 charts/
+sealed-secrets-prod-backup.yaml
+sealed-secrets-staging-backup.yaml

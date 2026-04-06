@@ -30,14 +30,14 @@ data:
           },
           "targets": [
             {
-              "expr": "up{namespace=~\"actual|astro|minio|cloudflared|monitoring|sealed-secrets|loki\"}",
+              "expr": "min by (namespace) (kube_deployment_status_replicas_available{namespace=~\"actual|astro|minio|cloudflared|monitoring|sealed-secrets|loki\"}) >= bool 1",
               "legendFormat": "",
               "instant": true,
               "format": "table"
             }
           ],
           "transformations": [
-            { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true, "container": true, "endpoint": true, "pod": true, "service": true, "instance": true, "metrics_path": true }, "renameByName": { "namespace": "Namespace", "job": "Service", "Value": "Status" } } }
+            { "id": "organize", "options": { "excludeByName": { "Time": true }, "renameByName": { "namespace": "Service", "Value": "Status" } } }
           ]
         },
         {
@@ -194,7 +194,7 @@ data:
           },
           "targets": [
             {
-              "expr": "1 - kubelet_volume_stats_available_bytes / kubelet_volume_stats_capacity_bytes",
+              "expr": "1 - kubelet_volume_stats_available_bytes{namespace!=\"default\"} / kubelet_volume_stats_capacity_bytes{namespace!=\"default\"}",
               "legendFormat": "{{ "{{" }} namespace {{ "}}" }}/{{ "{{" }} persistentvolumeclaim {{ "}}" }}"
             }
           ],

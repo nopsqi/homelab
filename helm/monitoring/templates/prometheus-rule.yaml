@@ -1,0 +1,38 @@
+{{- if .Values.customAlerts.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: homelab-alerts
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: homelab
+      rules:
+        - alert: TargetDown
+          expr: up == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Scrape target {{ "{{" }} $labels.job {{ "}}" }} is down"
+            description: "{{ "{{" }} $labels.instance {{ "}}" }} has been unreachable for 5 minutes."
+
+        - alert: DeploymentReplicasZero
+          expr: kube_deployment_spec_replicas == 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Deployment {{ "{{" }} $labels.deployment {{ "}}" }} has 0 replicas"
+            description: "{{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.deployment {{ "}}" }} has been scaled to 0 for 5 minutes."
+
+        - alert: HighMemoryPressure
+          expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.85
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node memory above 85%"
+            description: "{{ "{{" }} $labels.instance {{ "}}" }} memory usage is {{ "{{" }} $value | humanizePercentage {{ "}}" }} for 10 minutes."
+{{- end }}

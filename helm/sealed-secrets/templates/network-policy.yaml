@@ -12,21 +12,5 @@ spec:
     - from:
         - namespaceSelector: {}
   egress:
-    # DNS
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
-    # Kubernetes API (for creating secrets)
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-      ports:
-        - protocol: TCP
-          port: 6443
+    - {}
 {{- end }}

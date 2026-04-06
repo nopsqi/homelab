@@ -23,34 +23,5 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: alloy
   egress:
-    # DNS
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
-    # Scrape all namespaces
-    - to:
-        - namespaceSelector: {}
-    # Kubernetes API server (kube-state-metrics, prometheus-operator)
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-      ports:
-        - protocol: TCP
-          port: 443
-        - protocol: TCP
-          port: 6443
-    # Internet (Discord webhooks, Grafana plugins)
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8
-              - 172.16.0.0/12
-              - 192.168.0.0/16
+    - {}
 {{- end }}

@@ -1,6 +1,9 @@
 customAlerts:
   enabled: false
 
+customDashboards:
+  enabled: false
+
 kube-prometheus-stack:
   alertmanager:
     enabled: true

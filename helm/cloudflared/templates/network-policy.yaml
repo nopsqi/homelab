@@ -10,39 +10,5 @@ spec:
     - Egress
   ingress: []
   egress:
-    # DNS
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
-    # Backend services
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: actual
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: astro
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: minio
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: monitoring
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: argocd
-    # Internet (Cloudflare edge) - HTTP/2 over TCP
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8
-              - 172.16.0.0/12
-              - 192.168.0.0/16
+    - {}
 {{- end }}

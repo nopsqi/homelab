@@ -65,7 +65,7 @@
     args:
       creates: /usr/local/bin/cilium
   - name: install cilium on cluster
-    ansible.builtin.shell: /usr/local/bin/cilium install --set kubeProxyReplacement=false
+    ansible.builtin.shell: /usr/local/bin/cilium install --set kubeProxyReplacement=true
     environment:
       KUBECONFIG: /etc/rancher/k3s/k3s.yaml
   - name: wait for cilium to be ready

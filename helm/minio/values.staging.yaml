@@ -4,6 +4,9 @@ image:
 probes:
   enabled: true
 
+networkPolicy:
+  enabled: true
+
 storage:
   size: "500Mi"
 

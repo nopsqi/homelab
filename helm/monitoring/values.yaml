@@ -4,6 +4,9 @@ customAlerts:
 customDashboards:
   enabled: false
 
+networkPolicy:
+  enabled: false
+
 kube-prometheus-stack:
   alertmanager:
     enabled: true

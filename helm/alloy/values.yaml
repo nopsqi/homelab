@@ -1,3 +1,6 @@
+networkPolicy:
+  enabled: false
+
 alloy:
   resources:
     requests:

@@ -4,6 +4,9 @@ customAlerts:
 customDashboards:
   enabled: true
 
+networkPolicy:
+  enabled: true
+
 kube-prometheus-stack:
   prometheus:
     prometheusSpec:

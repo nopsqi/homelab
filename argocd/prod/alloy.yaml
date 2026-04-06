@@ -11,6 +11,10 @@ spec:
     repoURL: git@github.com:nopsqi/homelab.git
     targetRevision: HEAD
     path: helm/alloy
+    helm:
+      valueFiles:
+        - values.yaml
+        - values.prod.yaml
   destination:
     server: https://kubernetes.default.svc
     namespace: alloy

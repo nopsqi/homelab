@@ -1,3 +1,6 @@
+customAlerts:
+  enabled: true
+
 kube-prometheus-stack:
   prometheus:
     prometheusSpec:

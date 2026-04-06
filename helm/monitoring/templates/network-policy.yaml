@@ -36,6 +36,13 @@ spec:
     # Scrape all namespaces
     - to:
         - namespaceSelector: {}
+    # Kubernetes API server (kube-state-metrics, prometheus-operator)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 6443
     # Internet (Discord webhooks, Grafana plugins)
     - to:
         - ipBlock:

@@ -4,6 +4,9 @@ image:
 probes:
   enabled: false
 
+networkPolicy:
+  enabled: false
+
 resources:
   limits:
     cpu: "0.5"

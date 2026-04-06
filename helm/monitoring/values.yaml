@@ -67,3 +67,11 @@ kube-prometheus-stack:
 
   kubeStateMetrics:
     enabled: true
+
+  kube-state-metrics:
+    livenessProbe:
+      initialDelaySeconds: 30
+      timeoutSeconds: 10
+    readinessProbe:
+      initialDelaySeconds: 30
+      timeoutSeconds: 10

@@ -11,13 +11,6 @@ kube-prometheus-stack:
   alertmanager:
     enabled: false
 
-  kube-state-metrics:
-    livenessProbe:
-      initialDelaySeconds: 30
-      timeoutSeconds: 10
-    readinessProbe:
-      initialDelaySeconds: 30
-      timeoutSeconds: 10
 
   prometheus:
     prometheusSpec:

@@ -16,6 +16,15 @@
   remote_user: root
 
   tasks:
+  - name: increase inotify limits for kubernetes
+    ansible.posix.sysctl:
+      name: "{{ item.name }}"
+      value: "{{ item.value }}"
+      sysctl_set: true
+      reload: true
+    loop:
+      - { name: fs.inotify.max_user_instances, value: "512" }
+      - { name: fs.inotify.max_user_watches, value: "524288" }
   - name: install curl
     ansible.builtin.apt:
       name: curl
@@ -56,12 +65,12 @@
     args:
       creates: /usr/local/bin/k3s
   - name: install calico operator
-    ansible.builtin.shell: /usr/local/bin/kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.3/manifests/tigera-operator.yaml
+    ansible.builtin.shell: /usr/local/bin/kubectl apply --server-side --force-conflicts -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.3/manifests/tigera-operator.yaml
     environment:
       KUBECONFIG: /etc/rancher/k3s/k3s.yaml
   - name: install calico custom resource
     ansible.builtin.shell: |
-      cat <<'EOF' | /usr/local/bin/kubectl create -f -
+      cat <<'EOF' | /usr/local/bin/kubectl apply -f -
       apiVersion: operator.tigera.io/v1
       kind: Installation
       metadata:
@@ -152,7 +161,9 @@
       dest: /tmp/sealed-secrets-key-backup.yaml
       mode: "0600"
   - name: restore sealed secrets controller key
-    ansible.builtin.shell: /usr/local/bin/kubectl apply -f /tmp/sealed-secrets-key-backup.yaml
+    ansible.builtin.shell: >
+      cat /tmp/sealed-secrets-key-backup.yaml |
+      /usr/local/bin/kubectl replace --force -f -
   - name: remove sealed secrets key backup from server
     ansible.builtin.file:
       path: /tmp/sealed-secrets-key-backup.yaml

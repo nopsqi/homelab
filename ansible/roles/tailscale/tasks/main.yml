@@ -1,0 +1,10 @@
+- name: install tailscale
+  ansible.builtin.shell: curl -fsSL https://tailscale.com/install.sh | sh
+  args:
+    creates: /usr/bin/tailscale
+  when: install_tailscale
+
+- name: get tailscale ipv4
+  ansible.builtin.shell: tailscale ip -4
+  register: tailscale_ipv4
+  when: install_tailscale

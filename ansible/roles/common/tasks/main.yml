@@ -1,0 +1,22 @@
+- name: update apt cache
+  ansible.builtin.apt:
+    update_cache: yes
+
+- name: upgrade packages
+  ansible.builtin.apt:
+    upgrade: dist
+
+- name: increase inotify limits for kubernetes
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    sysctl_set: true
+    reload: true
+  loop:
+    - { name: fs.inotify.max_user_instances, value: "512" }
+    - { name: fs.inotify.max_user_watches, value: "524288" }
+
+- name: install curl
+  ansible.builtin.apt:
+    name: curl
+    state: present

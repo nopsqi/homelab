@@ -1,0 +1,29 @@
+- name: create k3s config directory
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+
+- name: create k3s config with tailscale ip
+  ansible.builtin.copy:
+    content: |
+      tls-san:
+        - {{ tailscale_ipv4.stdout }}
+      flannel-backend: none
+      disable-network-policy: true
+    dest: /etc/rancher/k3s/config.yaml
+  when: install_tailscale
+
+- name: create k3s config with static ip
+  ansible.builtin.copy:
+    content: |
+      tls-san:
+        - {{ k3s_tls_san }}
+      flannel-backend: none
+      disable-network-policy: true
+    dest: /etc/rancher/k3s/config.yaml
+  when: not install_tailscale and k3s_tls_san is defined
+
+- name: install k3s
+  ansible.builtin.shell: curl -sfL https://get.k3s.io | sh -
+  args:
+    creates: /usr/local/bin/k3s

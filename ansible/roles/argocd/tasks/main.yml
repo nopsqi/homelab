@@ -1,0 +1,71 @@
+- name: create argocd namespace
+  ansible.builtin.shell: /usr/local/bin/kubectl create namespace argocd --dry-run=client -o yaml | /usr/local/bin/kubectl apply -f -
+
+- name: apply argocd manifest
+  ansible.builtin.shell: /usr/local/bin/kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.3.6/manifests/install.yaml
+
+- name: wait for argocd server to be ready
+  ansible.builtin.shell: /usr/local/bin/kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=120s
+
+- name: copy argocd deploy key to server
+  ansible.builtin.copy:
+    src: "{{ argocd_deploy_key }}"
+    dest: /tmp/argocd-homelab
+    mode: "0600"
+
+- name: create homelab-repo secret
+  ansible.builtin.shell: >
+    /usr/local/bin/kubectl create secret generic homelab-repo
+    --from-literal=type=git
+    --from-literal=url=git@github.com:nopsqi/homelab.git
+    --from-file=sshPrivateKey=/tmp/argocd-homelab
+    -n argocd
+    --dry-run=client -o yaml |
+    /usr/local/bin/kubectl apply -f -
+
+- name: label homelab-repo secret for argocd
+  ansible.builtin.shell: /usr/local/bin/kubectl label secret homelab-repo argocd.argoproj.io/secret-type=repository -n argocd --overwrite
+
+- name: remove deploy key from server
+  ansible.builtin.file:
+    path: /tmp/argocd-homelab
+    state: absent
+
+- name: copy root app manifest to server
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../argocd/{{ environment_name }}/root.yaml"
+    dest: /tmp/root.yaml
+
+- name: apply root app
+  ansible.builtin.shell: /usr/local/bin/kubectl apply -f /tmp/root.yaml
+
+- name: remove root app manifest from server
+  ansible.builtin.file:
+    path: /tmp/root.yaml
+    state: absent
+
+- name: wait for sealed-secrets namespace
+  ansible.builtin.shell: /usr/local/bin/kubectl get namespace sealed-secrets
+  register: ns_check
+  until: ns_check.rc == 0
+  retries: 30
+  delay: 10
+
+- name: copy sealed secrets key backup to server
+  ansible.builtin.copy:
+    src: "{{ sealed_secrets_key_backup }}"
+    dest: /tmp/sealed-secrets-key-backup.yaml
+    mode: "0600"
+
+- name: restore sealed secrets controller key
+  ansible.builtin.shell: >
+    cat /tmp/sealed-secrets-key-backup.yaml |
+    /usr/local/bin/kubectl replace --force -f -
+
+- name: remove sealed secrets key backup from server
+  ansible.builtin.file:
+    path: /tmp/sealed-secrets-key-backup.yaml
+    state: absent
+
+- name: restart sealed-secrets controller to pick up restored key
+  ansible.builtin.shell: /usr/local/bin/kubectl rollout restart deployment/sealed-secrets -n sealed-secrets

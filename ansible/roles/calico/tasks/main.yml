@@ -1,0 +1,39 @@
+- name: install calico operator
+  ansible.builtin.shell: /usr/local/bin/kubectl apply --server-side --force-conflicts -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.3/manifests/tigera-operator.yaml
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+- name: install calico custom resource
+  ansible.builtin.shell: |
+    cat <<'EOF' | /usr/local/bin/kubectl apply -f -
+    apiVersion: operator.tigera.io/v1
+    kind: Installation
+    metadata:
+      name: default
+    spec:
+      calicoNetwork:
+        ipPools:
+        - name: default-ipv4-ippool
+          blockSize: 26
+          cidr: 10.42.0.0/16
+          encapsulation: VXLANCrossSubnet
+          natOutgoing: Enabled
+          nodeSelector: all()
+    ---
+    apiVersion: operator.tigera.io/v1
+    kind: APIServer
+    metadata:
+      name: default
+    spec: {}
+    EOF
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+- name: wait for calico to be ready
+  ansible.builtin.shell: /usr/local/bin/kubectl wait --for=condition=ready pod -l k8s-app=calico-node -n calico-system --timeout=120s
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  register: calico_wait
+  until: calico_wait.rc == 0
+  retries: 10
+  delay: 10

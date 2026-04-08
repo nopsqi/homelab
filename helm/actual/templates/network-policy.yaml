@@ -24,7 +24,7 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # Internet (OpenID provider)
+    # Internet (OpenID provider + R2 backups)
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

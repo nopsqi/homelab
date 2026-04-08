@@ -1,0 +1,67 @@
+{{- if .Values.backup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: minio-backup
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: minio-backup
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: backup
+            image: restic/restic:0.17.3
+            command: ["/bin/sh", "-c"]
+            args:
+            - |
+              set -e
+              # init restic repo if first run
+              restic -r "$RESTIC_REPOSITORY" init 2>/dev/null || true
+              # backup
+              restic -r "$RESTIC_REPOSITORY" backup /data --tag minio
+              # retention
+              restic -r "$RESTIC_REPOSITORY" forget --keep-daily {{ .Values.backup.retention.daily }} --keep-weekly {{ .Values.backup.retention.weekly }} --prune
+              echo "backup completed successfully"
+            env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: backup-secret
+                  key: aws_access_key_id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: backup-secret
+                  key: aws_secret_access_key
+            - name: RESTIC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backup-secret
+                  key: restic_password
+            - name: RESTIC_REPOSITORY
+              value: "s3:{{ .Values.backup.s3Endpoint }}/{{ .Values.backup.s3Bucket }}/minio"
+            volumeMounts:
+            - name: minio-data
+              mountPath: /data
+              readOnly: true
+            resources:
+              limits:
+                cpu: "0.5"
+                memory: "256Mi"
+              requests:
+                cpu: "0.1"
+                memory: "64Mi"
+          volumes:
+          - name: minio-data
+            persistentVolumeClaim:
+              claimName: minio-pvc
+{{- end }}

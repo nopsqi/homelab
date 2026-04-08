@@ -17,3 +17,7 @@ resources:
 
 backup:
   enabled: false
+
+restore:
+  enabled: false
+  snapshotId: "latest"

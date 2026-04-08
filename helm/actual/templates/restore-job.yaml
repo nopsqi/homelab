@@ -1,0 +1,101 @@
+{{- if .Values.restore.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: actual-restore-{{ now | date "20060102-150405" }}
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: actual-restore
+    spec:
+      restartPolicy: Never
+      serviceAccountName: actual-restore
+      containers:
+      - name: restore
+        image: alpine:3.21
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          apk add --no-cache restic curl > /dev/null
+
+          API="https://kubernetes.default.svc"
+          TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+          NS=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+          CACERT="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          DEPLOY="actual-deployment"
+
+          # scale down deployment
+          echo "scaling down $DEPLOY..."
+          curl -s --cacert "$CACERT" -X PATCH \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/strategic-merge-patch+json" \
+            -d '{"spec":{"replicas":0}}' \
+            "$API/apis/apps/v1/namespaces/$NS/deployments/$DEPLOY"
+
+          # wait for pods to terminate
+          echo "waiting for pods to terminate..."
+          while true; do
+            COUNT=$(curl -s --cacert "$CACERT" \
+              -H "Authorization: Bearer $TOKEN" \
+              "$API/api/v1/namespaces/$NS/pods?labelSelector=app=actual" | \
+              grep -c '"phase":"Running"' || true)
+            [ "$COUNT" -eq 0 ] && break
+            sleep 2
+          done
+          echo "all pods terminated"
+
+          # restore from restic
+          echo "restoring snapshot {{ .Values.restore.snapshotId }}..."
+          restic -r "$RESTIC_REPOSITORY" restore {{ .Values.restore.snapshotId }} --target /
+          # restic restores to original path structure, move data back
+          if [ -d /tmp/backup ]; then
+            # actual backup copies to /tmp/backup before backing up
+            cp -a /tmp/backup/* /data/
+            rm -rf /tmp/backup
+          fi
+          echo "restore completed"
+
+          # scale up deployment
+          echo "scaling up $DEPLOY..."
+          curl -s --cacert "$CACERT" -X PATCH \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/strategic-merge-patch+json" \
+            -d '{"spec":{"replicas":1}}' \
+            "$API/apis/apps/v1/namespaces/$NS/deployments/$DEPLOY"
+          echo "restore finished successfully"
+        env:
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: backup-secret
+              key: aws_access_key_id
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: backup-secret
+              key: aws_secret_access_key
+        - name: RESTIC_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: backup-secret
+              key: restic_password
+        - name: RESTIC_REPOSITORY
+          value: "s3:{{ .Values.backup.s3Endpoint }}/{{ .Values.backup.s3Bucket }}/actual"
+        volumeMounts:
+        - name: actual-data
+          mountPath: /data
+        resources:
+          limits:
+            cpu: "0.5"
+            memory: "256Mi"
+          requests:
+            cpu: "0.1"
+            memory: "64Mi"
+      volumes:
+      - name: actual-data
+        persistentVolumeClaim:
+          claimName: actual-pvc
+{{- end }}

@@ -27,8 +27,9 @@ spec:
               apk add --no-cache restic sqlite > /dev/null
               # copy all data then replace sqlite files with consistent backups
               cp -a /data /tmp/backup
-              for db in /tmp/backup/server-files/*.sqlite; do
-                [ -f "$db" ] && sqlite3 "/data/server-files/$(basename $db)" ".backup $db"
+              for db in $(find /tmp/backup -name "*.sqlite"); do
+                src="/data${db#/tmp/backup}"
+                [ -f "$src" ] && sqlite3 "$src" ".backup $db"
               done
               # init restic repo if first run
               restic -r "$RESTIC_REPOSITORY" init 2>/dev/null || true

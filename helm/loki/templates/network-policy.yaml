@@ -28,4 +28,11 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    # Kubernetes API (for loki-sc-rules sidecar to watch ConfigMaps/Secrets)
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.kubeApiCidr | default "10.43.0.1/32" }}
+      ports:
+        - protocol: TCP
+          port: 443
 {{- end }}

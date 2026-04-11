@@ -7,6 +7,21 @@
 - name: wait for argocd server to be ready
   ansible.builtin.shell: /usr/local/bin/kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=120s
 
+- name: set argocd resource limits
+  ansible.builtin.shell: >
+    /usr/local/bin/kubectl -n argocd set resources
+    {{ item.kind }}/{{ item.name }}
+    --requests=cpu={{ item.cpu_req }},memory={{ item.mem_req }}
+    --limits=cpu={{ item.cpu_lim }},memory={{ item.mem_lim }}
+  loop:
+    - { kind: statefulset, name: argocd-application-controller, cpu_req: "100m", mem_req: "256Mi", cpu_lim: "500m", mem_lim: "768Mi" }
+    - { kind: deployment, name: argocd-repo-server, cpu_req: "50m", mem_req: "64Mi", cpu_lim: "200m", mem_lim: "256Mi" }
+    - { kind: deployment, name: argocd-server, cpu_req: "50m", mem_req: "64Mi", cpu_lim: "200m", mem_lim: "128Mi" }
+    - { kind: deployment, name: argocd-applicationset-controller, cpu_req: "50m", mem_req: "32Mi", cpu_lim: "100m", mem_lim: "128Mi" }
+    - { kind: deployment, name: argocd-dex-server, cpu_req: "25m", mem_req: "32Mi", cpu_lim: "100m", mem_lim: "64Mi" }
+    - { kind: deployment, name: argocd-notifications-controller, cpu_req: "25m", mem_req: "32Mi", cpu_lim: "100m", mem_lim: "64Mi" }
+    - { kind: deployment, name: argocd-redis, cpu_req: "25m", mem_req: "16Mi", cpu_lim: "100m", mem_lim: "64Mi" }
+
 - name: copy argocd deploy key to server
   ansible.builtin.copy:
     src: "{{ argocd_deploy_key }}"

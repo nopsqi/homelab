@@ -20,3 +20,38 @@
   ansible.builtin.apt:
     name: curl
     state: present
+
+- name: create 2GB swap file
+  ansible.builtin.command: fallocate -l 2G /swapfile
+  args:
+    creates: /swapfile
+
+- name: set swap file permissions
+  ansible.builtin.file:
+    path: /swapfile
+    mode: "0600"
+
+- name: format swap file
+  ansible.builtin.command: mkswap /swapfile
+  register: mkswap_result
+  changed_when: mkswap_result.rc == 0
+  failed_when: false
+
+- name: enable swap file
+  ansible.builtin.command: swapon /swapfile
+  register: swapon_result
+  changed_when: swapon_result.rc == 0
+  failed_when: false
+
+- name: add swap to fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    line: "/swapfile none swap sw 0 0"
+    state: present
+
+- name: set swappiness to 10
+  ansible.posix.sysctl:
+    name: vm.swappiness
+    value: "10"
+    sysctl_set: true
+    reload: true

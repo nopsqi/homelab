@@ -10,6 +10,8 @@
         - {{ tailscale_ipv4.stdout }}
       flannel-backend: none
       disable-network-policy: true
+      disable:
+        - traefik
     dest: /etc/rancher/k3s/config.yaml
   when: install_tailscale
 
@@ -20,6 +22,8 @@
         - {{ k3s_tls_san }}
       flannel-backend: none
       disable-network-policy: true
+      disable:
+        - traefik
     dest: /etc/rancher/k3s/config.yaml
   when: not install_tailscale and k3s_tls_san is defined
 

@@ -1,5 +1,5 @@
 image:
-  tag: sha-cb03165
+  tag: sha-7140afc
 
 probes:
   enabled: true

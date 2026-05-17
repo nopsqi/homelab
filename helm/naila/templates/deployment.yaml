@@ -16,6 +16,8 @@ spec:
       labels:
         app: naila
     spec:
+      imagePullSecrets:
+      - name: ghcr-pull
       containers:
       - name: naila
         image: {{ .Values.image.repository }}:{{ .Values.image.tag }}

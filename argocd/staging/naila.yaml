@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: naila
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:nopsqi/homelab.git
+    targetRevision: HEAD
+    path: helm/naila
+    helm:
+      valueFiles:
+        - values.yaml
+        - values.staging.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: naila
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

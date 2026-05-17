@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: naila-deployment
+  labels:
+    app: naila
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: naila
+  template:
+    metadata:
+      labels:
+        app: naila
+    spec:
+      containers:
+      - name: naila
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        env:
+        {{- range $k, $v := .Values.env }}
+        - name: {{ $k }}
+          value: {{ $v | quote }}
+        {{- end }}
+        envFrom:
+        - secretRef:
+            name: naila-secret
+        volumeMounts:
+        - name: naila-data
+          mountPath: /data
+        resources: {{- toYaml .Values.resources | nindent 10 }}
+      volumes:
+      - name: naila-data
+        persistentVolumeClaim:
+          claimName: naila-pvc

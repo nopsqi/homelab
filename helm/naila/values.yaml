@@ -11,6 +11,7 @@ storage:
 # Non-secret env vars. Secrets come from the SealedSecret (naila-secret).
 env:
   OWNER_DISCORD_ID: ""
+  CHAT_CHANNEL_ID: "1505304848856514750"
   LLM_PROVIDER: "anthropic"
   ANTHROPIC_MODEL: "claude-haiku-4-5-20251001"
   GEMINI_MODEL: "gemini-2.5-flash"

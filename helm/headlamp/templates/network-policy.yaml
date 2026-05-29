@@ -1,0 +1,35 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: headlamp
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Cloudflared serves the Headlamp UI to the outside (behind Zero Trust)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cloudflared
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Kubernetes API (Headlamp drives the cluster through it)
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.kubeApiCidr | default "10.43.0.1/32" }}
+      ports:
+        - protocol: TCP
+          port: 443
+{{- end }}

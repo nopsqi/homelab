@@ -1,0 +1,39 @@
+# Our NetworkPolicy template (templates/network-policy.yaml)
+networkPolicy:
+  enabled: true
+  # kubernetes.default.svc ClusterIP on K3s (service CIDR 10.43.0.0/16)
+  kubeApiCidr: "10.43.0.1/32"
+
+# Values for the upstream headlamp subchart
+headlamp:
+  replicaCount: 1
+
+  # Use the in-cluster ServiceAccount kubeconfig (no token paste needed).
+  config:
+    inCluster: true
+
+  # ServiceAccount Headlamp runs as.
+  serviceAccount:
+    create: true
+
+  # Bind that ServiceAccount to cluster-admin. This is the ceiling of what the
+  # UI can do; access to the page itself is gated by Cloudflare Zero Trust.
+  clusterRoleBinding:
+    create: true
+    clusterRoleName: cluster-admin
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  # Routing is handled by cloudflared, not an in-cluster ingress.
+  ingress:
+    enabled: false
+
+  resources:
+    requests:
+      cpu: "25m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"

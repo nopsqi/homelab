@@ -1,7 +1,0 @@
-# Staging has no cloudflared tunnel. You reach the UI via:
-#   kubectl -n headlamp port-forward svc/headlamp 8080:80
-# Port-forward traffic is API-server originated (not subject to NetworkPolicy),
-# and there's no cloudflared namespace to allow ingress from anyway, so the
-# policy is disabled here. cluster-admin / inCluster are inherited from values.yaml.
-networkPolicy:
-  enabled: false

@@ -8,7 +8,15 @@ spec:
   policyTypes:
     - Ingress
     - Egress
-  # No ingress rules — bot accepts no inbound traffic.
+  ingress:
+    # Web traffic from the cloudflared tunnel.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cloudflared
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
   egress:
     # DNS
     - to:
@@ -20,7 +28,7 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # Discord gateway (WSS) + Anthropic/Gemini APIs (HTTPS) — all external.
+    # Discord gateway (WSS) + Anthropic/Gemini/OpenAI APIs (HTTPS) — all external.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

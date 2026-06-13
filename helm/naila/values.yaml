@@ -16,14 +16,19 @@ storage:
 # Per-env values override/extend this map.
 env:
   NAILA_ENV: "dev"
-  NAILA_ACCOUNTS_DB: "/data/accounts.db"
-  NAILA_DB: "/data/naila.db"
+  # PVC mounts at /app/data (== app's _DATA). Per-channel conversation DBs land there
+  # automatically; accounts DB is pinned explicitly. NAILA_DB is unused in multi-tenant
+  # mode (single-tenant fallback only) but kept on the PVC for consistency.
+  NAILA_ACCOUNTS_DB: "/app/data/accounts.db"
+  NAILA_DB: "/app/data/naila.db"
   NAILA_DEFAULT_PERSONA: "config/persona.naila.yaml"
   NAILA_LOG_FILE: "-"
   NAILA_TICK_INTERVAL_SEC: "900"
   # Public OAuth client id (also baked into the SPA at image build time).
   NAILA_DISCORD_CLIENT_ID: ""
-  # Guild guard — set per env.
+  # Leave EMPTY for multi-tenant mode (per-channel instances, backends configured via the
+  # web console). Setting a guild id forces single-tenant compat mode and disables the
+  # per-channel feature — see the mode switch in discord_bot.py.
   NAILA_DISCORD_GUILD_ID: ""
   # Public URLs — set per env.
   NAILA_SERVER_URL: ""

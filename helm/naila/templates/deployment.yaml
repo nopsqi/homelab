@@ -45,7 +45,10 @@ spec:
           periodSeconds: 20
         volumeMounts:
         - name: naila-data
-          mountPath: /data
+          # App writes all SQLite DBs under <repo>/data == /app/data (see _DATA in
+          # discord_bot.py); per-channel conversation DBs honor no env override, so the
+          # PVC must land here or multi-tenant history is lost on restart.
+          mountPath: /app/data
         resources: {{- toYaml .Values.resources | nindent 10 }}
       volumes:
       - name: naila-data

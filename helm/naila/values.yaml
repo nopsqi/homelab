@@ -2,32 +2,50 @@ image:
   repository: ghcr.io/nopsqi/naila
   # tag set in values.{staging,prod}.yaml
 
+service:
+  port: 80
+  targetPort: 8000
+
 networkPolicy:
   enabled: false
 
 storage:
-  size: "256Mi"
+  size: "1Gi"
 
-# Non-secret env vars. Secrets come from the SealedSecret (naila-secret).
+# Non-secret env. Secrets come from the SealedSecret (naila-secret).
+# Per-env values override/extend this map.
 env:
-  OWNER_DISCORD_ID: ""
-  CHAT_CHANNEL_ID: "1505304848856514750"
-  LLM_PROVIDER: "anthropic"
-  ANTHROPIC_MODEL: "claude-haiku-4-5-20251001"
-  GEMINI_MODEL: "gemini-2.5-flash"
-  INITIATIVE_TIMEZONE: "Asia/Jakarta"
+  NAILA_ENV: "dev"
+  NAILA_ACCOUNTS_DB: "/data/accounts.db"
+  NAILA_DB: "/data/naila.db"
+  NAILA_DEFAULT_PERSONA: "config/persona.naila.yaml"
+  NAILA_LOG_FILE: "-"
+  NAILA_TICK_INTERVAL_SEC: "900"
+  # Public OAuth client id (also baked into the SPA at image build time).
+  NAILA_DISCORD_CLIENT_ID: ""
+  # Guild guard — set per env.
+  NAILA_DISCORD_GUILD_ID: ""
+  # Public URLs — set per env.
+  NAILA_SERVER_URL: ""
+  NAILA_FRONTEND_URL: ""
+  NAILA_CORS_ORIGINS: ""
+  NAILA_OAUTH_REDIRECT_URI: ""
 
 resources:
   limits:
     cpu: "0.5"
-    memory: "256Mi"
+    memory: "512Mi"
   requests:
     cpu: "0.05"
-    memory: "96Mi"
+    memory: "128Mi"
 
 # Filled by `kubeseal`. Each env's values.{env}.yaml carries its own
 # encrypted blobs (encrypted against that env's controller key).
 sealedSecret: {}
+#   dockerconfigjson: AgB...
 #   discord_token: AgB...
-#   anthropic_api_key: AgB...
-#   gemini_api_key: AgB...
+#   discord_client_secret: AgB...
+#   secret_key: AgB...
+#   anthropic_api_key: AgB...   # optional site-wide fallback
+#   gemini_api_key: AgB...      # optional
+#   openai_api_key: AgB...      # optional

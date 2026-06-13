@@ -21,6 +21,8 @@ spec:
       containers:
       - name: naila
         image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        ports:
+        - containerPort: {{ .Values.service.targetPort }}
         env:
         {{- range $k, $v := .Values.env }}
         - name: {{ $k }}
@@ -29,6 +31,18 @@ spec:
         envFrom:
         - secretRef:
             name: naila-secret
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: {{ .Values.service.targetPort }}
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: {{ .Values.service.targetPort }}
+          initialDelaySeconds: 15
+          periodSeconds: 20
         volumeMounts:
         - name: naila-data
           mountPath: /data

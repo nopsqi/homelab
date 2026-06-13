@@ -6,7 +6,9 @@ networkPolicy:
 
 env:
   NAILA_ENV: "staging"
-  NAILA_DISCORD_GUILD_ID: "REPLACE_WITH_STAGING_GUILD_ID"
+  # Empty = multi-tenant (per-channel instances). Do not set a guild id, or the
+  # per-channel feature is disabled. Channels are registered via the web console.
+  NAILA_DISCORD_GUILD_ID: ""
   NAILA_DISCORD_CLIENT_ID: "REPLACE_WITH_STAGING_OR_SHARED_CLIENT_ID"
   # No staging tunnel: web reached via `kubectl port-forward svc/naila-service 8000:80`.
   NAILA_SERVER_URL: "http://localhost:8000"

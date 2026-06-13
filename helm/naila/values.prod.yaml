@@ -6,7 +6,9 @@ networkPolicy:
 
 env:
   NAILA_ENV: "prod"
-  NAILA_DISCORD_GUILD_ID: "REPLACE_WITH_PROD_GUILD_ID"
+  # Empty = multi-tenant (per-channel instances). Do not set a guild id, or the
+  # per-channel feature is disabled. Channels are registered via the web console.
+  NAILA_DISCORD_GUILD_ID: ""
   NAILA_DISCORD_CLIENT_ID: "REPLACE_WITH_PROD_CLIENT_ID"
   NAILA_SERVER_URL: "https://naila.nopsqi.dev"
   NAILA_FRONTEND_URL: "https://naila.nopsqi.dev"

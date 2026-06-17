@@ -1,5 +1,5 @@
 image:
-  tag: sha-7cc77f9   # bumped by CI
+  tag: sha-46c059c
 
 networkPolicy:
   enabled: true

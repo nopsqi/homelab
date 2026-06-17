@@ -22,6 +22,7 @@ env:
   NAILA_ACCOUNTS_DB: "/app/data/accounts.db"
   NAILA_DB: "/app/data/naila.db"
   NAILA_DEFAULT_PERSONA: "config/persona.naila.yaml"
+  NAILA_SERVER_HOST: "0.0.0.0"
   NAILA_LOG_FILE: "-"
   NAILA_TICK_INTERVAL_SEC: "900"
   # Public OAuth client id (also baked into the SPA at image build time).

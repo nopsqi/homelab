@@ -40,10 +40,12 @@ env:
 resources:
   limits:
     cpu: "0.5"
-    memory: "512Mi"
+    # Headroom for the per-user WhatsApp manager: each paired user runs an embedded
+    # Go/whatsmeow runtime inside this one process, so memory scales with paired users.
+    memory: "768Mi"
   requests:
     cpu: "0.05"
-    memory: "128Mi"
+    memory: "192Mi"
 
 # Filled by `kubeseal`. Each env's values.{env}.yaml carries its own
 # encrypted blobs (encrypted against that env's controller key).

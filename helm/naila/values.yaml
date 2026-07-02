@@ -16,11 +16,11 @@ storage:
 # Per-env values override/extend this map.
 env:
   NAILA_ENV: "dev"
-  # PVC mounts at /app/data (== app's _DATA). Per-channel conversation DBs land there
-  # automatically; accounts DB is pinned explicitly. NAILA_DB is unused in multi-tenant
-  # mode (single-tenant fallback only) but kept on the PVC for consistency.
+  # PVC mounts at /app/data (== app's _DATA). Per-contact/-channel conversation DBs land
+  # there automatically; the accounts DB is pinned explicitly. Do NOT set NAILA_DB here: it
+  # is a single-contact/REPL override that collapses every contact/channel onto one shared DB
+  # (and breaks per-contact removal). Multi-tenant deployments must leave it unset.
   NAILA_ACCOUNTS_DB: "/app/data/accounts.db"
-  NAILA_DB: "/app/data/naila.db"
   NAILA_DEFAULT_PERSONA: "config/persona.naila.yaml"
   NAILA_SERVER_HOST: "0.0.0.0"
   NAILA_LOG_FILE: "-"

@@ -1,5 +1,5 @@
 image:
-  tag: sha-c014b4a
+  tag: sha-6817a8c
 
 networkPolicy:
   enabled: true

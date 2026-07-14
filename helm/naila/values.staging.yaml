@@ -1,5 +1,5 @@
 image:
-  tag: sha-deaf049
+  tag: sha-23b1a02
 
 networkPolicy:
   enabled: true

@@ -1,5 +1,5 @@
 image:
-  tag: sha-9e194a3
+  tag: sha-3cb0daf
 
 probes:
   enabled: true

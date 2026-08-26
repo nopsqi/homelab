@@ -1,5 +1,5 @@
 image:
-  tag: sha-98f3773
+  tag: sha-0ad7c2e
 
 probes:
   enabled: true

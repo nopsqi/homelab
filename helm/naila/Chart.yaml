@@ -2,4 +2,4 @@ name: naila
 description: Discord chat bot, Claude/Gemini swappable
 version: 0.1.0
 apiVersion: v2
-appVersion: sha-b82f65a
+appVersion: sha-f1e0492

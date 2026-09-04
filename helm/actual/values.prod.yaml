@@ -1,5 +1,5 @@
 image:
-  tag: 26.8.1
+  tag: 26.9.0
 
 probes:
   enabled: true

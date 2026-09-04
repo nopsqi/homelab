@@ -2,4 +2,4 @@ name: actual
 description: Personal finance management application
 version: 0.1.0
 apiVersion: v2
-appVersion: "26.8.1"
+appVersion: "26.9.0"

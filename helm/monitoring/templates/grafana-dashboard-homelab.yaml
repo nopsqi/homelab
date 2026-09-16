@@ -30,7 +30,7 @@ data:
           },
           "targets": [
             {
-              "expr": "min by (namespace) (kube_deployment_status_replicas_available{namespace=~\"actual|astro|minio|cloudflared|monitoring|sealed-secrets|loki\"}) >= bool 1",
+              "expr": "min by (namespace) (kube_deployment_status_replicas_available{namespace=~\"actual|astro|minio|cloudflared|monitoring|sealed-secrets|loki|naila\"}) >= bool 1",
               "legendFormat": "",
               "instant": true,
               "format": "table"
@@ -170,7 +170,7 @@ data:
           },
           "targets": [
             {
-              "expr": "count by (namespace) (kube_pod_info{namespace=~\"actual|astro|minio|cloudflared|monitoring|sealed-secrets|loki|argocd\"})",
+              "expr": "count by (namespace) (kube_pod_info{namespace=~\"actual|astro|minio|cloudflared|monitoring|sealed-secrets|loki|argocd|naila\"})",
               "legendFormat": "",
               "instant": true,
               "format": "table"

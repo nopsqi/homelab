@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: naila-service
+  labels:
+    app: naila
+spec:
+  selector:
+    app: naila
+  ports:
+  - protocol: TCP
+    port: {{ .Values.service.port }}
+    targetPort: {{ .Values.service.targetPort }}

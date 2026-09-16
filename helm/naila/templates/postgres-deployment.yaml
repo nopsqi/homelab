@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: naila-postgres
+  labels:
+    app: naila-postgres
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: naila-postgres
+  template:
+    metadata:
+      labels:
+        app: naila-postgres
+    spec:
+      containers:
+      - name: postgres
+        image: {{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}
+        ports:
+        - containerPort: {{ .Values.postgres.service.port }}
+        env:
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: naila-secret
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: naila-secret
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: naila-secret
+              key: POSTGRES_DB
+        readinessProbe:
+          exec:
+            command: ["pg_isready", "-U", "naila", "-d", "naila"]
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          exec:
+            command: ["pg_isready", "-U", "naila", "-d", "naila"]
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        volumeMounts:
+        - name: naila-postgres-data
+          mountPath: /var/lib/postgresql/data
+        resources: {{- toYaml .Values.postgres.resources | nindent 10 }}
+      volumes:
+      - name: naila-postgres-data
+        persistentVolumeClaim:
+          claimName: naila-pvc

@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: naila-deployment
+  labels:
+    app: naila
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: naila
+  template:
+    metadata:
+      labels:
+        app: naila
+    spec:
+      imagePullSecrets:
+      - name: ghcr-pull
+      containers:
+      - name: naila
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        ports:
+        - containerPort: {{ .Values.service.targetPort }}
+        env:
+        {{- range $k, $v := .Values.env }}
+        - name: {{ $k }}
+          value: {{ $v | quote }}
+        {{- end }}
+        envFrom:
+        - secretRef:
+            name: naila-secret
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: {{ .Values.service.targetPort }}
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: {{ .Values.service.targetPort }}
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        resources: {{- toYaml .Values.resources | nindent 10 }}

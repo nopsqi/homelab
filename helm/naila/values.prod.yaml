@@ -1,0 +1,23 @@
+image:
+  tag: sha-placeholder
+
+networkPolicy:
+  enabled: true
+
+# Filled by `kubeseal` against the prod controller's public key. Required keys only —
+# the optional ones (ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY,
+# ADMIN_EMAIL, ADMIN_PASSWORD) stay commented out until needed; templates/sealedsecret.yaml
+# only renders the keys that are set.
+sealedSecret:
+  DATABASE_URL: REPLACE_WITH_KUBESEAL
+  APP_SECRET: REPLACE_WITH_KUBESEAL
+  POSTGRES_USER: REPLACE_WITH_KUBESEAL
+  POSTGRES_PASSWORD: REPLACE_WITH_KUBESEAL
+  POSTGRES_DB: REPLACE_WITH_KUBESEAL
+  OPENROUTER_API_KEY: REPLACE_WITH_KUBESEAL
+  dockerconfigjson: REPLACE_WITH_KUBESEAL
+  # ANTHROPIC_API_KEY: REPLACE_WITH_KUBESEAL
+  # OPENAI_API_KEY: REPLACE_WITH_KUBESEAL
+  # GOOGLE_GENERATIVE_AI_API_KEY: REPLACE_WITH_KUBESEAL
+  # ADMIN_EMAIL: REPLACE_WITH_KUBESEAL
+  # ADMIN_PASSWORD: REPLACE_WITH_KUBESEAL

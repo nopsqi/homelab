@@ -1,0 +1,83 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: naila
+spec:
+  podSelector:
+    matchLabels:
+      app: naila
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Web traffic from the cloudflared tunnel.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cloudflared
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # LLM provider APIs (Anthropic/OpenAI/Google/OpenRouter) — all external HTTPS.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+    # Postgres
+    - to:
+        - podSelector:
+            matchLabels:
+              app: naila-postgres
+      ports:
+        - protocol: TCP
+          port: {{ .Values.postgres.service.port }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: naila-postgres
+spec:
+  podSelector:
+    matchLabels:
+      app: naila-postgres
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: naila
+      ports:
+        - protocol: TCP
+          port: {{ .Values.postgres.service.port }}
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}

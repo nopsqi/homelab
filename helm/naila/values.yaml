@@ -1,0 +1,59 @@
+image:
+  repository: ghcr.io/nopsqi/naila
+  # tag set in values.prod.yaml
+
+service:
+  port: 80
+  targetPort: 3000
+
+networkPolicy:
+  enabled: false
+
+storage:
+  size: "5Gi"
+
+# Non-secret env. Secrets come from the SealedSecret (naila-secret), via envFrom.
+# HOSTNAME/PORT must be set explicitly: the container runtime sets HOSTNAME to the
+# pod name, which would override the Dockerfile's HOSTNAME=0.0.0.0 default and make
+# Next bind to the wrong address.
+env:
+  HOSTNAME: "0.0.0.0"
+  PORT: "3000"
+
+resources:
+  limits:
+    cpu: "0.5"
+    memory: "512Mi"
+  requests:
+    cpu: "0.05"
+    memory: "192Mi"
+
+postgres:
+  image:
+    repository: postgres
+    tag: "17-alpine" # matches compose.yaml; not overridden per-env
+  service:
+    port: 5432
+  resources:
+    limits:
+      cpu: "0.5"
+      memory: "512Mi"
+    requests:
+      cpu: "0.05"
+      memory: "192Mi"
+
+# Filled by `kubeseal`. values.prod.yaml carries the encrypted blobs
+# (encrypted against that env's controller key).
+sealedSecret: {}
+#   DATABASE_URL: AgB...
+#   APP_SECRET: AgB...
+#   POSTGRES_USER: AgB...
+#   POSTGRES_PASSWORD: AgB...
+#   POSTGRES_DB: AgB...
+#   OPENROUTER_API_KEY: AgB...
+#   dockerconfigjson: AgB...
+#   ANTHROPIC_API_KEY: AgB...             # optional
+#   OPENAI_API_KEY: AgB...                # optional
+#   GOOGLE_GENERATIVE_AI_API_KEY: AgB...  # optional
+#   ADMIN_EMAIL: AgB...                   # optional — seeds the admin at boot, see src/instrumentation.ts
+#   ADMIN_PASSWORD: AgB...                # optional

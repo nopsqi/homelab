@@ -1,5 +1,5 @@
 image:
-  tag: sha-placeholder
+  tag: sha-5a96d0c
 
 networkPolicy:
   enabled: true

@@ -1,5 +1,5 @@
 image:
-  tag: sha-dbc6254
+  tag: sha-e674e76
 
 networkPolicy:
   enabled: true

@@ -1,0 +1,5 @@
+name: linux-box
+description: Browser Linux desktop (webtop/Selkies) behind Cloudflare Access, one release per distro
+version: 0.1.0
+apiVersion: v2
+appVersion: "1"  # shared by every distro; image tags live in values.<distro>.prod.yaml

@@ -2,4 +2,4 @@ name: naila
 description: AI companion chat app (Next.js + Postgres)
 version: 0.1.0
 apiVersion: v2
-appVersion: sha-006a92e
+appVersion: sha-7de005a

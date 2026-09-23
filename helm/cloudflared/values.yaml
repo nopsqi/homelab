@@ -28,8 +28,16 @@ ingress:
     service: http://actual-service.actual.svc.cluster.local:5006
   - hostname: naila.nopsqi.dev
     service: http://naila-service.naila.svc.cluster.local:80
+  # Web desktop with sudo: cloudflared itself rejects requests without a valid JWT
+  # for this Access app, so a deleted/misconfigured Access app fails closed.
   - hostname: ubuntu-box.nopsqi.dev
     service: http://linux-box-service.linux-box-ubuntu.svc.cluster.local:3000
+    originRequest:
+      access:
+        required: true
+        teamName: nopsqi
+        audTag:
+          - bc70a697385242a690776edb9ad90496cae083ef20d199dfc91c69590b7acd27
   - hostname: minio.nopsqi.dev
     service: http://minio-service.minio.svc.cluster.local:9000
   - hostname: minio-console.nopsqi.dev

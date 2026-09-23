@@ -1,10 +1,13 @@
-{{- if .Values.gateway.enabled }}
+{{- $root := . }}
+{{- range .Values.gateway.channels }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: naila-gateway-deployment
+  name: naila-gateway-{{ .name }}
   labels:
     app: naila-gateway
+    gateway: {{ .name }}
 spec:
   replicas: 1
   # Two processes on one WhatsApp session fight over it and get the number logged out,
@@ -14,21 +17,23 @@ spec:
   selector:
     matchLabels:
       app: naila-gateway
+      gateway: {{ .name }}
   template:
     metadata:
       labels:
         app: naila-gateway
+        gateway: {{ .name }}
     spec:
       imagePullSecrets:
       - name: ghcr-pull
       containers:
       - name: naila-gateway
-        image: {{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag }}
+        image: {{ .repository | default $root.Values.gateway.image.repository }}:{{ $root.Values.gateway.image.tag }}
         env:
         - name: CHANNEL_ID
-          value: {{ .Values.gateway.channelId | quote }}
+          value: {{ .channelId | quote }}
         - name: NAILA_URL
-          value: "http://naila-service:{{ .Values.service.port }}"
+          value: "http://naila-service:{{ $root.Values.service.port }}"
         # GATEWAY_SECRET rides in naila-secret, the same secret the web pod reads — one seal,
         # both sides of the same comparison.
         envFrom:
@@ -40,9 +45,9 @@ spec:
         # No probes: it serves no port. Liveness would have to shell out, and a restart is
         # the wrong cure anyway — the socket reconnects itself, and a logged-out session
         # needs a human with a phone, not a kubelet.
-        resources: {{- toYaml .Values.gateway.resources | nindent 10 }}
+        resources: {{- toYaml $root.Values.gateway.resources | nindent 10 }}
       volumes:
       - name: wa-auth
         persistentVolumeClaim:
-          claimName: naila-gateway-pvc
+          claimName: naila-gateway-{{ .name }}-pvc
 {{- end }}

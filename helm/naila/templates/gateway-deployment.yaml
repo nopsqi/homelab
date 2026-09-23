@@ -1,0 +1,48 @@
+{{- if .Values.gateway.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: naila-gateway-deployment
+  labels:
+    app: naila-gateway
+spec:
+  replicas: 1
+  # Two processes on one WhatsApp session fight over it and get the number logged out,
+  # so the old pod must be gone before the new one starts — never RollingUpdate.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: naila-gateway
+  template:
+    metadata:
+      labels:
+        app: naila-gateway
+    spec:
+      imagePullSecrets:
+      - name: ghcr-pull
+      containers:
+      - name: naila-gateway
+        image: {{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag }}
+        env:
+        - name: CHANNEL_ID
+          value: {{ .Values.gateway.channelId | quote }}
+        - name: NAILA_URL
+          value: "http://naila-service:{{ .Values.service.port }}"
+        # GATEWAY_SECRET rides in naila-secret, the same secret the web pod reads — one seal,
+        # both sides of the same comparison.
+        envFrom:
+        - secretRef:
+            name: naila-secret
+        volumeMounts:
+        - name: wa-auth
+          mountPath: /app/.wa-auth
+        # No probes: it serves no port. Liveness would have to shell out, and a restart is
+        # the wrong cure anyway — the socket reconnects itself, and a logged-out session
+        # needs a human with a phone, not a kubelet.
+        resources: {{- toYaml .Values.gateway.resources | nindent 10 }}
+      volumes:
+      - name: wa-auth
+        persistentVolumeClaim:
+          claimName: naila-gateway-pvc
+{{- end }}

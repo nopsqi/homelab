@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: linux-box-deployment
+  labels:
+    app: linux-box
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: linux-box
+  template:
+    metadata:
+      labels:
+        app: linux-box
+    spec:
+      # A hijacked session gets no Kubernetes API token.
+      automountServiceAccountToken: false
+      # webtop's s6 init needs root to set up, then drops to PUID/PGID (with
+      # passwordless sudo). So no runAsNonRoot/drop ALL here — containment is
+      # the netpol, no token, and Access in front.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+        # ping without NET_RAW: unprivileged ICMP sockets for gids 0-65535 (a
+        # namespaced "safe" sysctl; the image strips ping's cap_net_raw).
+        sysctls:
+        - name: net.ipv4.ping_group_range
+          value: "0 65535"
+      containers:
+      - name: linux-box
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        ports:
+        - containerPort: {{ .Values.service.port }}
+        env:
+        {{- range $k, $v := .Values.env }}
+        - name: {{ $k }}
+          value: {{ $v | quote }}
+        {{- end }}
+        readinessProbe:
+          tcpSocket:
+            port: {{ .Values.service.port }}
+          periodSeconds: 10
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: shm
+          mountPath: /dev/shm
+        resources: {{- toYaml .Values.resources | nindent 10 }}
+      volumes:
+      - name: config
+        persistentVolumeClaim:
+          claimName: linux-box-pvc
+      - name: shm
+        emptyDir:
+          medium: Memory
+          sizeLimit: {{ .Values.shmSize }}

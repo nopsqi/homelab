@@ -28,6 +28,8 @@ ingress:
     service: http://actual-service.actual.svc.cluster.local:5006
   - hostname: naila.nopsqi.dev
     service: http://naila-service.naila.svc.cluster.local:80
+  - hostname: ubuntu-box.nopsqi.dev
+    service: http://linux-box-service.linux-box-ubuntu.svc.cluster.local:3000
   - hostname: minio.nopsqi.dev
     service: http://minio-service.minio.svc.cluster.local:9000
   - hostname: minio-console.nopsqi.dev

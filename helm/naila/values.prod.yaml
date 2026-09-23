@@ -1,5 +1,5 @@
 image:
-  tag: sha-f71ab29
+  tag: sha-e18d464
 
 networkPolicy:
   enabled: true
@@ -9,7 +9,7 @@ gateway:
   enabled: false
   channelId: ""
   image:
-    tag: sha-f71ab29
+    tag: sha-e18d464
 
 # Filled by `kubeseal` against the prod controller's public key. Required keys only —
 # the optional ones (ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY,

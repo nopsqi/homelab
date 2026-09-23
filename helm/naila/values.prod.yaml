@@ -7,10 +7,11 @@ networkPolicy:
 gateway:
   image:
     tag: sha-0b49472
-  # Add an entry per channel once it exists at /channels and GATEWAY_SECRET is sealed.
-  channels: []
-  #   - name: naila
-  #     channelId: "<uuid>"
+  # One entry per channel: a WhatsApp session is a socket bound to one account and one
+  # credential volume, so channels share neither a process nor a number.
+  channels:
+    - name: naila
+      channelId: "92ffe4d8-f242-4dcb-a4dc-f12934cdb56f"
 
 # Filled by `kubeseal` against the prod controller's public key. Required keys only —
 # the optional ones (ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY,

@@ -1,12 +1,12 @@
 image:
-  tag: sha-e18d464
+  tag: sha-0b49472
 
 networkPolicy:
   enabled: true
 
 gateway:
   image:
-    tag: sha-e18d464
+    tag: sha-0b49472
   # Add an entry per channel once it exists at /channels and GATEWAY_SECRET is sealed.
   channels: []
   #   - name: naila

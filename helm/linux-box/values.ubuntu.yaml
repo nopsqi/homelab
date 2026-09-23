@@ -1,0 +1,8 @@
+# Ubuntu XFCE box — identity. Further distros reuse this chart with their own
+# values.<distro>.yaml, values.<distro>.prod.yaml and Application.
+#
+# Served at https://ubuntu-box.nopsqi.dev (one label deep: Universal SSL
+# doesn't cover ubuntu.box.nopsqi.dev).
+
+image:
+  repository: ghcr.io/nopsqi/linux-box-ubuntu

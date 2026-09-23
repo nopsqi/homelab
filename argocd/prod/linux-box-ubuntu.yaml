@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: linux-box-ubuntu
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:nopsqi/homelab.git
+    targetRevision: HEAD
+    path: helm/linux-box
+    helm:
+      valueFiles:
+        - values.yaml
+        - values.ubuntu.yaml
+        - values.ubuntu.prod.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: linux-box-ubuntu
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

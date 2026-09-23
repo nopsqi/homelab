@@ -1,0 +1,17 @@
+{{- if .Values.gateway.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: naila-gateway-pvc
+  # This volume IS the paired WhatsApp session. Pruning it does not cost a restart, it costs
+  # scanning a fresh QR from the phone.
+  annotations:
+    argocd.argoproj.io/sync-options: Delete=false
+spec:
+  storageClassName: "local-path"
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.gateway.storage.size }}
+{{- end }}

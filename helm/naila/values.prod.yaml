@@ -4,6 +4,13 @@ image:
 networkPolicy:
   enabled: true
 
+gateway:
+  # Flip to true once GATEWAY_SECRET is sealed into naila-secret and channelId is filled in.
+  enabled: false
+  channelId: ""
+  image:
+    tag: sha-e674e76
+
 # Filled by `kubeseal` against the prod controller's public key. Required keys only —
 # the optional ones (ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY,
 # ADMIN_EMAIL, ADMIN_PASSWORD) stay commented out until needed; templates/sealedsecret.yaml
@@ -21,3 +28,4 @@ sealedSecret:
   # GOOGLE_GENERATIVE_AI_API_KEY: REPLACE_WITH_KUBESEAL
   # ADMIN_EMAIL: REPLACE_WITH_KUBESEAL
   # ADMIN_PASSWORD: REPLACE_WITH_KUBESEAL
+  # GATEWAY_SECRET: REPLACE_WITH_KUBESEAL   # required before gateway.enabled: true

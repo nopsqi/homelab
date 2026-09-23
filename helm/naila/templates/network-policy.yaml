@@ -19,6 +19,16 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.service.targetPort }}
+{{- if .Values.gateway.enabled }}
+    # The WhatsApp gateway, calling /api/v1/channels/{config,status,inbound}.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: naila-gateway
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
+{{- end }}
   egress:
     # DNS
     - to:
@@ -80,4 +90,49 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+{{- if .Values.gateway.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: naila-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app: naila-gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  # No ingress rules: it serves no port and nothing should be able to reach it.
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # WhatsApp's servers — external HTTPS and the web socket that rides on it.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+    # naila itself, for config/status/inbound.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: naila
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
+{{- end }}
 {{- end }}

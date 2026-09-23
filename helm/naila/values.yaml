@@ -28,6 +28,27 @@ resources:
     cpu: "0.05"
     memory: "192Mi"
 
+# WhatsApp gateway — one process per channel row, holding a live WhatsApp session.
+# Off by default and left off in values.prod.yaml: channelId cannot be known until the app is
+# running and the channel has been created at /channels, and a gateway without it crash-loops.
+# Turn it on in the same commit that sets channelId. See docs/deploy/whatsapp-gateway.md in
+# the naila repo.
+gateway:
+  enabled: false
+  image:
+    repository: ghcr.io/nopsqi/naila-gateway
+    # tag set in values.prod.yaml, bumped by CI alongside the web image
+  channelId: ""
+  storage:
+    size: "1Gi"
+  resources:
+    limits:
+      cpu: "0.3"
+      memory: "512Mi"
+    requests:
+      cpu: "0.05"
+      memory: "128Mi"
+
 postgres:
   image:
     repository: postgres
@@ -57,3 +78,4 @@ sealedSecret: {}
 #   GOOGLE_GENERATIVE_AI_API_KEY: AgB...  # optional
 #   ADMIN_EMAIL: AgB...                   # optional — seeds the admin at boot, see src/instrumentation.ts
 #   ADMIN_PASSWORD: AgB...                # optional
+#   GATEWAY_SECRET: AgB...                # optional — required only when gateway.enabled

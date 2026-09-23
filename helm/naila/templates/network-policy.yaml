@@ -19,7 +19,7 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.service.targetPort }}
-{{- if .Values.gateway.enabled }}
+{{- if .Values.gateway.channels }}
     # The WhatsApp gateway, calling /api/v1/channels/{config,status,inbound}.
     - from:
         - podSelector:
@@ -90,7 +90,7 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-{{- if .Values.gateway.enabled }}
+{{- if .Values.gateway.channels }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

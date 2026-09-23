@@ -5,11 +5,12 @@ networkPolicy:
   enabled: true
 
 gateway:
-  # Flip to true once GATEWAY_SECRET is sealed into naila-secret and channelId is filled in.
-  enabled: false
-  channelId: ""
   image:
     tag: sha-e18d464
+  # Add an entry per channel once it exists at /channels and GATEWAY_SECRET is sealed.
+  channels: []
+  #   - name: naila
+  #     channelId: "<uuid>"
 
 # Filled by `kubeseal` against the prod controller's public key. Required keys only —
 # the optional ones (ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY,

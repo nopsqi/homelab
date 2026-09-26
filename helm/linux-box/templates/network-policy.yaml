@@ -37,3 +37,24 @@ spec:
             except:
               {{- toYaml .Values.networkPolicy.denyCidrs | nindent 14 }}
 {{- end }}
+{{- if .Values.networkPolicy.enabled }}
+---
+# pod -> node over its public IPs never crosses the Hetzner firewall, and those IPs
+# stay out of this public repo: they're a GlobalNetworkSet the Ansible calico role
+# creates from the host's facts. Order 100 runs before the policy above (1000).
+apiVersion: projectcalico.org/v3
+kind: NetworkPolicy
+metadata:
+  name: linux-box-deny-node
+spec:
+  tier: default
+  order: 100
+  selector: app == 'linux-box'
+  types:
+    - Egress
+  egress:
+    - action: Deny
+      destination:
+        namespaceSelector: global()
+        selector: role == 'node-public-ip'
+{{- end }}

@@ -5,6 +5,11 @@
 service:
   port: 3000
 
+# $HOME (/home/abc): survives restarts and image bumps.
+# ponytail: local-path doesn't enforce this size; it's bounded by the node disk.
+storage:
+  size: "10Gi"
+
 env:
   TZ: "Asia/Jakarta"
   # Selkies share links (incl. a read-write "collab" one) are on by default; |locked
@@ -30,9 +35,8 @@ shmSize: "512Mi"
 # Idle desktop is ~260MB (measured). 1Gi leaves room for scripts and a few
 # Chromium tabs; heavy browsing will OOM-kill it.
 # ponytail: raise to 1.5Gi only after checking `kubectl top node` (~2.4Gi headroom).
-# No volumes: $HOME lives in the container's writable layer, wiped on restart.
-# ephemeral-storage caps it (and /tmp, logs) on the 40GB node disk; past the
-# limit the kubelet evicts the pod.
+# ephemeral-storage caps what lives outside $HOME (apt installs, /tmp, logs)
+# on the 40GB node disk; past the limit the kubelet evicts the pod.
 resources:
   limits:
     cpu: "2"

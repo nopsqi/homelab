@@ -18,9 +18,15 @@ env:
   # Gamepad passthrough LD_PRELOADs a joystick interposer into every desktop process;
   # it hooks open() and breaks BIND tools (nslookup: RUNTIME_CHECK(fd >= 0) failed).
   NO_GAMEPAD: "true"
-  # Xvfb pre-allocates its max screen: the default 15360x8640 is ~530MB of shmem
-  # at idle (more than all of XFCE). 4K still covers any real monitor: ~75MB.
-  MAX_RES: "3840x2160"
+  # ...and the matching UI toggle (off also hides the gamepad sidebar and player links).
+  SELKIES_GAMEPAD_ENABLED: "false"
+  # Fixed 1080p desktop; the browser scales it to the window ("Scale Locally", on by
+  # default client-side). Setting width/height makes Selkies lock manual mode.
+  SELKIES_MANUAL_WIDTH: "1920"
+  SELKIES_MANUAL_HEIGHT: "1080"
+  # Xvfb pre-allocates its max screen (default 15360x8640 is ~530MB of shmem at
+  # idle); the desktop is locked to 1080p, so that's all it needs.
+  MAX_RES: "1920x1080"
 
 # /dev/shm for the desktop and Chromium. Memory-backed, so what it holds counts
 # against the memory limit below.

@@ -42,10 +42,11 @@ spec:
 # pod -> node over its public IPs never crosses the Hetzner firewall, and those IPs
 # stay out of this public repo: they're a GlobalNetworkSet the Ansible calico role
 # creates from the host's facts. Order 100 runs before the policy above (1000).
+# Calico stores default-tier policies as "default.<name>"; naming it so keeps ArgoCD in sync.
 apiVersion: projectcalico.org/v3
 kind: NetworkPolicy
 metadata:
-  name: linux-box-deny-node
+  name: default.linux-box-deny-node
 spec:
   tier: default
   order: 100

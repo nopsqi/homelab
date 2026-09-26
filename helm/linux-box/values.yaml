@@ -5,12 +5,12 @@
 service:
   port: 3000
 
+# $HOME (/home/abc): survives restarts and image bumps.
+# ponytail: local-path doesn't enforce this size; it's bounded by the node disk.
 storage:
   size: "10Gi"
 
 env:
-  PUID: "1000"
-  PGID: "1000"
   TZ: "Asia/Jakarta"
   # Selkies share links (incl. a read-write "collab" one) are on by default; |locked
   # hides the UI toggle. Access already gates them, but a desktop with sudo isn't for sharing.
@@ -18,9 +18,15 @@ env:
   # Gamepad passthrough LD_PRELOADs a joystick interposer into every desktop process;
   # it hooks open() and breaks BIND tools (nslookup: RUNTIME_CHECK(fd >= 0) failed).
   NO_GAMEPAD: "true"
-  # Xvfb pre-allocates its max screen: the default 15360x8640 is ~530MB of shmem
-  # at idle (more than all of XFCE). 4K still covers any real monitor: ~75MB.
-  MAX_RES: "3840x2160"
+  # ...and the matching UI toggle (off also hides the gamepad sidebar and player links).
+  SELKIES_GAMEPAD_ENABLED: "false"
+  # Fixed 1080p desktop; the browser scales it to the window ("Scale Locally", on by
+  # default client-side). Setting width/height makes Selkies lock manual mode.
+  SELKIES_MANUAL_WIDTH: "1920"
+  SELKIES_MANUAL_HEIGHT: "1080"
+  # Xvfb pre-allocates its max screen (default 15360x8640 is ~530MB of shmem at
+  # idle); the desktop is locked to 1080p, so that's all it needs.
+  MAX_RES: "1920x1080"
 
 # /dev/shm for the desktop and Chromium. Memory-backed, so what it holds counts
 # against the memory limit below.
@@ -29,13 +35,17 @@ shmSize: "512Mi"
 # Idle desktop is ~260MB (measured). 1Gi leaves room for scripts and a few
 # Chromium tabs; heavy browsing will OOM-kill it.
 # ponytail: raise to 1.5Gi only after checking `kubectl top node` (~2.4Gi headroom).
+# ephemeral-storage caps what lives outside $HOME (apt installs, /tmp, logs)
+# on the 40GB node disk; past the limit the kubelet evicts the pod.
 resources:
   limits:
     cpu: "2"
     memory: "1Gi"
+    ephemeral-storage: "10Gi"
   requests:
     cpu: "0.1"
     memory: "256Mi"
+    ephemeral-storage: "1Gi"
 
 # Internet only: the box can't reach the cluster, the node, or the tailnet.
 networkPolicy:

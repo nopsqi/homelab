@@ -44,15 +44,10 @@ spec:
             port: {{ .Values.service.port }}
           periodSeconds: 10
         volumeMounts:
-        - name: config
-          mountPath: /config
         - name: shm
           mountPath: /dev/shm
         resources: {{- toYaml .Values.resources | nindent 10 }}
       volumes:
-      - name: config
-        persistentVolumeClaim:
-          claimName: linux-box-pvc
       - name: shm
         emptyDir:
           medium: Memory

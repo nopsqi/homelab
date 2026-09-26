@@ -5,12 +5,7 @@
 service:
   port: 3000
 
-storage:
-  size: "10Gi"
-
 env:
-  PUID: "1000"
-  PGID: "1000"
   TZ: "Asia/Jakarta"
   # Selkies share links (incl. a read-write "collab" one) are on by default; |locked
   # hides the UI toggle. Access already gates them, but a desktop with sudo isn't for sharing.
@@ -35,13 +30,18 @@ shmSize: "512Mi"
 # Idle desktop is ~260MB (measured). 1Gi leaves room for scripts and a few
 # Chromium tabs; heavy browsing will OOM-kill it.
 # ponytail: raise to 1.5Gi only after checking `kubectl top node` (~2.4Gi headroom).
+# No volumes: $HOME lives in the container's writable layer, wiped on restart.
+# ephemeral-storage caps it (and /tmp, logs) on the 40GB node disk; past the
+# limit the kubelet evicts the pod.
 resources:
   limits:
     cpu: "2"
     memory: "1Gi"
+    ephemeral-storage: "10Gi"
   requests:
     cpu: "0.1"
     memory: "256Mi"
+    ephemeral-storage: "1Gi"
 
 # Internet only: the box can't reach the cluster, the node, or the tailnet.
 networkPolicy:

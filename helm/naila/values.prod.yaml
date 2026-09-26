@@ -1,12 +1,12 @@
 image:
-  tag: sha-9dc6f45
+  tag: sha-b88f5ca
 
 networkPolicy:
   enabled: true
 
 gateway:
   image:
-    tag: sha-9dc6f45
+    tag: sha-b88f5ca
   # One entry per channel: a WhatsApp session is a socket bound to one account and one
   # credential volume, so channels share neither a process nor a number.
   channels:

@@ -37,3 +37,34 @@
   until: calico_wait.rc == 0
   retries: 10
   delay: 10
+
+- name: wait for calico apiserver
+  ansible.builtin.shell: /usr/local/bin/kubectl wait --for=condition=Available apiservice v3.projectcalico.org --timeout=120s
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  register: calico_api_wait
+  until: calico_api_wait.rc == 0
+  retries: 10
+  delay: 10
+
+# The node's public IPs stay out of git (the repo is public). Workload policies
+# block pod -> node traffic by label (role == 'node-public-ip') instead.
+# Re-run after the server's IP changes.
+- name: node public ip network set
+  ansible.builtin.shell: |
+    cat <<'EOF' | /usr/local/bin/kubectl apply -f -
+    apiVersion: projectcalico.org/v3
+    kind: GlobalNetworkSet
+    metadata:
+      name: node-public-ips
+      labels:
+        role: node-public-ip
+    spec:
+      nets:
+        - {{ ansible_default_ipv4.address }}/32
+    {% if ansible_default_ipv6.address is defined %}
+        - {{ ansible_default_ipv6.address }}/128
+    {% endif %}
+    EOF
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml

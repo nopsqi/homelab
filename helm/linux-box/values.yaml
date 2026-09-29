@@ -41,6 +41,19 @@ resources:
     memory: "256Mi"
     ephemeral-storage: "1Gi"
 
+# WARP sidecar (templates/deployment.yaml). Image built in nopsqi/linux-box
+# (warp/); tag: values.warp.prod.yaml, bumped by CI there.
+warp:
+  image:
+    repository: ghcr.io/nopsqi/linux-box-warp
+  # ponytail: guessed; tune from `kubectl top pod --containers`.
+  resources:
+    limits:
+      memory: "256Mi"
+    requests:
+      cpu: "10m"
+      memory: "64Mi"
+
 # Internet only: the box can't reach the cluster, the node, or the tailnet.
 networkPolicy:
   enabled: true

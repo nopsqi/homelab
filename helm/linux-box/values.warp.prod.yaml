@@ -1,0 +1,4 @@
+# Bumped by nopsqi/linux-box CI inside a promotion PR, merged by hand.
+warp:
+  image:
+    tag: sha-d9205ca

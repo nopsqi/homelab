@@ -29,8 +29,35 @@ spec:
         sysctls:
         - name: net.ipv4.ping_group_range
           value: "0 65535"
+      # Native sidecar: the whole pod shares its network namespace, so every packet
+      # leaves through Cloudflare WARP (sites see a Cloudflare IP, not the node's).
+      # Its nftables kill switch drops anything else, even if warp-svc dies. The
+      # desktop waits for the startupProbe, so nothing gets out before WARP is up.
+      initContainers:
+      - name: warp
+        image: {{ .Values.warp.image.repository }}:{{ .Values.warp.image.tag }}
+        restartPolicy: Always
+        securityContext:
+          capabilities:
+            add: ["NET_ADMIN"]
+        startupProbe:
+          exec:
+            command: ["sh", "-c", "warp-cli --accept-tos status | grep -q Connected"]
+          periodSeconds: 2
+          failureThreshold: 90
+        volumeMounts:
+        - name: tun
+          mountPath: /dev/net/tun
+        - name: warp-state
+          mountPath: /var/lib/cloudflare-warp
+        resources: {{- toYaml .Values.warp.resources | nindent 10 }}
       containers:
       - name: linux-box
+        # NET_RAW could stamp WARP's fwmark (SO_MARK) and slip past the kill switch
+        # with sudo; ping still works via ping_group_range above.
+        securityContext:
+          capabilities:
+            drop: ["NET_RAW"]
         image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
         ports:
         - containerPort: {{ .Values.service.port }}
@@ -53,6 +80,13 @@ spec:
       - name: home
         persistentVolumeClaim:
           claimName: linux-box-home
+      - name: tun
+        hostPath:
+          path: /dev/net/tun
+          type: CharDevice
+      # WARP registration: survives sidecar restarts, not pod restarts.
+      - name: warp-state
+        emptyDir: {}
       - name: shm
         emptyDir:
           medium: Memory

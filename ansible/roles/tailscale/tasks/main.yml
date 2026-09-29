@@ -8,3 +8,44 @@
   ansible.builtin.shell: tailscale ip -4
   register: tailscale_ipv4
   when: install_tailscale
+
+# Host DNS must not depend on the tailnet: accept-dns is on by default for
+# `tailscale up`, and an expired node key broke all name resolution (image
+# pulls, CoreDNS upstream, backups) on 2026-09-28.
+- name: read tailscale prefs
+  ansible.builtin.command: tailscale debug prefs
+  register: tailscale_prefs
+  changed_when: false
+  check_mode: false
+  when: install_tailscale
+
+# resolvconf (Debian) builds this from Hetzner's DHCP and the ifupdown IPv6
+# nameservers. Tailscale's old "direct" mode had replaced the link with a file
+# listing only its own resolver. Linked first, so DNS never has a gap.
+- name: resolv.conf from resolvconf
+  ansible.builtin.file:
+    src: /run/resolvconf/resolv.conf
+    dest: /etc/resolv.conf
+    state: link
+    force: true
+  register: resolv_link
+  when: install_tailscale
+
+- name: stop tailscale from managing host dns
+  ansible.builtin.command: tailscale set --accept-dns=false
+  register: accept_dns
+  when: install_tailscale and (tailscale_prefs.stdout | from_json).CorpDNS
+
+- name: check kubectl exists
+  ansible.builtin.stat:
+    path: /usr/local/bin/kubectl
+  register: kubectl_bin
+  when: install_tailscale
+
+# CoreDNS (dnsPolicy Default) copied the host's resolv.conf when its pod started.
+# On a fresh bootstrap k3s isn't installed yet and CoreDNS starts with the new file.
+- name: restart coredns to pick up the new upstreams
+  ansible.builtin.command: /usr/local/bin/kubectl -n kube-system rollout restart deploy/coredns
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  when: install_tailscale and kubectl_bin.stat.exists and (resolv_link.changed or accept_dns.changed)

@@ -4,7 +4,7 @@
 
   roles:
     - common
-    - tailscale
+    - { role: tailscale, tags: tailscale }
     - k3s
     - calico
     - argocd

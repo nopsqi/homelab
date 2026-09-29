@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: linux-box-home
+  annotations:
+    # Keep $HOME even if this PVC leaves the chart: Delete=false alone only covers
+    # deleting the Application; a sync with prune still removed the previous one.
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  storageClassName: "local-path"
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.storage.size }}

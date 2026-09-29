@@ -66,9 +66,11 @@ spec:
         - name: {{ $k }}
           value: {{ $v | quote }}
         {{- end }}
+        # exec, not tcpSocket: kubelet probes from the node's public IP, which
+        # WARP's firewall drops and its routes would answer into the tunnel.
         readinessProbe:
-          tcpSocket:
-            port: {{ .Values.service.port }}
+          exec:
+            command: ["bash", "-c", "</dev/tcp/127.0.0.1/{{ .Values.service.port }}"]
           periodSeconds: 10
         volumeMounts:
         - name: home

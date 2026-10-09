@@ -1,0 +1,5 @@
+apiVersion: v2
+name: syncthing
+description: Syncthing hub, data on the Storage Box over SMB
+version: 0.1.0
+appVersion: "2.1.6"

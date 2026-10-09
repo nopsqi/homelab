@@ -1,0 +1,4 @@
+# Chart defaults fit k3s (kubelet at /var/lib/kubelet, 1 controller replica).
+csi-driver-smb:
+  windows:
+    enabled: false # Linux-only cluster

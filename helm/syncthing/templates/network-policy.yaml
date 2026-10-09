@@ -1,0 +1,47 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: syncthing
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Sync protocol from devices (via hostPort on the tailnet IP)
+    - ports:
+        - protocol: TCP
+          port: 22000
+        - protocol: UDP
+          port: 22000
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Global discovery (443), relays (22067), direct connections to devices (22000).
+    # 100.64.0.0/10 (tailnet) is not in the excluded ranges, so tailnet peers are reachable.
+    # The SMB mount is done by the node, not this pod, so it needs no rule here.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 22067
+        - protocol: TCP
+          port: 22000
+        - protocol: UDP
+          port: 22000
+{{- end }}

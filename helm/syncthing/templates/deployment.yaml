@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: syncthing
+  labels:
+    app: syncthing
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # hostPort + RWO config volume: never run two at once
+  selector:
+    matchLabels:
+      app: syncthing
+  template:
+    metadata:
+      labels:
+        app: syncthing
+    spec:
+      containers:
+      - name: syncthing
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        env:
+        # GUI only on the pod's localhost: reach it with kubectl port-forward deploy/syncthing -n syncthing 8384
+        - name: STGUIADDRESS
+          value: "127.0.0.1:8384"
+        ports:
+        # hostPort: devices on the tailnet connect to tcp://100.64.67.55:22000 (Hetzner firewall blocks the public IP)
+        - containerPort: 22000
+          hostPort: 22000
+          protocol: TCP
+        - containerPort: 22000
+          hostPort: 22000
+          protocol: UDP
+        livenessProbe:
+          tcpSocket:
+            port: 22000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          tcpSocket:
+            port: 22000
+          periodSeconds: 10
+        volumeMounts:
+        - name: config
+          mountPath: /var/syncthing/config
+        - name: data
+          mountPath: /var/syncthing/data
+        resources: {{- toYaml .Values.resources | nindent 10 }}
+      volumes:
+      - name: config
+        persistentVolumeClaim:
+          claimName: syncthing-config
+      - name: data
+        persistentVolumeClaim:
+          claimName: syncthing-data

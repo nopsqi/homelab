@@ -1,0 +1,6 @@
+dependencies:
+- name: csi-driver-smb
+  repository: https://kubernetes-csi.github.io/csi-driver-smb
+  version: 1.20.3
+digest: sha256:1f79f06d72528ef6335e48ce864a7806bf22904f975da90708f17c6f9ef0654a
+generated: "2026-10-06T23:13:58.404181941+07:00"

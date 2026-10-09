@@ -1,0 +1,50 @@
+# Static PV: points at an existing share, nothing is provisioned or deleted by Kubernetes.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: syncthing-bx11
+spec:
+  capacity:
+    storage: 1Ti
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions: {{- toYaml .Values.smb.mountOptions | nindent 4 }}
+  csi:
+    driver: smb.csi.k8s.io
+    volumeHandle: syncthing-bx11
+    volumeAttributes:
+      source: {{ required "smb.source is required (terraform output syncthing_smb)" .Values.smb.source | quote }}
+    nodeStageSecretRef:
+      name: syncthing-smb
+      namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: syncthing-data
+  annotations:
+    argocd.argoproj.io/sync-options: Delete=false
+spec:
+  storageClassName: ""
+  volumeName: syncthing-bx11
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Ti
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: syncthing-config
+  annotations:
+    argocd.argoproj.io/sync-options: Delete=false
+spec:
+  storageClassName: "local-path"
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.config.size }}

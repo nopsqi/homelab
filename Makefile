@@ -1,4 +1,4 @@
-.PHONY: help staging-up staging-rebuild promote protect-prod netpol-check fire-drill
+.PHONY: help staging-up staging-rebuild promote protect-prod sealed-keys-backup netpol-check fire-drill
 STAGING_KUBECONFIG ?= $(HOME)/.kube/staging-config
 PROD_KUBECONFIG    ?= $(HOME)/.kube/config
 
@@ -30,6 +30,11 @@ protect-prod: ## one-time: prod branch accepts PRs only, no force-push, no delet
 	gh api -X PUT repos/nopsqi/homelab/branches/prod/protection \
 	  -H "Accept: application/vnd.github+json" \
 	  --input - <<< '{"required_pull_request_reviews":{"required_approving_review_count":0},"enforce_admins":false,"required_status_checks":null,"restrictions":null,"allow_force_pushes":false,"allow_deletions":false}'
+
+sealed-keys-backup: ## export every sealed-secrets key from both clusters into the (git-ignored) backup files
+	KUBECONFIG=$(PROD_KUBECONFIG)    kubectl -n sealed-secrets get secret -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml > helm/sealed-secrets/sealed-secrets-prod-backup.yaml
+	KUBECONFIG=$(STAGING_KUBECONFIG) kubectl -n sealed-secrets get secret -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml > helm/sealed-secrets/sealed-secrets-staging-backup.yaml
+	@grep -c tls.key helm/sealed-secrets/sealed-secrets-prod-backup.yaml | sed 's/^/prod keys: /'; grep -c tls.key helm/sealed-secrets/sealed-secrets-staging-backup.yaml | sed 's/^/staging keys: /'
 
 netpol-check: ## allowed-path NetworkPolicy checks on prod (ENV=staging for staging; cloudflared is skipped there)
 	KUBECONFIG=$(if $(filter staging,$(ENV)),$(STAGING_KUBECONFIG),$(PROD_KUBECONFIG)) scripts/netpol-check.sh

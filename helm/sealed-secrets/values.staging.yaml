@@ -1,2 +1,4 @@
 networkPolicy:
   enabled: true
+sealed-secrets:
+  keyrenewperiod: '0'

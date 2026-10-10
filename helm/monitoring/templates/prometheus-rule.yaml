@@ -27,6 +27,17 @@ spec:
             summary: "Deployment {{ "{{" }} $labels.deployment {{ "}}" }} has 0 replicas"
             description: "{{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.deployment {{ "}}" }} has been scaled to 0 for 5 minutes."
 
+        # KubePodCrashLooping needs the CrashLoopBackOff state; a container that runs
+        # ~14 min before dying never enters it. Count restarts instead.
+        - alert: ContainerRestarting
+          expr: increase(kube_pod_container_status_restarts_total[1h]) > 3
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.pod {{ "}}" }} container {{ "{{" }} $labels.container {{ "}}" }} is restarting"
+            description: "{{ "{{" }} $value | humanize {{ "}}" }} restarts in the last hour."
+
         - alert: HighMemoryPressure
           expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.85
           for: 10m

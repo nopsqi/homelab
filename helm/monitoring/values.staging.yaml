@@ -15,81 +15,18 @@ kube-prometheus-stack:
   prometheus:
     prometheusSpec:
       storageSpec: {}
-      retentionSize: 4GB
 
-  prometheusOperator:
-    prometheusConfigReloader:
-      resources:
-        requests:
-          cpu: "10m"
-          memory: "32Mi"
-        limits:
-          cpu: "50m"
-          memory: "64Mi"
-
-  # apiserver histograms were ~43% of all series; alert rules only use the _sli_ one.
-  kubeApiServer:
+  # K3s is one binary, so the kubelet /metrics also carries every apiserver and etcd
+  # series (60k of 74k on prod). The apiserver job already scrapes those.
+  kubelet:
     serviceMonitor:
       metricRelabelings:
         - action: drop
           sourceLabels: [__name__]
-          regex: (apiserver_request_duration_seconds|apiserver_request_body_size_bytes|apiserver_response_sizes|apiserver_watch_cache_read_wait_seconds|apiserver_watch_events_sizes|etcd_request_duration_seconds)_bucket
+          regex: (apiserver|etcd|kine)_.*
         - action: drop
           sourceLabels: [__name__, le]
-          regex: apiserver_request_sli_duration_seconds_bucket;(0\.15|0\.2|0\.3|0\.35|0\.4|0\.45|0\.6|0\.7|0\.8|0\.9|1\.25|1\.5|1\.75|2|3|3\.5|4|4\.5|6|7|8|9|15|20|40|45|50)(\.0)?
-
-  kube-state-metrics:
-    resources:
-      requests:
-        cpu: "10m"
-        memory: "32Mi"
-      limits:
-        cpu: "100m"
-        memory: "128Mi"
-
-  prometheus-node-exporter:
-    resources:
-      requests:
-        cpu: "10m"
-        memory: "32Mi"
-      limits:
-        cpu: "100m"
-        memory: "64Mi"
-
-  grafana:
-    sidecar:
-      resources:
-        requests:
-          cpu: "10m"
-          memory: "64Mi"
-        limits:
-          cpu: "100m"
-          memory: "128Mi"
-      # Datasources never change at runtime; static file instead of a 74Mi sidecar.
-      datasources:
-        enabled: false
-    datasources:
-      datasources.yaml:
-        apiVersion: 1
-        datasources:
-          - name: Prometheus
-            type: prometheus
-            uid: prometheus
-            url: http://monitoring-kube-prometheus-prometheus:9090
-            access: proxy
-            isDefault: true
-          - name: Alertmanager
-            type: alertmanager
-            uid: alertmanager
-            url: http://monitoring-kube-prometheus-alertmanager:9093
-            access: proxy
-            jsonData:
-              implementation: prometheus
-          - name: Loki
-            type: loki
-            uid: loki
-            url: http://loki.loki.svc.cluster.local:3100
-            access: proxy
+          regex: (csi_operations|storage_operation_duration)_seconds_bucket;(0.25|2.5|15|25|120|600)(\.0)?
 
 sealedSecrets:
   grafana:

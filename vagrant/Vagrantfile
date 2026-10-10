@@ -3,7 +3,9 @@ Vagrant.configure("2") do |config|
 
   config.vm.network "private_network", ip: "192.168.56.10"
 
-  config.vm.synced_folder ".", "/vagrant", type: "nfs", nfs_version: 3
+  # NFS export needs host sudo and nothing uses /vagrant (Ansible goes over SSH)
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+  config.nfs.functional = false
 
   config.vm.provider :libvirt do |libvirt|
     libvirt.cpus = 4

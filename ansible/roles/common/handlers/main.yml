@@ -1,0 +1,5 @@
+- name: reload homelab-nft
+  ansible.builtin.systemd:
+    name: homelab-nft
+    state: restarted
+    daemon_reload: true

@@ -6,5 +6,4 @@
     - common
     - { role: tailscale, tags: tailscale }
     - k3s
-    - calico
     - argocd

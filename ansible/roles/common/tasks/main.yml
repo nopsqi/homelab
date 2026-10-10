@@ -55,3 +55,59 @@
     value: "10"
     sysctl_set: true
     reload: true
+
+# kube-router (K3s built-in NetworkPolicy) filters bridged pod traffic through iptables.
+# Without these, policies are accepted by the API and enforce nothing.
+- name: load br_netfilter at boot
+  ansible.builtin.copy:
+    content: "br_netfilter\n"
+    dest: /etc/modules-load.d/br_netfilter.conf
+
+- name: load br_netfilter now
+  community.general.modprobe:
+    name: br_netfilter
+    state: present
+
+- name: bridge netfilter sysctls
+  ansible.posix.sysctl:
+    name: "{{ item }}"
+    value: "1"
+    sysctl_set: true
+    reload: true
+  loop:
+    - net.bridge.bridge-nf-call-iptables
+    - net.bridge.bridge-nf-call-ip6tables
+
+- name: install nftables
+  ansible.builtin.apt:
+    name: nftables
+    state: present
+
+- name: nftables.d directory
+  ansible.builtin.file:
+    path: /etc/nftables.d
+    state: directory
+    mode: "0755"
+
+- name: node-ip guard ruleset
+  ansible.builtin.template:
+    src: homelab.nft.j2
+    dest: /etc/nftables.d/homelab.nft
+    mode: "0644"
+  notify: reload homelab-nft
+
+# Debian's nftables.service flushes the whole ruleset on start, which would wipe k3s rules;
+# this unit loads only our table.
+- name: node-ip guard unit
+  ansible.builtin.copy:
+    src: homelab-nft.service
+    dest: /etc/systemd/system/homelab-nft.service
+    mode: "0644"
+  notify: reload homelab-nft
+
+- name: enable node-ip guard
+  ansible.builtin.systemd:
+    name: homelab-nft
+    enabled: true
+    state: started
+    daemon_reload: true

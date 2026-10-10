@@ -1,0 +1,13 @@
+[Unit]
+Description=Homelab nftables guard (pods -> node public IP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/nftables.d/homelab.nft
+ExecReload=/usr/sbin/nft -f /etc/nftables.d/homelab.nft
+
+[Install]
+WantedBy=multi-user.target

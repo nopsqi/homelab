@@ -8,8 +8,6 @@
     content: |
       tls-san:
         - {{ tailscale_ipv4.stdout }}
-      flannel-backend: none
-      disable-network-policy: true
       disable:
         - traefik
     dest: /etc/rancher/k3s/config.yaml
@@ -20,8 +18,6 @@
     content: |
       tls-san:
         - {{ k3s_tls_san }}
-      flannel-backend: none
-      disable-network-policy: true
       disable:
         - traefik
     dest: /etc/rancher/k3s/config.yaml

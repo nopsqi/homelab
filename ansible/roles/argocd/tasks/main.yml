@@ -29,10 +29,11 @@
   changed_when: false
 
 # Upstream manifests and the chart use different selector labels; selectors are immutable.
-# Deletes only workloads; CRDs, Applications, ConfigMaps and Secrets stay.
-- name: remove pre-chart argocd workloads (one-time migration)
+# Upstream also shipped per-component NetworkPolicies (the server one is allow-all), which
+# would override the chart's tunnel-only rule. CRDs, Applications, ConfigMaps and Secrets stay.
+- name: remove pre-chart argocd workloads and policies (one-time migration)
   ansible.builtin.shell: >
-    /usr/local/bin/kubectl -n argocd delete deployment,statefulset
+    /usr/local/bin/kubectl -n argocd delete deployment,statefulset,networkpolicy
     -l app.kubernetes.io/part-of=argocd --wait=true --timeout=120s
   when: argocd_instance_label.stdout == ""
 

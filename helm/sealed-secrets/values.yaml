@@ -2,6 +2,9 @@ networkPolicy:
   enabled: false
 
 sealed-secrets:
+  # Key renewal (default 30d) created keys that existed only in-cluster and were lost in the
+  # 2026-10-10 rebuild. One key, backed up (make sealed-keys-backup), forever.
+  keyrenewperiod: "0"
   resources:
     requests:
       cpu: "10m"

@@ -20,6 +20,11 @@ loki:
             prefix: loki_index_
             period: 24h
 
+  # No Loki alerting rules exist; the sidecar only crash-looped against the API server.
+  sidecar:
+    rules:
+      enabled: false
+
   singleBinary:
     replicas: 1
     resources:

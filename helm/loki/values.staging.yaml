@@ -6,7 +6,3 @@ loki:
     persistence:
       enabled: true
       size: 1Gi
-  # No Loki alerting rules exist; the sidecar only crash-looped against the API server.
-  sidecar:
-    rules:
-      enabled: false

@@ -17,7 +17,6 @@ kube-prometheus-stack:
           cpu: "10m"
           memory: "32Mi"
         limits:
-          cpu: "100m"
           memory: "128Mi"
 
   prometheusOperator:
@@ -26,7 +25,6 @@ kube-prometheus-stack:
         cpu: "50m"
         memory: "64Mi"
       limits:
-        cpu: "100m"
         memory: "128Mi"
     prometheusConfigReloader:
       resources:
@@ -34,7 +32,6 @@ kube-prometheus-stack:
           cpu: "10m"
           memory: "32Mi"
         limits:
-          cpu: "50m"
           memory: "64Mi"
 
   prometheus:
@@ -46,7 +43,6 @@ kube-prometheus-stack:
           cpu: "100m"
           memory: "256Mi"
         limits:
-          cpu: "500m"
           memory: "512Mi"
 
   grafana:
@@ -62,7 +58,6 @@ kube-prometheus-stack:
           cpu: "10m"
           memory: "64Mi"
         limits:
-          cpu: "100m"
           memory: "128Mi"
       # Datasources never change at runtime; static file instead of a 74Mi sidecar.
       datasources:
@@ -94,7 +89,6 @@ kube-prometheus-stack:
         cpu: "50m"
         memory: "128Mi"
       limits:
-        cpu: "200m"
         memory: "512Mi"
 
   # apiserver histograms were ~43% of all series; alert rules only use the _sli_ one.
@@ -114,7 +108,6 @@ kube-prometheus-stack:
         cpu: "10m"
         memory: "32Mi"
       limits:
-        cpu: "100m"
         memory: "64Mi"
 
   kubeProxy:
@@ -150,7 +143,6 @@ kube-prometheus-stack:
         cpu: "10m"
         memory: "32Mi"
       limits:
-        cpu: "100m"
         memory: "128Mi"
     livenessProbe:
       initialDelaySeconds: 30

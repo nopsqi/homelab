@@ -1,11 +1,15 @@
 image:
   tag: sha-0ad7c2e
-
 probes:
   enabled: true
-
 networkPolicy:
   enabled: true
-
 storage:
-  size: "500Mi"
+  size: 500Mi
+resources:
+  requests:
+    cpu: 10m
+    memory: 16Mi
+  limits:
+    cpu: null
+    memory: 64Mi

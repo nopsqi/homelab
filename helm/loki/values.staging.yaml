@@ -1,8 +1,13 @@
 networkPolicy:
   enabled: true
-
 loki:
   singleBinary:
     persistence:
       enabled: true
       size: 1Gi
+    resources:
+      requests:
+        cpu: 25m
+        memory: 256Mi
+      limits:
+        memory: 384Mi

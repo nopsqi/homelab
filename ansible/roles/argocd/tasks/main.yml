@@ -7,20 +7,21 @@
 - name: wait for argocd server to be ready
   ansible.builtin.shell: /usr/local/bin/kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=120s
 
-- name: set argocd resource limits
+# Sized from 7 days of usage (p95 request, ~1.5x max limit). No CPU limits: on a single
+# node they only throttle; requests already guarantee the share. Strategic-merge patch
+# with cpu: null removes a limit if one exists, so this stays idempotent.
+- name: set argocd resources
   ansible.builtin.shell: >
-    /usr/local/bin/kubectl -n argocd set resources
-    {{ item.kind }}/{{ item.name }}
-    --requests=cpu={{ item.cpu_req }},memory={{ item.mem_req }}
-    --limits=cpu={{ item.cpu_lim }},memory={{ item.mem_lim }}
+    /usr/local/bin/kubectl -n argocd patch {{ item.kind }}/{{ item.name }} --type strategic -p
+    '{"spec":{"template":{"spec":{"containers":[{"name":"{{ item.container }}","resources":{"requests":{"cpu":"{{ item.cpu_req }}","memory":"{{ item.mem_req }}"},"limits":{"cpu":null,"memory":"{{ item.mem_lim }}"}}}]}}}}'
   loop:
-    - { kind: statefulset, name: argocd-application-controller, cpu_req: "100m", mem_req: "256Mi", cpu_lim: "500m", mem_lim: "768Mi" }
-    - { kind: deployment, name: argocd-repo-server, cpu_req: "50m", mem_req: "64Mi", cpu_lim: "500m", mem_lim: "512Mi" }
-    - { kind: deployment, name: argocd-server, cpu_req: "50m", mem_req: "64Mi", cpu_lim: "200m", mem_lim: "128Mi" }
-    - { kind: deployment, name: argocd-applicationset-controller, cpu_req: "50m", mem_req: "32Mi", cpu_lim: "100m", mem_lim: "128Mi" }
-    - { kind: deployment, name: argocd-dex-server, cpu_req: "25m", mem_req: "32Mi", cpu_lim: "100m", mem_lim: "64Mi" }
-    - { kind: deployment, name: argocd-notifications-controller, cpu_req: "25m", mem_req: "32Mi", cpu_lim: "100m", mem_lim: "64Mi" }
-    - { kind: deployment, name: argocd-redis, cpu_req: "25m", mem_req: "16Mi", cpu_lim: "100m", mem_lim: "64Mi" }
+    - { kind: statefulset, name: argocd-application-controller, container: argocd-application-controller, cpu_req: "100m", mem_req: "640Mi", mem_lim: "1Gi" }
+    - { kind: deployment, name: argocd-repo-server, container: argocd-repo-server, cpu_req: "10m", mem_req: "128Mi", mem_lim: "512Mi" }
+    - { kind: deployment, name: argocd-server, container: argocd-server, cpu_req: "10m", mem_req: "64Mi", mem_lim: "128Mi" }
+    - { kind: deployment, name: argocd-applicationset-controller, container: argocd-applicationset-controller, cpu_req: "10m", mem_req: "32Mi", mem_lim: "128Mi" }
+    - { kind: deployment, name: argocd-dex-server, container: dex, cpu_req: "10m", mem_req: "32Mi", mem_lim: "64Mi" }
+    - { kind: deployment, name: argocd-notifications-controller, container: argocd-notifications-controller, cpu_req: "10m", mem_req: "32Mi", mem_lim: "64Mi" }
+    - { kind: deployment, name: argocd-redis, container: redis, cpu_req: "10m", mem_req: "16Mi", mem_lim: "64Mi" }
 
 # No SSO, no notifications, no ApplicationSets: these three only burn ~100Mi.
 - name: scale down unused argocd components

@@ -10,7 +10,10 @@ staging-up: ## boot the staging VM
 
 staging-rebuild: ## destroy and rebuild staging from scratch, then wait for the root app
 	cd vagrant && vagrant destroy -f && vagrant up
+	chmod 600 vagrant/.vagrant/machines/default/libvirt/private_key
 	cd ansible && ansible-playbook -i inventories/staging playbook.yml
+	@echo "fetching fresh kubeconfig (rebuild regenerates the k3s CA)"; \
+	  cd vagrant && vagrant ssh -c 'sudo cat /etc/rancher/k3s/k3s.yaml' 2>/dev/null | sed 's#https://127.0.0.1:6443#https://192.168.56.10:6443#' > $(STAGING_KUBECONFIG)
 	@echo "waiting for root app"; for i in $$(seq 1 60); do \
 	  s=$$(KUBECONFIG=$(STAGING_KUBECONFIG) kubectl -n argocd get application root -o jsonpath='{.status.sync.status}/{.status.health.status}' 2>/dev/null); \
 	  echo "  $$s"; [ "$$s" = "Synced/Healthy" ] && exit 0; sleep 20; done; echo "root app not healthy"; exit 1

@@ -1,31 +1,57 @@
 - name: create argocd namespace
   ansible.builtin.shell: /usr/local/bin/kubectl create namespace argocd --dry-run=client -o yaml | /usr/local/bin/kubectl apply -f -
 
-- name: apply argocd manifest
-  ansible.builtin.shell: /usr/local/bin/kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.3.6/manifests/install.yaml
+- name: build argocd chart dependencies (control machine)
+  ansible.builtin.command: helm dependency build {{ playbook_dir }}/../helm/argocd
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: false
+
+# Rendered locally, applied server-side: no Helm release object on the cluster, so the
+# argocd Application (argocd/<env>/argocd.yaml) later adopts these objects without conflict.
+- name: render argocd chart (control machine)
+  ansible.builtin.shell: >
+    helm template argocd {{ playbook_dir }}/../helm/argocd --namespace argocd --include-crds
+    -f {{ playbook_dir }}/../helm/argocd/values.yaml
+    -f {{ playbook_dir }}/../helm/argocd/values.{{ environment_name }}.yaml
+    > /tmp/argocd-rendered-{{ environment_name }}.yaml
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: false
+
+- name: detect pre-chart argocd install
+  ansible.builtin.shell: >
+    /usr/local/bin/kubectl -n argocd get deployment argocd-server
+    -o jsonpath='{.metadata.labels.app\.kubernetes\.io/instance}' 2>/dev/null || echo absent
+  register: argocd_instance_label
+  changed_when: false
+
+# Upstream manifests and the chart use different selector labels; selectors are immutable.
+# Deletes only workloads; CRDs, Applications, ConfigMaps and Secrets stay.
+- name: remove pre-chart argocd workloads (one-time migration)
+  ansible.builtin.shell: >
+    /usr/local/bin/kubectl -n argocd delete deployment,statefulset
+    -l app.kubernetes.io/part-of=argocd --wait=true --timeout=120s
+  when: argocd_instance_label.stdout == ""
+
+- name: copy rendered argocd manifest to server
+  ansible.builtin.copy:
+    src: /tmp/argocd-rendered-{{ environment_name }}.yaml
+    dest: /tmp/argocd-rendered.yaml
+    mode: "0600"
+
+- name: apply argocd
+  ansible.builtin.shell: /usr/local/bin/kubectl apply -n argocd --server-side --force-conflicts -f /tmp/argocd-rendered.yaml
+
+- name: remove rendered manifest from server
+  ansible.builtin.file:
+    path: /tmp/argocd-rendered.yaml
+    state: absent
 
 - name: wait for argocd server to be ready
-  ansible.builtin.shell: /usr/local/bin/kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=120s
-
-# Sized from 7 days of usage (p95 request, ~1.5x max limit). No CPU limits: on a single
-# node they only throttle; requests already guarantee the share. Strategic-merge patch
-# with cpu: null removes a limit if one exists, so this stays idempotent.
-- name: set argocd resources
-  ansible.builtin.shell: >
-    /usr/local/bin/kubectl -n argocd patch {{ item.kind }}/{{ item.name }} --type strategic -p
-    '{"spec":{"template":{"spec":{"containers":[{"name":"{{ item.container }}","resources":{"requests":{"cpu":"{{ item.cpu_req }}","memory":"{{ item.mem_req }}"},"limits":{"cpu":null,"memory":"{{ item.mem_lim }}"}}}]}}}}'
-  loop:
-    - { kind: statefulset, name: argocd-application-controller, container: argocd-application-controller, cpu_req: "100m", mem_req: "640Mi", mem_lim: "1Gi" }
-    - { kind: deployment, name: argocd-repo-server, container: argocd-repo-server, cpu_req: "10m", mem_req: "128Mi", mem_lim: "512Mi" }
-    - { kind: deployment, name: argocd-server, container: argocd-server, cpu_req: "10m", mem_req: "64Mi", mem_lim: "128Mi" }
-    - { kind: deployment, name: argocd-applicationset-controller, container: argocd-applicationset-controller, cpu_req: "10m", mem_req: "32Mi", mem_lim: "128Mi" }
-    - { kind: deployment, name: argocd-dex-server, container: dex, cpu_req: "10m", mem_req: "32Mi", mem_lim: "64Mi" }
-    - { kind: deployment, name: argocd-notifications-controller, container: argocd-notifications-controller, cpu_req: "10m", mem_req: "32Mi", mem_lim: "64Mi" }
-    - { kind: deployment, name: argocd-redis, container: redis, cpu_req: "10m", mem_req: "16Mi", mem_lim: "64Mi" }
-
-# No SSO, no notifications, no ApplicationSets: these three only burn ~100Mi.
-- name: scale down unused argocd components
-  ansible.builtin.shell: /usr/local/bin/kubectl -n argocd scale deployment argocd-dex-server argocd-notifications-controller argocd-applicationset-controller --replicas=0
+  ansible.builtin.shell: /usr/local/bin/kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=180s
 
 - name: copy argocd deploy key to server
   ansible.builtin.copy:

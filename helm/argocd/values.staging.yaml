@@ -1,5 +1,1 @@
-argo-cd:
-  server:
-    resources:
-      limits:
-        memory: "160Mi"
+{}

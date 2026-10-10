@@ -9,7 +9,7 @@ spec:
   project: default
   source:
     repoURL: git@github.com:nopsqi/homelab.git
-    targetRevision: HEAD
+    targetRevision: prod
     path: helm/astro
     helm:
       valueFiles:

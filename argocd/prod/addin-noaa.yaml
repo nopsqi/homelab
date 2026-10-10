@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: addin-noaa
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:nopsqi/homelab.git
+    targetRevision: prod
+    # Shared chart. Further add-ins reuse this same path with their own
+    # values.<name>.yaml and their own Application.
+    path: helm/addin
+    helm:
+      valueFiles:
+        - values.yaml
+        - values.noaa.yaml
+        - values.noaa.prod.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: noaa
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

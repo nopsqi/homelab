@@ -1,0 +1,8 @@
+apiVersion: v2
+name: argocd
+description: Argo CD, installed by Ansible once and then managed by itself
+version: 0.1.0
+dependencies:
+  - name: argo-cd
+    version: "9.5.11"
+    repository: "https://argoproj.github.io/argo-helm"

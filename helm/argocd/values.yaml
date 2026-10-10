@@ -1,0 +1,47 @@
+argo-cd:
+  crds:
+    install: true
+    keep: true
+
+  configs:
+    secret:
+      # argocd-secret (admin password, server key, TLS) predates the chart; keep it.
+      createSecret: false
+
+  # No SSO, no notifications, no ApplicationSets on this cluster.
+  dex:
+    enabled: false
+  notifications:
+    enabled: false
+  applicationSet:
+    replicas: 0  # chart 9.x has no enabled toggle; 0 replicas renders an idle Deployment
+
+  # Sized from 7 days of usage: request ~p95, memory limit ~1.5x max, no CPU limits.
+  controller:
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "640Mi"
+      limits:
+        memory: "1Gi"
+  repoServer:
+    resources:
+      requests:
+        cpu: "10m"
+        memory: "128Mi"
+      limits:
+        memory: "512Mi"
+  server:
+    resources:
+      requests:
+        cpu: "10m"
+        memory: "64Mi"
+      limits:
+        memory: "128Mi"
+  redis:
+    resources:
+      requests:
+        cpu: "10m"
+        memory: "16Mi"
+      limits:
+        memory: "64Mi"

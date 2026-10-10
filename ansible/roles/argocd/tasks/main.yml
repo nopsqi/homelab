@@ -22,6 +22,10 @@
     - { kind: deployment, name: argocd-notifications-controller, cpu_req: "25m", mem_req: "32Mi", cpu_lim: "100m", mem_lim: "64Mi" }
     - { kind: deployment, name: argocd-redis, cpu_req: "25m", mem_req: "16Mi", cpu_lim: "100m", mem_lim: "64Mi" }
 
+# No SSO, no notifications, no ApplicationSets: these three only burn ~100Mi.
+- name: scale down unused argocd components
+  ansible.builtin.shell: /usr/local/bin/kubectl -n argocd scale deployment argocd-dex-server argocd-notifications-controller argocd-applicationset-controller --replicas=0
+
 - name: copy argocd deploy key to server
   ansible.builtin.copy:
     src: "{{ argocd_deploy_key }}"

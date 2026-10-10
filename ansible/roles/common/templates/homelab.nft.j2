@@ -8,7 +8,9 @@ delete table inet homelab
 table inet homelab {
   chain input {
     type filter hook input priority filter - 10; policy accept;
+    # Replies to connections the node opened to pods (kubelet probes, metrics-server) must pass.
+    ct state established,related accept
     ip saddr 10.42.0.0/16 ip daddr { {{ node_ips | join(', ') }} } tcp dport { 6443, 10250, 9100 } accept
-    ip saddr 10.42.0.0/16 ip daddr { {{ node_ips | join(', ') }} } drop
+    ip saddr 10.42.0.0/16 ip daddr { {{ node_ips | join(', ') }} } ct state new drop
   }
 }

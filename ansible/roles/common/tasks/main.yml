@@ -111,3 +111,7 @@
     enabled: true
     state: started
     daemon_reload: true
+
+# Load the ruleset now, not at end of play: a later task failure must not leave a stale table.
+- name: apply node-ip guard immediately
+  ansible.builtin.meta: flush_handlers

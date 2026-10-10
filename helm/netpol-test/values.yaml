@@ -13,5 +13,4 @@ mustBlock:
   - http://monitoring-kube-prometheus-prometheus.monitoring:9090/-/ready
   - http://minio-service.minio:9000/minio/health/live
   - http://actual-service.actual:5006
-  # https://argocd-server.argocd:443 is added back once helm/argocd ships a NetworkPolicy;
-  # today the argocd namespace has none (found by this test on 2026-10-10).
+  - https://argocd-server.argocd:443

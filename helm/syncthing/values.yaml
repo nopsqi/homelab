@@ -8,10 +8,10 @@ networkPolicy:
 resources:
   limits:
     cpu: "1"
-    memory: "512Mi"
+    memory: "1Gi"
   requests:
     cpu: "50m"
-    memory: "128Mi"
+    memory: "256Mi"
 
 # Index database + device keys. Local disk: a database on SMB is slow and fragile.
 config:

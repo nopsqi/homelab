@@ -18,10 +18,13 @@ staging-rebuild: ## destroy and rebuild staging from scratch, then wait for the 
 	  s=$$(KUBECONFIG=$(STAGING_KUBECONFIG) kubectl -n argocd get application root -o jsonpath='{.status.sync.status}/{.status.health.status}' 2>/dev/null); \
 	  echo "  $$s"; [ "$$s" = "Synced/Healthy" ] && exit 0; sleep 20; done; echo "root app not healthy"; exit 1
 
-promote: ## open (or show) the single master -> prod promotion PR
+promote: ## fast-forward prod to master (GitHub's merge button cannot fast-forward; a merge commit would make prod diverge)
+	@git fetch -q origin && git merge-base --is-ancestor origin/prod origin/master || { echo "prod is not an ancestor of master: refusing"; exit 1; }
 	@gh pr create --base prod --head master --title "promote: master -> prod" \
 	  --body "Promote everything verified on staging (master) to production (prod branch)." 2>/dev/null \
-	  || gh pr list --base prod --head master --state open
+	  || true
+	git push origin origin/master:prod
+	@echo "prod now at $$(git rev-parse --short origin/master); GitHub marks the open promotion PR as merged"
 
 protect-prod: ## one-time: prod branch accepts PRs only, no force-push, no deletion
 	gh api -X PUT repos/nopsqi/homelab/branches/prod/protection \

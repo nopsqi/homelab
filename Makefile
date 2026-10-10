@@ -31,9 +31,11 @@ protect-prod: ## one-time: prod branch accepts PRs only, no force-push, no delet
 	  -H "Accept: application/vnd.github+json" \
 	  --input - <<< '{"required_pull_request_reviews":{"required_approving_review_count":0},"enforce_admins":false,"required_status_checks":null,"restrictions":null,"allow_force_pushes":false,"allow_deletions":false}'
 
-sealed-keys-backup: ## export every sealed-secrets key from both clusters into the (git-ignored) backup files
-	KUBECONFIG=$(PROD_KUBECONFIG)    kubectl -n sealed-secrets get secret -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml > helm/sealed-secrets/sealed-secrets-prod-backup.yaml
-	KUBECONFIG=$(STAGING_KUBECONFIG) kubectl -n sealed-secrets get secret -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml > helm/sealed-secrets/sealed-secrets-staging-backup.yaml
+sealed-keys-backup: ## export every sealed-secrets key from both clusters into the (git-ignored, mode 600) backup files
+	@git check-ignore -q helm/sealed-secrets/sealed-secrets-prod-backup.yaml || { echo "backup path is not git-ignored: refusing"; exit 1; }
+	umask 077; KUBECONFIG=$(PROD_KUBECONFIG)    kubectl -n sealed-secrets get secret -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml > helm/sealed-secrets/sealed-secrets-prod-backup.yaml
+	umask 077; KUBECONFIG=$(STAGING_KUBECONFIG) kubectl -n sealed-secrets get secret -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml > helm/sealed-secrets/sealed-secrets-staging-backup.yaml
+	chmod 600 helm/sealed-secrets/sealed-secrets-*-backup.yaml
 	@grep -c tls.key helm/sealed-secrets/sealed-secrets-prod-backup.yaml | sed 's/^/prod keys: /'; grep -c tls.key helm/sealed-secrets/sealed-secrets-staging-backup.yaml | sed 's/^/staging keys: /'
 
 netpol-check: ## allowed-path NetworkPolicy checks on prod (ENV=staging for staging; cloudflared is skipped there)

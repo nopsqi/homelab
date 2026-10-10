@@ -5,8 +5,10 @@ argo-cd:
 
   configs:
     secret:
-      # argocd-secret (admin password, server key, TLS) predates the chart; keep it.
-      createSecret: false
+      # Chart owns argocd-secret. On a fresh cluster argocd-server generates the admin password
+      # into argocd-initial-admin-secret; read it with:
+      #   kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
+      createSecret: true
 
   # No SSO, no notifications, no ApplicationSets on this cluster.
   dex:

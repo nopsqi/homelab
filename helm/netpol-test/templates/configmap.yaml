@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: netpol-test-script
+data:
+  check.sh: |
+    #!/bin/sh
+    # Exit 1 if any assertion fails. Output is one line per check.
+    fail=0
+    probe() { curl -sk -o /dev/null --max-time 5 "$1"; echo $?; }
+    for u in {{ range .Values.mustReach }}"{{ . }}" {{ end }}; do
+      rc=$(probe "$u")
+      if [ "$rc" = "0" ]; then echo "ok    reach $u"; else echo "FAIL  reach $u (curl rc=$rc)"; fail=1; fi
+    done
+    for u in {{ range .Values.mustBlock }}"{{ . }}" {{ end }}; do
+      rc=$(probe "$u")
+      case "$rc" in
+        7|28) echo "ok    blocked $u" ;;
+        *)    echo "FAIL  reachable $u (curl rc=$rc)"; fail=1 ;;
+      esac
+    done
+    exit $fail

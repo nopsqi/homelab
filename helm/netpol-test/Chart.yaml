@@ -1,0 +1,4 @@
+apiVersion: v2
+name: netpol-test
+description: Proves NetworkPolicy posture from an outsider namespace
+version: 0.1.0

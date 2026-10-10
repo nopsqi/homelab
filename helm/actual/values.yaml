@@ -9,10 +9,9 @@ networkPolicy:
 
 resources:
   limits:
-    cpu: "1"
-    memory: "1Gi"
+    memory: "256Mi"
   requests:
-    cpu: "0.1"
+    cpu: "10m"
     memory: "128Mi"
 
 backup:

@@ -1,0 +1,32 @@
+image:
+  repository: syncthing/syncthing
+  tag: "2.1.6"
+
+networkPolicy:
+  enabled: false
+
+resources:
+  limits:
+    cpu: "1"
+    memory: "512Mi"
+  requests:
+    cpu: "50m"
+    memory: "128Mi"
+
+# Index database + device keys. Local disk: a database on SMB is slow and fragile.
+config:
+  size: "1Gi"
+
+# Synced files live on the Storage Box sub-account (terraform output syncthing_smb).
+smb:
+  source: ""
+  mountOptions:
+    - seal            # encrypt SMB traffic
+    - vers=3.1.1
+    - uid=1000        # syncthing image runs as 1000:1000
+    - gid=1000
+    - file_mode=0660
+    - dir_mode=0770
+    - iocharset=utf8
+    - mfsymlinks
+  sealedSecret: {}

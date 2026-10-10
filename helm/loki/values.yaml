@@ -29,8 +29,8 @@ loki:
     replicas: 1
     resources:
       requests:
-        cpu: "50m"
-        memory: "128Mi"
+        cpu: "25m"
+        memory: "256Mi"
       limits:
         memory: "384Mi"
 

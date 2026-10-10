@@ -22,11 +22,10 @@ env:
 
 resources:
   limits:
-    cpu: "0.5"
-    memory: "512Mi"
+    memory: "256Mi"
   requests:
-    cpu: "0.05"
-    memory: "192Mi"
+    cpu: "10m"
+    memory: "128Mi"
 
 # Channel gateways. One process per channel, because a WhatsApp session is a socket bound to
 # one account and one credential volume — channels cannot share a pod, or a phone number.
@@ -40,10 +39,9 @@ gateway:
     size: "1Gi"
   resources:
     limits:
-      cpu: "0.3"
-      memory: "512Mi"
+      memory: "256Mi"
     requests:
-      cpu: "0.05"
+      cpu: "10m"
       memory: "128Mi"
   channels: []
   #   - name: naila          # DNS-safe suffix -> naila-gateway-naila
@@ -58,11 +56,10 @@ postgres:
     port: 5432
   resources:
     limits:
-      cpu: "0.5"
-      memory: "512Mi"
+      memory: "256Mi"
     requests:
-      cpu: "0.05"
-      memory: "192Mi"
+      cpu: "10m"
+      memory: "96Mi"
 
 # Filled by `kubeseal`. values.prod.yaml carries the encrypted blobs
 # (encrypted against that env's controller key).

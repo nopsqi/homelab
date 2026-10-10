@@ -22,8 +22,8 @@ kube-prometheus-stack:
   prometheusOperator:
     resources:
       requests:
-        cpu: "50m"
-        memory: "64Mi"
+        cpu: "10m"
+        memory: "48Mi"
       limits:
         memory: "128Mi"
     prometheusConfigReloader:
@@ -40,10 +40,10 @@ kube-prometheus-stack:
       retentionSize: 4GB
       resources:
         requests:
-          cpu: "100m"
-          memory: "256Mi"
-        limits:
+          cpu: "200m"
           memory: "512Mi"
+        limits:
+          memory: "768Mi"
 
   grafana:
     admin:
@@ -55,7 +55,7 @@ kube-prometheus-stack:
     sidecar:
       resources:
         requests:
-          cpu: "10m"
+          cpu: "25m"
           memory: "64Mi"
         limits:
           memory: "128Mi"
@@ -86,10 +86,10 @@ kube-prometheus-stack:
             access: proxy
     resources:
       requests:
-        cpu: "50m"
-        memory: "128Mi"
+        cpu: "10m"
+        memory: "256Mi"
       limits:
-        memory: "512Mi"
+        memory: "384Mi"
 
   # apiserver histograms were ~43% of all series; alert rules only use the _sli_ one.
   kubeApiServer:

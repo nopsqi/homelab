@@ -33,7 +33,6 @@ shmSize: "512Mi"
 # on the 40GB node disk; past the limit the kubelet evicts the pod.
 resources:
   limits:
-    cpu: "2"
     memory: "1Gi"
     ephemeral-storage: "10Gi"
   requests:

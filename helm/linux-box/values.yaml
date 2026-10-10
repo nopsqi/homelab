@@ -62,4 +62,4 @@ networkPolicy:
     - 192.168.0.0/16
     - 100.64.0.0/10     # Tailscale
     - 169.254.0.0/16    # Hetzner metadata
-  # The node's public IPs: templates/network-policy.yaml (Calico network set, not in git).
+  # The node's public IP is blocked at the host by ansible/roles/common (nftables), not here.

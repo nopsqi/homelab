@@ -9,7 +9,7 @@ ns=${1:?namespace}; name=${2:?secret name}; shift 2
 if [ "${1:-}" = "--docker" ]; then
   manifest=$(kubectl -n "$ns" create secret docker-registry "$name" --docker-server="$2" --docker-username="$3" --docker-password="$4" --dry-run=client -o yaml)
 else
-  args=(); while IFS='=' read -r k v; do [ -z "$k" ] || [[ "$k" == \#* ]] && continue; args+=("--from-literal=$k=$v"); done < "${1:?env file}"
+  args=(); while IFS='=' read -r k v || [ -n "$k" ]; do [ -z "$k" ] || [[ "$k" == \#* ]] && continue; args+=("--from-literal=$k=$v"); done < "${1:?env file}"
   manifest=$(kubectl -n "$ns" create secret generic "$name" "${args[@]}" --dry-run=client -o yaml)
 fi
 echo "$manifest" | kubeseal --controller-name sealed-secrets --controller-namespace sealed-secrets --format yaml \

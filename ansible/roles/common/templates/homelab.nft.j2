@@ -1,8 +1,8 @@
-# Pods may reach the node's own IPs only for the API (kube-proxy DNAT), kubelet and
+# Pods may open connections to the node itself only for the API (kube-proxy DNAT), kubelet and
 # node-exporter scrapes. Everything else (SSH, Tailscale, k3s supervisor, VXLAN) is dropped.
-# Replaces the Calico GlobalNetworkSet deny; keeps the IPs out of git. Covers every node IPv4
-# (public, Tailscale, Vagrant host-only) except the pod CIDR gateway addresses; pods are IPv4-only.
-{% set node_ips = ansible_all_ipv4_addresses | reject('match', '^10\.42\.') | sort %}
+# The input hook only ever sees packets addressed to this node (public IP, Tailscale IP, the cni0
+# gateway 10.42.x.1), so no address list is needed and no fact ordering can leave a gap.
+# Replaces the Calico GlobalNetworkSet deny; keeps IPs out of git. Pods are IPv4-only.
 table inet homelab
 delete table inet homelab
 table inet homelab {
@@ -10,7 +10,7 @@ table inet homelab {
     type filter hook input priority filter - 10; policy accept;
     # Replies to connections the node opened to pods (kubelet probes, metrics-server) must pass.
     ct state established,related accept
-    ip saddr 10.42.0.0/16 ip daddr { {{ node_ips | join(', ') }} } tcp dport { 6443, 10250, 9100 } accept
-    ip saddr 10.42.0.0/16 ip daddr { {{ node_ips | join(', ') }} } ct state new drop
+    ip saddr 10.42.0.0/16 tcp dport { 6443, 10250, 9100 } accept
+    ip saddr 10.42.0.0/16 ct state new drop
   }
 }

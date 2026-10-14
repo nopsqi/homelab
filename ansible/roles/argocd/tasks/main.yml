@@ -44,7 +44,7 @@
     mode: "0600"
 
 - name: apply argocd
-  ansible.builtin.shell: /usr/local/bin/kubectl apply -n argocd --server-side --force-conflicts -f /tmp/argocd-rendered.yaml
+  ansible.builtin.shell: /usr/local/bin/kubectl apply -n argocd --server-side --force-conflicts --field-manager=argocd-controller -f /tmp/argocd-rendered.yaml
 
 - name: remove rendered manifest from server
   ansible.builtin.file:
@@ -78,25 +78,10 @@
     path: /tmp/argocd-homelab
     state: absent
 
-- name: copy root app manifest to server
-  ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../argocd/{{ environment_name }}/root.yaml"
-    dest: /tmp/root.yaml
-
-- name: apply root app
-  ansible.builtin.shell: /usr/local/bin/kubectl apply -f /tmp/root.yaml
-
-- name: remove root app manifest from server
-  ansible.builtin.file:
-    path: /tmp/root.yaml
-    state: absent
-
-- name: wait for sealed-secrets namespace
-  ansible.builtin.shell: /usr/local/bin/kubectl get namespace sealed-secrets
-  register: ns_check
-  until: ns_check.rc == 0
-  retries: 30
-  delay: 10
+# The key goes in BEFORE the root app: the controller only generates its own key when none exists,
+# and a generated key would live only in-cluster (the 2026-10-10 incident).
+- name: create sealed-secrets namespace
+  ansible.builtin.shell: /usr/local/bin/kubectl create namespace sealed-secrets --dry-run=client -o yaml | /usr/local/bin/kubectl apply -f -
 
 - name: copy sealed secrets key backup to server
   ansible.builtin.copy:
@@ -114,5 +99,18 @@
     path: /tmp/sealed-secrets-key-backup.yaml
     state: absent
 
-- name: restart sealed-secrets controller to pick up restored key
-  ansible.builtin.shell: /usr/local/bin/kubectl rollout restart deployment/sealed-secrets -n sealed-secrets
+- name: copy root app manifest to server
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../argocd/{{ environment_name }}/root.yaml"
+    dest: /tmp/root.yaml
+
+- name: apply root app
+  ansible.builtin.shell: /usr/local/bin/kubectl apply -f /tmp/root.yaml
+
+- name: remove root app manifest from server
+  ansible.builtin.file:
+    path: /tmp/root.yaml
+    state: absent
+
+- name: restart sealed-secrets controller to pick up restored key (no-op on a fresh cluster)
+  ansible.builtin.shell: /usr/local/bin/kubectl -n sealed-secrets get deployment sealed-secrets >/dev/null 2>&1 && /usr/local/bin/kubectl rollout restart deployment/sealed-secrets -n sealed-secrets || true

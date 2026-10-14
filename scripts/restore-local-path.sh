@@ -10,5 +10,6 @@ for old in "$WORK"/pvc-*; do
   suffix=${old#*_}                       # namespace_pvcname
   new=$(ls -d "$STORE"/pvc-*_"$suffix" 2>/dev/null | head -1 || true)
   if [ -z "$new" ]; then echo "SKIP  $suffix: no new PV directory yet"; continue; fi
+  find "$new" -mindepth 1 -delete   # the app may have initialised the empty PV before being scaled down
   cp -a "$old"/. "$new"/ && echo "ok    $suffix -> $(basename "$new") ($(du -sh "$new" | cut -f1))"
 done

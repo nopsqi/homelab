@@ -21,7 +21,7 @@ staging-rebuild: ## destroy and rebuild staging from scratch, then wait for the 
 promote: ## merge the open master -> prod PR with a merge commit (opens it first if CI has not); never squash
 	@gh pr create --base prod --head master --title "promote: master -> prod" \
 	  --body "Promote everything verified on staging (master) to production (prod branch)." 2>/dev/null || true
-	@n=$$(gh pr list --repo nopsqi/homelab --base prod --head master --state open --json number -q '.[0].number'); \
+	@n=$$(gh pr list --repo nopsqi/homelab --base prod --head master --state open --json number,headRepositoryOwner -q '[.[] | select(.headRepositoryOwner.login=="nopsqi")][0].number'); \
 	  [ -n "$$n" ] || { echo "nothing to promote: no open master -> prod PR"; exit 0; }; \
 	  m=$$(gh pr view $$n --repo nopsqi/homelab --json mergeable -q .mergeable); \
 	  [ "$$m" = "MERGEABLE" ] || { echo "PR #$$n is $$m: resolve on GitHub first"; exit 1; }; \

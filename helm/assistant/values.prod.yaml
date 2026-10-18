@@ -5,6 +5,8 @@ vault:
   smb:
     source: "//u682776-sub2.your-storagebox.de/u682776-sub2"
 notifyChatIds: ""
+apiServer:
+  cidr: 91.98.86.223/32
 sealedSecret:
   ghcrPull: ""
   core: {}

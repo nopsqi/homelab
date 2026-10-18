@@ -34,7 +34,7 @@ spec:
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: actual } } }]
       ports: [{ protocol: TCP, port: 5006 }]
 ---
-# Engineer: only the core may ask; OpenRouter, the API server (kube-router sees the post-DNAT node:6443) and Prometheus.
+# Engineer: only the core may ask; OpenRouter, the API server (kube-router sees the post-DNAT node:6443, so the rule names the node IP) and Prometheus.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: { name: assistant-ops }
@@ -46,8 +46,9 @@ spec:
       ports: [{ protocol: TCP, port: 8080 }]
   egress:
     {{- toYaml $dns | nindent 4 }}
-    - to: [{ ipBlock: { cidr: 0.0.0.0/0 } }]
-      ports: [{ protocol: TCP, port: 443 }, { protocol: TCP, port: 6443 }]
+    - {{- toYaml $internet443 | nindent 6 }}
+    - to: [{ ipBlock: { cidr: {{ .Values.apiServer.cidr }} } }]
+      ports: [{ protocol: TCP, port: 6443 }]
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: monitoring } } }]
       ports: [{ protocol: TCP, port: 9090 }]
 ---

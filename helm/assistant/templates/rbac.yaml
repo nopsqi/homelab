@@ -9,18 +9,19 @@ kind: ClusterRole
 metadata:
   name: assistant-reader
 rules:
+  # Exactly what cluster-mcp reads: pods/workloads/describe/logs/events/top/argocd_apps/backups.
   - apiGroups: [""]
-    resources: [pods, pods/log, events, nodes, namespaces, persistentvolumeclaims, services]
-    verbs: [get, list, watch]
+    resources: [pods, pods/log, events, nodes, persistentvolumeclaims]
+    verbs: [get, list]
   - apiGroups: [apps]
-    resources: [deployments, replicasets, statefulsets, daemonsets]
-    verbs: [get, list, watch]
+    resources: [deployments]
+    verbs: [get, list]
   - apiGroups: [batch]
     resources: [jobs, cronjobs]
-    verbs: [get, list, watch]
+    verbs: [get, list]
   - apiGroups: [argoproj.io]
     resources: [applications]
-    verbs: [get, list, watch]
+    verbs: [get, list]
   - apiGroups: [metrics.k8s.io]
     resources: [pods, nodes]
     verbs: [get, list]

@@ -3,6 +3,8 @@ image:
 vault:
   mode: localPath
 notifyChatIds: ""
+apiServer:
+  cidr: 192.168.56.10/32
 sealedSecret:
   ghcrPull: ""
   core: {}

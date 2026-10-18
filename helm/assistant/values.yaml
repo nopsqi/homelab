@@ -11,6 +11,8 @@ confirmAboveIdr: 500000
 dailyTokenBudget: 300000
 tz: Asia/Jakarta
 channels: telegram
+telegram:
+  enabled: true            # false until a bot token is sealed (gateway Deployment + its secret are skipped)
 notifyChatIds: ""   # comma-separated Telegram chat ids for reminders/review; per env
 prometheusUrl: http://monitoring-kube-prometheus-prometheus.monitoring:9090
 # The node's IP: the ops worker's only non-internet egress besides Prometheus (API server after kube-router's DNAT).

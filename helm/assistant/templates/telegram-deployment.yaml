@@ -1,3 +1,4 @@
+{{- if .Values.telegram.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -20,3 +21,4 @@ spec:
             - secretRef: { name: assistant-telegram-secret }
           # No port, no probes: it long-polls Telegram and the core; a restart is never the cure.
           resources: {{- toYaml .Values.resources.telegram | nindent 12 }}
+{{- end }}

@@ -1,5 +1,5 @@
 image:
-  repository: ghcr.io/nopsqi/naila
+  repository: ghcr.io/nopsqi/lakon
   # tag set in values.prod.yaml
 
 service:
@@ -12,7 +12,7 @@ networkPolicy:
 storage:
   size: "5Gi"
 
-# Non-secret env. Secrets come from the SealedSecret (naila-secret), via envFrom.
+# Non-secret env. Secrets come from the SealedSecret (lakon-secret), via envFrom.
 # HOSTNAME/PORT must be set explicitly: the container runtime sets HOSTNAME to the
 # pod name, which would override the Dockerfile's HOSTNAME=0.0.0.0 default and make
 # Next bind to the wrong address.
@@ -33,7 +33,7 @@ resources:
 # which is the right state until a channel exists at /channels to point one at.
 gateway:
   image:
-    repository: ghcr.io/nopsqi/naila-gateway
+    repository: ghcr.io/nopsqi/lakon-gateway
     # tag set in values.prod.yaml, bumped by CI alongside the web image
   storage:
     size: "1Gi"
@@ -44,7 +44,7 @@ gateway:
       cpu: "10m"
       memory: "128Mi"
   channels: []
-  #   - name: naila          # DNS-safe suffix -> naila-gateway-naila
+  #   - name: naila          # DNS-safe suffix -> lakon-gateway-naila
   #     channelId: "<uuid from the /channels row>"
   #     repository: ...      # optional, for a kind that needs a different image
 

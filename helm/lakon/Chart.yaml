@@ -1,5 +1,5 @@
-name: naila
+name: lakon
 description: AI companion chat app (Next.js + Postgres)
 version: 0.1.0
 apiVersion: v2
-appVersion: sha-1343ffb
+appVersion: sha-93e5158

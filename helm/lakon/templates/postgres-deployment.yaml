@@ -1,20 +1,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: naila-postgres
+  name: lakon-postgres
   labels:
-    app: naila-postgres
+    app: lakon-postgres
 spec:
   replicas: 1
   strategy:
     type: Recreate
   selector:
     matchLabels:
-      app: naila-postgres
+      app: lakon-postgres
   template:
     metadata:
       labels:
-        app: naila-postgres
+        app: lakon-postgres
     spec:
       containers:
       - name: postgres
@@ -27,17 +27,17 @@ spec:
         - name: POSTGRES_USER
           valueFrom:
             secretKeyRef:
-              name: naila-secret
+              name: lakon-secret
               key: POSTGRES_USER
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: naila-secret
+              name: lakon-secret
               key: POSTGRES_PASSWORD
         - name: POSTGRES_DB
           valueFrom:
             secretKeyRef:
-              name: naila-secret
+              name: lakon-secret
               key: POSTGRES_DB
         readinessProbe:
           exec:
@@ -50,10 +50,10 @@ spec:
           initialDelaySeconds: 15
           periodSeconds: 20
         volumeMounts:
-        - name: naila-postgres-data
+        - name: lakon-postgres-data
           mountPath: /var/lib/postgresql/data
         resources: {{- toYaml .Values.postgres.resources | nindent 10 }}
       volumes:
-      - name: naila-postgres-data
+      - name: lakon-postgres-data
         persistentVolumeClaim:
-          claimName: naila-pvc
+          claimName: lakon-pvc

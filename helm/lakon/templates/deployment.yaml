@@ -1,25 +1,25 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: naila-deployment
+  name: lakon-deployment
   labels:
-    app: naila
+    app: lakon
 spec:
   replicas: 1
   strategy:
     type: Recreate
   selector:
     matchLabels:
-      app: naila
+      app: lakon
   template:
     metadata:
       labels:
-        app: naila
+        app: lakon
     spec:
       imagePullSecrets:
       - name: ghcr-pull
       containers:
-      - name: naila
+      - name: lakon
         image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
         ports:
         - containerPort: {{ .Values.service.targetPort }}
@@ -30,7 +30,7 @@ spec:
         {{- end }}
         envFrom:
         - secretRef:
-            name: naila-secret
+            name: lakon-secret
         readinessProbe:
           httpGet:
             path: /api/v1/health

@@ -9,7 +9,7 @@ spec:
   project: default
   source:
     repoURL: git@github.com:nopsqi/homelab.git
-    targetRevision: prod
+    targetRevision: 2fbba81  # pinned: prod commit with helm/naila at the live tag; detached and removed in the rename plan Task 7
     path: helm/naila
     helm:
       valueFiles:

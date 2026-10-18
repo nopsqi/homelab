@@ -2,11 +2,11 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: naila
+  name: lakon
 spec:
   podSelector:
     matchLabels:
-      app: naila
+      app: lakon
   policyTypes:
     - Ingress
     - Egress
@@ -24,7 +24,7 @@ spec:
     - from:
         - podSelector:
             matchLabels:
-              app: naila-gateway
+              app: lakon-gateway
       ports:
         - protocol: TCP
           port: {{ .Values.service.targetPort }}
@@ -55,7 +55,7 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              app: naila-postgres
+              app: lakon-postgres
       ports:
         - protocol: TCP
           port: {{ .Values.postgres.service.port }}
@@ -63,11 +63,11 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: naila-postgres
+  name: lakon-postgres
 spec:
   podSelector:
     matchLabels:
-      app: naila-postgres
+      app: lakon-postgres
   policyTypes:
     - Ingress
     - Egress
@@ -75,7 +75,7 @@ spec:
     - from:
         - podSelector:
             matchLabels:
-              app: naila
+              app: lakon
       ports:
         - protocol: TCP
           port: {{ .Values.postgres.service.port }}
@@ -95,11 +95,11 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: naila-gateway
+  name: lakon-gateway
 spec:
   podSelector:
     matchLabels:
-      app: naila-gateway
+      app: lakon-gateway
   policyTypes:
     - Ingress
     - Egress
@@ -126,11 +126,11 @@ spec:
       ports:
         - protocol: TCP
           port: 443
-    # naila itself, for config/status/inbound.
+    # lakon itself, for config/status/inbound.
     - to:
         - podSelector:
             matchLabels:
-              app: naila
+              app: lakon
       ports:
         - protocol: TCP
           port: {{ .Values.service.targetPort }}

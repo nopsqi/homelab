@@ -1,5 +1,5 @@
 image:
-  repository: ghcr.io/nopsqi/naila
+  repository: ghcr.io/nopsqi/lakon
   # tag set in values.prod.yaml
 
 service:
@@ -33,7 +33,7 @@ resources:
 # which is the right state until a channel exists at /channels to point one at.
 gateway:
   image:
-    repository: ghcr.io/nopsqi/naila-gateway
+    repository: ghcr.io/nopsqi/lakon-gateway
     # tag set in values.prod.yaml, bumped by CI alongside the web image
   storage:
     size: "1Gi"

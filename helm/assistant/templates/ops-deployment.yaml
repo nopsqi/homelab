@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: assistant-ops
+  labels: { app: assistant-ops }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: assistant-ops } }
+  template:
+    metadata:
+      labels: { app: assistant-ops }
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull
+      # The only pod with a token: read-only ClusterRole assistant-reader (templates/rbac.yaml).
+      serviceAccountName: assistant-ops
+      automountServiceAccountToken: true
+      containers:
+        - name: ops
+          {{- include "assistant.container" (dict "root" . "role" "workers/ops") | nindent 10 }}
+            - { name: PORT, value: "8080" }
+            - { name: MODEL, value: {{ .Values.models.ops | quote }} }
+            - { name: PROMETHEUS_URL, value: {{ .Values.prometheusUrl | quote }} }
+          envFrom:
+            - secretRef: { name: assistant-ops-secret }
+          ports: [{ containerPort: 8080 }]
+          readinessProbe: { httpGet: { path: /healthz, port: 8080 }, initialDelaySeconds: 10, periodSeconds: 10 }
+          resources: {{- toYaml .Values.resources.ops | nindent 12 }}

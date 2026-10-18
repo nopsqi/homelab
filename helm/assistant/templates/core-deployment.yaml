@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: assistant-core
+  labels: { app: assistant-core }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }   # SQLite is single-writer
+  selector: { matchLabels: { app: assistant-core } }
+  template:
+    metadata:
+      labels: { app: assistant-core }
+    spec:
+      {{- include "assistant.pod" . | nindent 6 }}
+      containers:
+        - name: core
+          {{- include "assistant.container" (dict "root" . "role" "core") | nindent 10 }}
+            - { name: PORT, value: "3000" }
+            - { name: MODEL, value: {{ .Values.models.core | quote }} }
+            - { name: REVIEW_MODEL, value: {{ .Values.models.review | quote }} }
+            - { name: CHANNELS, value: {{ .Values.channels | quote }} }
+            - { name: NOTIFY_CHAT_IDS, value: {{ .Values.notifyChatIds | quote }} }
+            - { name: DAILY_TOKEN_BUDGET, value: {{ .Values.dailyTokenBudget | quote }} }
+            - { name: VAULT_ROOT, value: /vault }
+            - { name: DATA_DIR, value: /data }
+            - { name: FINANCE_URL, value: http://assistant-finance:8080/mcp }
+            - { name: OPS_URL, value: http://assistant-ops:8080/mcp }
+          envFrom:
+            - secretRef: { name: assistant-core-secret }
+          ports: [{ containerPort: 3000 }]
+          readinessProbe: { httpGet: { path: /healthz, port: 3000 }, initialDelaySeconds: 10, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /healthz, port: 3000 }, initialDelaySeconds: 30, periodSeconds: 20 }
+          volumeMounts:
+            - name: vault
+              mountPath: /vault
+              {{- if eq .Values.vault.mode "smb" }}
+              subPath: {{ .Values.vault.subPath }}
+              {{- end }}
+            - { name: data, mountPath: /data }
+          resources: {{- toYaml .Values.resources.core | nindent 12 }}
+      volumes:
+        - name: vault
+          persistentVolumeClaim: { claimName: assistant-vault }
+        - name: data
+          persistentVolumeClaim: { claimName: assistant-core-data }

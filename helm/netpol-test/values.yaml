@@ -14,3 +14,6 @@ mustBlock:
   - http://minio-service.minio:9000/minio/health/live
   - http://actual-service.actual:5006
   - https://argocd-server.argocd:443
+  - http://assistant-core.assistant:3000/healthz
+  - http://assistant-finance.assistant:8080/healthz
+  - http://assistant-ops.assistant:8080/healthz

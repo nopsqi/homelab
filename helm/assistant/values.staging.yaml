@@ -1,0 +1,11 @@
+image:
+  tag: sha-0000000
+vault:
+  mode: localPath
+notifyChatIds: ""
+sealedSecret:
+  ghcrPull: ""
+  core: {}
+  finance: {}
+  ops: {}
+  telegram: {}

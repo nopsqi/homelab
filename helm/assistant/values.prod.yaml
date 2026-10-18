@@ -1,0 +1,13 @@
+image:
+  tag: sha-0000000
+vault:
+  mode: smb
+  smb:
+    source: "//u682776-sub2.your-storagebox.de/u682776-sub2"
+notifyChatIds: ""
+sealedSecret:
+  ghcrPull: ""
+  core: {}
+  finance: {}
+  ops: {}
+  telegram: {}

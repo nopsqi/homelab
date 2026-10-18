@@ -2,8 +2,6 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: naila
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
   namespace: argocd
 spec:
   project: default
@@ -18,9 +16,6 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: naila
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
+  # Detached: no finalizer, no auto-sync. Workloads stay scaled to 0 as the rollback for the
+  # lakon rename; the file is deleted in the rename plan Task 7 and the namespace by hand later.
+  syncPolicy: {}

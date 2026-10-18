@@ -4,7 +4,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: naila-gateway-{{ .name }}-pvc
+  name: lakon-gateway-{{ .name }}-pvc
   # This volume IS the paired session. Pruning it does not cost a restart, it costs scanning
   # a fresh QR from the phone — so it outlives the app that claims it.
   annotations:

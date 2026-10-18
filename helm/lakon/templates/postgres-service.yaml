@@ -1,12 +1,12 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: naila-postgres
+  name: lakon-postgres
   labels:
-    app: naila-postgres
+    app: lakon-postgres
 spec:
   selector:
-    app: naila-postgres
+    app: lakon-postgres
   ports:
   - protocol: TCP
     port: {{ .Values.postgres.service.port }}

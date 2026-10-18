@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: naila-pvc
+  name: lakon-pvc
   annotations:
     argocd.argoproj.io/sync-options: Delete=false
 spec:

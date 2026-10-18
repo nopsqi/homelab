@@ -4,9 +4,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: naila-gateway-{{ .name }}
+  name: lakon-gateway-{{ .name }}
   labels:
-    app: naila-gateway
+    app: lakon-gateway
     gateway: {{ .name }}
 spec:
   replicas: 1
@@ -16,29 +16,29 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app: naila-gateway
+      app: lakon-gateway
       gateway: {{ .name }}
   template:
     metadata:
       labels:
-        app: naila-gateway
+        app: lakon-gateway
         gateway: {{ .name }}
     spec:
       imagePullSecrets:
       - name: ghcr-pull
       containers:
-      - name: naila-gateway
+      - name: lakon-gateway
         image: {{ .repository | default $root.Values.gateway.image.repository }}:{{ $root.Values.gateway.image.tag }}
         env:
         - name: CHANNEL_ID
           value: {{ .channelId | quote }}
-        - name: NAILA_URL
-          value: "http://naila-service:{{ $root.Values.service.port }}"
-        # GATEWAY_SECRET rides in naila-secret, the same secret the web pod reads — one seal,
+        - name: LAKON_URL
+          value: "http://lakon-service:{{ $root.Values.service.port }}"
+        # GATEWAY_SECRET rides in lakon-secret, the same secret the web pod reads — one seal,
         # both sides of the same comparison.
         envFrom:
         - secretRef:
-            name: naila-secret
+            name: lakon-secret
         volumeMounts:
         - name: wa-auth
           mountPath: /app/.wa-auth
@@ -49,5 +49,5 @@ spec:
       volumes:
       - name: wa-auth
         persistentVolumeClaim:
-          claimName: naila-gateway-{{ .name }}-pvc
+          claimName: lakon-gateway-{{ .name }}-pvc
 {{- end }}

@@ -7,7 +7,8 @@
 set -euo pipefail
 env=${1:?staging|prod}; f=${2:?env file}
 case $env in staging) export KUBECONFIG=~/.kube/staging-config;; prod) export KUBECONFIG=~/.kube/config;; *) echo "env must be staging|prod"; exit 1;; esac
-set -a; . "$f"; set +a
+# Read KEY=VALUE literally (no sourcing: passwords may contain $, `, quotes).
+while IFS= read -r line || [ -n "$line" ]; do case $line in ''|\#*) continue;; esac; export "${line%%=*}=${line#*=}"; done < "$f"
 : "${GATEWAY_SECRET:=$(openssl rand -hex 32)}"; : "${INTERNAL_SECRET:=$(openssl rand -hex 32)}"
 seal() { # seal <secret-name> KEY=VAL...  → prints "    KEY: blob" lines
   local name=$1; shift; local args=(); for kv in "$@"; do args+=("--from-literal=$kv"); done

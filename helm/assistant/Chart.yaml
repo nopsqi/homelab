@@ -2,4 +2,4 @@ name: assistant
 description: Naila — personal secretary (core) with finance and ops workers and a Telegram gateway
 version: 0.1.0
 apiVersion: v2
-appVersion: sha-0000000
+appVersion: sha-dbf2d35

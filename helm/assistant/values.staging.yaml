@@ -1,0 +1,15 @@
+image:
+  tag: sha-97f7dab
+vault:
+  mode: localPath
+notifyChatIds: ""
+telegram:
+  enabled: false
+apiServer:
+  cidr: 192.168.56.10/32
+sealedSecret:
+  ghcrPull: ""
+  core: {}
+  finance: {}
+  ops: {}
+  telegram: {}

@@ -1,0 +1,55 @@
+{{- if eq .Values.vault.mode "smb" }}
+# Static PV on the same Storage Box share syncthing uses; a PV binds one PVC, so this is a second PV
+# (distinct volumeHandle) over the same source. Nothing is provisioned or deleted by Kubernetes.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: assistant-vault
+spec:
+  capacity: { storage: 1Ti }
+  accessModes: [ReadWriteMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions: {{- toYaml .Values.vault.smb.mountOptions | nindent 4 }}
+  csi:
+    driver: smb.csi.k8s.io
+    volumeHandle: assistant-vault
+    volumeAttributes:
+      source: {{ required "vault.smb.source is required in smb mode" .Values.vault.smb.source | quote }}
+    nodeStageSecretRef:
+      name: {{ .Values.vault.smb.secretName }}
+      namespace: {{ .Values.vault.smb.secretNamespace }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: assistant-vault
+  annotations: { argocd.argoproj.io/sync-options: Delete=false }
+spec:
+  storageClassName: ""
+  volumeName: assistant-vault
+  accessModes: [ReadWriteMany]
+  resources: { requests: { storage: 1Ti } }
+{{- else }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: assistant-vault
+  annotations: { argocd.argoproj.io/sync-options: Delete=false }
+spec:
+  storageClassName: local-path
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: {{ .Values.vault.size }} } }
+{{- end }}
+{{- range tuple "assistant-core-data" "assistant-finance-data" }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ . }}
+  annotations: { argocd.argoproj.io/sync-options: Delete=false }
+spec:
+  storageClassName: local-path
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: {{ $.Values.data.size }} } }
+{{- end }}

@@ -1,5 +1,5 @@
 image:
-  tag: sha-97f7dab
+  tag: sha-fd368a3
 vault:
   mode: smb
   smb:

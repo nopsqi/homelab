@@ -1,5 +1,5 @@
 image:
-  tag: sha-1c7efa5
+  tag: sha-9bf2ef5
 vault:
   mode: localPath
 notifyChatIds: ""

@@ -3,7 +3,9 @@ image:
   # tag set in values.<env>.yaml, bumped by CI alongside appVersion
 
 models:
-  core: anthropic/claude-haiku-5.5
+  # By cost of being wrong, not rank (spec § Decisions): the secretary touches every message, so Sonnet;
+  # finance is narrow tool use behind the confirm gate, so Haiku; ops reasons over logs, so Sonnet.
+  core: anthropic/claude-sonnet-5.5
   finance: anthropic/claude-haiku-5.5
   ops: anthropic/claude-sonnet-5.5
   review: anthropic/claude-sonnet-5.5

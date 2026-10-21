@@ -15,6 +15,11 @@ spec:
       # The only pod with a token: read-only ClusterRole assistant-reader (templates/rbac.yaml).
       serviceAccountName: assistant-ops
       automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: ops
           {{- include "assistant.container" (dict "root" . "role" "workers/ops") | nindent 10 }}

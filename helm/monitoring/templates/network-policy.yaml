@@ -22,6 +22,19 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: alloy
+    # Naila's ops worker reads Prometheus alerts. 9090 is only Prometheus in this namespace; the admin API is
+    # off, so the worst a compromised ops pod could do here is POST /-/reload or /-/quit (lifecycle is on for
+    # the operator's config reloader). Its own code only does GET /api/v1/alerts. Accepted; no proxy.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: assistant
+          podSelector:
+            matchLabels:
+              app: assistant-ops
+      ports:
+        - protocol: TCP
+          port: 9090
   egress:
     - {}
 {{- end }}

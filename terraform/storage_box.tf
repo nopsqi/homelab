@@ -60,3 +60,20 @@ resource "hcloud_storage_box_subaccount" "syncthing" {
     readonly             = false
   }
 }
+
+# Naila (assistant namespace) mounts the Obsidian vault over SMB: same directory as the obsidian WebDAV
+# sub-account the devices sync to, separate password, not reachable externally (only the CX33 can connect).
+resource "hcloud_storage_box_subaccount" "assistant" {
+  storage_box_id = hcloud_storage_box.archive.id
+  name           = "assistant"
+  home_directory = "obsidian/"
+  password       = var.assistant_password
+
+  access_settings = {
+    reachable_externally = false
+    samba_enabled        = true
+    ssh_enabled          = false
+    webdav_enabled       = false
+    readonly             = false
+  }
+}

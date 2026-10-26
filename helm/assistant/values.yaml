@@ -54,3 +54,4 @@ sealedSecret:
   finance: {}              # OPENROUTER_API_KEY INTERNAL_SECRET ACTUAL_URL ACTUAL_PASSWORD ACTUAL_SYNC_ID
   ops: {}                  # OPENROUTER_API_KEY INTERNAL_SECRET
   telegram: {}             # GATEWAY_SECRET TELEGRAM_BOT_TOKEN TELEGRAM_USER_ID
+  smb: {}                  # username password: Storage Box sub-account for the vault mount (vault.mode smb)

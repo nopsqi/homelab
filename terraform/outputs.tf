@@ -14,3 +14,7 @@ output "obsidian_webdav" {
 output "syncthing_smb" {
   value = "//${hcloud_storage_box_subaccount.syncthing.server}/${hcloud_storage_box_subaccount.syncthing.username}"
 }
+
+output "assistant_smb" {
+  value = "//${hcloud_storage_box_subaccount.assistant.server}/${hcloud_storage_box_subaccount.assistant.username}"
+}

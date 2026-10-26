@@ -54,3 +54,18 @@ variable "syncthing_password" {
     error_message = "Hetzner Storage Box policy: needs an upper case letter, a lower case letter, a number and a special character."
   }
 }
+
+variable "assistant_password" {
+  description = "Storage Box sub-account password for Naila's SMB mount of the Obsidian vault"
+  type        = string
+  sensitive   = true
+  validation {
+    condition = alltrue([
+      can(regex("[A-Z]", var.assistant_password)),
+      can(regex("[a-z]", var.assistant_password)),
+      can(regex("[0-9]", var.assistant_password)),
+      can(regex("[^A-Za-z0-9]", var.assistant_password)),
+    ])
+    error_message = "Hetzner Storage Box policy: needs an upper case letter, a lower case letter, a number and a special character."
+  }
+}

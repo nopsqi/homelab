@@ -25,9 +25,6 @@ ingress:
     service: http://astro-service.astro.svc.cluster.local:80
   - hostname: actual.nopsqi.dev
     service: http://actual-service.actual.svc.cluster.local:5006
-  # Alias for the renamed app; dropped once nothing uses the old name (rename plan Task 7).
-  - hostname: naila.nopsqi.dev
-    service: http://lakon-service.lakon.svc.cluster.local:80
   - hostname: lakon.nopsqi.dev
     service: http://lakon-service.lakon.svc.cluster.local:80
   # Web desktop with sudo: cloudflared itself rejects requests without a valid JWT

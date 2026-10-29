@@ -11,6 +11,8 @@ vault:
 notifyChatIds: ""
 telegram:
   enabled: false
+claude:
+  enabled: true
 apiServer:
   cidr: 91.98.86.223/32
 sealedSecret:

@@ -13,6 +13,9 @@ confirmAboveIdr: 500000
 dailyTokenBudget: 300000
 tz: Asia/Jakarta
 channels: telegram
+claude:
+  enabled: false           # spike: Claude Code Remote Control session (your Max login), vault tools only
+
 telegram:
   enabled: true            # false until a bot token is sealed (gateway Deployment + its secret are skipped)
 notifyChatIds: ""   # comma-separated Telegram chat ids for reminders/review; per env

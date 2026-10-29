@@ -1,0 +1,108 @@
+{{- if .Values.claude.enabled }}
+# Spike: Naila as an always-on Claude Code Remote Control server, driven from the Claude app (your Max login,
+# done once with `kubectl attach -it` + /login). Tools: vault-mcp only. Anything not allowed below prompts on
+# your phone; the deny list can never run.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: assistant-claude
+data:
+  CLAUDE.md: |
+{{ .Files.Get "files/CLAUDE.md" | indent 4 }}
+  settings.json: |
+    {
+      "permissions": {
+        "defaultMode": "default",
+        "allow": ["mcp__vault"],
+        "deny": ["Bash", "Write", "Edit", "NotebookEdit", "WebFetch", "WebSearch", "Task", "Agent"]
+      }
+    }
+  start.sh: |
+    set -eu
+    export NPM_CONFIG_PREFIX=$HOME/.npm-global PATH=$HOME/.npm-global/bin:$PATH
+    command -v claude >/dev/null || npm i -g @anthropic-ai/claude-code
+    mkdir -p $HOME/.claude /work
+    cp /config/settings.json $HOME/.claude/settings.json
+    cp /config/CLAUDE.md /work/CLAUDE.md
+    claude mcp remove vault --scope user >/dev/null 2>&1 || true
+    claude mcp add vault --scope user -e VAULT_ROOT=/vault -e TZ="$TZ" -- node /naila/packages/vault-mcp/dist/server.js
+    cd /work
+    # No login yet: start interactive Claude Code so you can `kubectl -n assistant attach -it deploy/assistant-claude`,
+    # /login, then /exit; the pod restarts into Remote Control (attach once more to accept its trust/enable prompts).
+    [ -f $HOME/.claude/.credentials.json ] || exec claude
+    exec claude remote-control --remote-control-session-name-prefix naila --spawn same-dir
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: assistant-claude-home
+  annotations: { argocd.argoproj.io/sync-options: Delete=false }
+spec:
+  storageClassName: local-path
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 2Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: assistant-claude
+  labels: { app: assistant-claude }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }   # one session server, one home volume
+  selector: { matchLabels: { app: assistant-claude } }
+  template:
+    metadata:
+      labels: { app: assistant-claude }
+      annotations: { checksum/config: {{ .Files.Get "files/CLAUDE.md" | sha256sum | trunc 12 }} }
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets: [{ name: ghcr-pull }]   # for the naila image in the initContainer
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
+      initContainers:
+        - name: naila-tools   # vault-mcp from the existing Naila image, no new image to build
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          command: ["sh", "-c", "cp -a /app/. /naila/"]
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: naila, mountPath: /naila }]
+      containers:
+        - name: claude
+          image: node:24-bookworm
+          command: ["bash", "/config/start.sh"]
+          tty: true     # the one-time /login and prompts happen through `kubectl attach -it`
+          stdin: true
+          env:
+            - { name: HOME, value: /home/claude }
+            - { name: TZ, value: {{ .Values.tz | quote }} }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          volumeMounts:
+            - { name: home, mountPath: /home/claude }
+            - { name: config, mountPath: /config, readOnly: true }
+            - { name: naila, mountPath: /naila, readOnly: true }
+            - name: vault
+              mountPath: /vault
+              {{- if eq .Values.vault.mode "smb" }}
+              subPath: {{ .Values.vault.subPath }}
+              {{- end }}
+          resources: { requests: { cpu: 50m, memory: 256Mi }, limits: { memory: 1Gi } }
+      volumes:
+        - { name: home, persistentVolumeClaim: { claimName: assistant-claude-home } }
+        - { name: config, configMap: { name: assistant-claude } }
+        - { name: naila, emptyDir: {} }
+        - { name: vault, persistentVolumeClaim: { claimName: assistant-vault } }
+{{- if .Values.networkPolicy.enabled }}
+---
+# Out: DNS and the internet on 443 (Anthropic for model + Remote Control, npm for the one-time install). In: nothing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: assistant-claude }
+spec:
+  podSelector: { matchLabels: { app: assistant-claude } }
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } } }]
+      ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
+    - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16] } }]
+      ports: [{ protocol: TCP, port: 443 }]
+{{- end }}
+{{- end }}

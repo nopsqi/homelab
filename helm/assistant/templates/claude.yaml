@@ -13,20 +13,20 @@ data:
     {
       "permissions": {
         "defaultMode": "default",
-        "allow": ["mcp__vault"],
-        "deny": ["Bash", "Write", "Edit", "NotebookEdit", "WebFetch", "WebSearch", "Task", "Agent"]
+        "allow": ["mcp__vault__tree", "mcp__vault__grep", "mcp__vault__read", "mcp__vault__open_tasks", "mcp__vault__workers_list"],
+        "deny": ["Bash", "Write", "Edit", "NotebookEdit", "WebFetch", "WebSearch", "Task", "Agent", "Read(~/.claude/**)"]
       }
     }
   start.sh: |
     set -eu
     export NPM_CONFIG_PREFIX=$HOME/.npm-global PATH=$HOME/.npm-global/bin:$PATH
-    command -v claude >/dev/null || npm i -g @anthropic-ai/claude-code
-    mkdir -p $HOME/.claude /work
+    [ "$(claude --version 2>/dev/null | cut -d' ' -f1)" = "$CLAUDE_VERSION" ] || npm i -g @anthropic-ai/claude-code@$CLAUDE_VERSION
+    mkdir -p $HOME/.claude $HOME/work
     cp /config/settings.json $HOME/.claude/settings.json
-    cp /config/CLAUDE.md /work/CLAUDE.md
+    cp /config/CLAUDE.md $HOME/work/CLAUDE.md
     claude mcp remove vault --scope user >/dev/null 2>&1 || true
     claude mcp add vault --scope user -e VAULT_ROOT=/vault -e TZ="$TZ" -- node /naila/packages/vault-mcp/dist/server.js
-    cd /work
+    cd $HOME/work
     # No login yet: start interactive Claude Code so you can `kubectl -n assistant attach -it deploy/assistant-claude`,
     # /login, then /exit; the pod restarts into Remote Control (attach once more to accept its trust/enable prompts).
     [ -f $HOME/.claude/.credentials.json ] || exec claude
@@ -67,12 +67,14 @@ spec:
           volumeMounts: [{ name: naila, mountPath: /naila }]
       containers:
         - name: claude
-          image: node:24-bookworm
+          image: node:24-bookworm@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413
           command: ["bash", "/config/start.sh"]
           tty: true     # the one-time /login and prompts happen through `kubectl attach -it`
           stdin: true
           env:
             - { name: HOME, value: /home/claude }
+            - { name: CLAUDE_VERSION, value: {{ .Values.claude.version | quote }} }   # pinned; bump deliberately
+            - { name: DISABLE_AUTOUPDATER, value: "1" }
             - { name: TZ, value: {{ .Values.tz | quote }} }
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           volumeMounts:

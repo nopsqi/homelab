@@ -12,6 +12,7 @@ claude:
   enabled: true
 finance:
   enabled: true
+  testBudget: true         # sync id d0fc74ab…, a copy of the household budget
 ops:
   enabled: true
 apiServer:

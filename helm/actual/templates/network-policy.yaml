@@ -13,17 +13,6 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: cloudflared
-    # Naila's finance worker (the only pod outside cloudflared that may talk to Actual).
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: assistant
-          podSelector:
-            matchLabels:
-              app: assistant-finance
-      ports:
-        - protocol: TCP
-          port: 5006
   egress:
     # DNS
     - to:

@@ -2,28 +2,10 @@ image:
   repository: ghcr.io/nopsqi/naila
   # tag set in values.<env>.yaml, bumped by CI alongside appVersion
 
-models:
-  # By cost of being wrong, not rank (spec § Decisions): the secretary touches every message, so Sonnet;
-  # finance is narrow tool use behind the confirm gate, so Haiku; ops reasons over logs, so Sonnet.
-  core: anthropic/claude-sonnet-5.5
-  finance: anthropic/claude-haiku-5.5
-  ops: anthropic/claude-sonnet-5.5
-  review: anthropic/claude-sonnet-5.5
-confirmAboveIdr: 500000
-dailyTokenBudget: 300000
 tz: Asia/Jakarta
-channels: telegram
 claude:
   enabled: false           # spike: Claude Code Remote Control session (your Max login), vault tools only
   version: 2.1.312         # @anthropic-ai/claude-code, pinned (auto-updater off)
-
-telegram:
-  enabled: true            # false until a bot token is sealed (gateway Deployment + its secret are skipped)
-notifyChatIds: ""   # comma-separated Telegram chat ids for reminders/review; per env
-prometheusUrl: http://monitoring-kube-prometheus-prometheus.monitoring:9090
-# The node's IP: the ops worker's only non-internet egress besides Prometheus (API server after kube-router's DNAT).
-apiServer:
-  cidr: 0.0.0.0/0   # overridden per env
 
 # The Obsidian vault. prod: the Storage Box SMB share the syncthing pod already syncs (subPath vault/).
 # staging: a local-path PVC seeded by hand (no syncthing, no SMB CSI driver there).
@@ -38,24 +20,10 @@ vault:
     mountOptions: [seal, vers=3.1.1, uid=1000, gid=1000, file_mode=0660, dir_mode=0770, iocharset=utf8,
   mfsymlinks]
 
-data:
-  size: 100Mi              # SQLite (core) and Actual cache (finance), local-path each
-
 networkPolicy:
   enabled: true
 
-resources:
-  core: { requests: { cpu: 10m, memory: 64Mi }, limits: { memory: 256Mi } }
-  finance: { requests: { cpu: 10m, memory: 64Mi }, limits: { memory: 256Mi } }
-  ops: { requests: { cpu: 10m, memory: 64Mi }, limits: { memory: 256Mi } }
-  telegram: { requests: { cpu: 10m, memory: 32Mi }, limits: { memory: 128Mi } }
-
-# Filled by scripts/reseal.sh per env. One secret per pod: the pod that reads notes holds no Actual
-# password and no cluster token; only the ops pod has a ServiceAccount.
+# Filled by scripts/reseal.sh per env.
 sealedSecret:
-  ghcrPull: ""             # dockerconfigjson blob (image is private)
-  core: {}                 # OPENROUTER_API_KEY GATEWAY_SECRET INTERNAL_SECRET
-  finance: {}              # OPENROUTER_API_KEY INTERNAL_SECRET ACTUAL_URL ACTUAL_PASSWORD ACTUAL_SYNC_ID
-  ops: {}                  # OPENROUTER_API_KEY INTERNAL_SECRET
-  telegram: {}             # GATEWAY_SECRET TELEGRAM_BOT_TOKEN TELEGRAM_USER_ID
+  ghcrPull: ""             # dockerconfigjson blob: the claude pod pulls the naila image (vault-mcp)
   smb: {}                  # username password: Storage Box sub-account for the vault mount (vault.mode smb)

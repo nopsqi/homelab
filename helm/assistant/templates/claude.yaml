@@ -92,6 +92,26 @@ spec:
               subPath: {{ .Values.vault.subPath }}
               {{- end }}
           resources: { requests: { cpu: 50m, memory: 256Mi }, limits: { memory: 1Gi } }
+        {{- if .Values.login.enabled }}
+        # Phone page to re-login (naila.nopsqi.dev, behind Cloudflare Access) and login metrics. Same image as `claude`
+        # because it runs the same glibc Claude Code binary from the shared home; restarts Naila through the shared PID namespace.
+        - name: login
+          image: node:24-bookworm@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413
+          command: ["node", "/naila/packages/login-web/dist/server.js"]
+          env:
+            - { name: HOME, value: /home/claude }
+            - { name: ACCESS_TEAM, value: {{ .Values.login.accessTeam | quote }} }
+            - { name: ACCESS_AUD, value: {{ .Values.login.accessAud | quote }} }
+            - name: ALLOWED_EMAIL
+              valueFrom: { secretKeyRef: { name: assistant-claude-secret, key: ALLOWED_EMAIL } }
+          ports: [{ name: http, containerPort: 8080 }, { name: metrics, containerPort: 8081 }]
+          readinessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 30 }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          volumeMounts:
+            - { name: home, mountPath: /home/claude }
+            - { name: naila, mountPath: /naila, readOnly: true }
+          resources: { requests: { cpu: 10m, memory: 64Mi }, limits: { memory: 512Mi } }   # spikes while it runs the Claude CLI
+        {{- end }}
       volumes:
         - { name: home, persistentVolumeClaim: { claimName: assistant-claude-home } }
         - { name: config, configMap: { name: assistant-claude } }
@@ -99,13 +119,21 @@ spec:
         - { name: vault, persistentVolumeClaim: { claimName: assistant-vault } }
 {{- if .Values.networkPolicy.enabled }}
 ---
-# Out: DNS and the internet on 443 (Anthropic for model + Remote Control, npm for the one-time install). In: nothing.
+# Out: DNS and the internet on 443 (Anthropic for model + Remote Control, npm for the one-time install, Cloudflare Access keys).
+# In: only the login page from cloudflared and its metrics from monitoring.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: { name: assistant-claude }
 spec:
   podSelector: { matchLabels: { app: assistant-claude } }
   policyTypes: [Ingress, Egress]
+  {{- if .Values.login.enabled }}
+  ingress:
+    - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: cloudflared } } }]
+      ports: [{ protocol: TCP, port: 8080 }]
+    - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: monitoring } } }]
+      ports: [{ protocol: TCP, port: 8081 }]
+  {{- end }}
   egress:
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } } }]
       ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]

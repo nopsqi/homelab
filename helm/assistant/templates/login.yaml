@@ -1,0 +1,55 @@
+{{- if and .Values.claude.enabled .Values.login.enabled }}
+# Re-login page and login metrics, served by the `login` sidecar of assistant-claude.
+apiVersion: v1
+kind: Service
+metadata: { name: assistant-login, labels: { app: assistant-login } }
+spec:
+  selector: { app: assistant-claude }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+    - { name: metrics, port: 8081, targetPort: metrics }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata: { name: assistant-login, labels: { release: monitoring } }
+spec:
+  selector: { matchLabels: { app: assistant-login } }
+  endpoints: [{ port: metrics, interval: 60s }]
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata: { name: assistant-login, labels: { release: monitoring } }
+spec:
+  groups:
+    - name: naila-login
+      rules:
+        - alert: NailaLoggedOut
+          expr: naila_claude_logged_in == 0
+          for: 10m
+          labels: { severity: critical }
+          annotations:
+            summary: "Naila's Claude Code is logged out"
+            description: "Naila and finance can't work. Log in again at https://naila.nopsqi.dev"
+        # Claude Code renews the access token with its refresh token; an expiry well in the past means renewal is failing.
+        - alert: NailaTokenNotRenewed
+          expr: time() - naila_claude_token_expiry_timestamp_seconds > 1800
+          for: 10m
+          labels: { severity: critical }
+          annotations:
+            summary: "Naila's Claude token expired {{ "{{" }} $value | humanizeDuration {{ "}}" }} ago and was not renewed"
+            description: "The automatic renewal is failing. Log in again at https://naila.nopsqi.dev"
+        - alert: NailaRemoteControlDown
+          expr: naila_remote_control_up == 0
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "Naila's {{ "{{" }} $labels.session {{ "}}" }} Remote Control session is not running"
+            description: "Check https://naila.nopsqi.dev and the assistant-claude pod."
+        - alert: NailaLoginMetricsMissing
+          expr: absent(naila_claude_logged_in)
+          for: 15m
+          labels: { severity: warning }
+          annotations:
+            summary: "No login metrics from Naila's login sidecar"
+            description: "The assistant-claude pod's login container isn't being scraped, so a dead login would go unnoticed."
+{{- end }}

@@ -24,5 +24,6 @@ cd $HOME/work
 [ -f $HOME/.claude/.credentials.json ] || exec claude
 # The finance server runs in the background (restarted if it exits), under a pty because Remote Control draws a
 # screen; Naila's server stays the container's main process, so `kubectl attach` still reaches her.
-(cd $HOME/finance; while :; do sleep infinity | script -qfc "claude remote-control --name finance --spawn same-dir" /dev/null >/dev/null 2>&1; sleep 10; done) &
+# stdin is /dev/null, not a pipe: bash waits for every command of a pipeline, so `sleep infinity | script` never looped.
+(cd $HOME/finance; while :; do script -qfc "claude remote-control --name finance --spawn same-dir" /dev/null </dev/null >/dev/null 2>&1; sleep 10; done) &
 exec claude remote-control --name naila --spawn same-dir

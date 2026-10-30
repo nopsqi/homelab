@@ -15,7 +15,7 @@ data:
         "defaultMode": "default",
         "allow": ["mcp__vault__tree", "mcp__vault__grep", "mcp__vault__read", "mcp__vault__open_tasks", "mcp__vault__workers_list",
                   "mcp__finance__accounts", "mcp__finance__categories", "mcp__finance__recent", "mcp__finance__spending_by_category"],
-        "deny": ["Bash", "Write", "Edit", "NotebookEdit", "WebFetch", "WebSearch", "Read(~/.claude/**)", "Read(/proc/**)", "Read(/config/**)", "mcp__claude_ai_Gmail"]
+        "deny": ["Bash", "Write", "Edit", "NotebookEdit", "WebFetch", "WebSearch", "Read(~/.claude/**)", "Read(//home/claude/.claude/**)", "Read(//proc/**)", "Read(//config/**)", "mcp__claude_ai_Gmail"]
       }
     }
   finance-agent.md: |
@@ -84,9 +84,9 @@ spec:
             - { name: CLAUDE_VERSION, value: {{ .Values.claude.version | quote }} }   # pinned; bump deliberately
             - { name: DISABLE_AUTOUPDATER, value: "1" }
             - { name: CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH, value: "1" }   # workers never spawn workers
+            - { name: TZ, value: {{ .Values.tz | quote }} }
           envFrom:
             - secretRef: { name: assistant-claude-secret }   # MCP_FINANCE_TOKEN
-            - { name: TZ, value: {{ .Values.tz | quote }} }
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           volumeMounts:
             - { name: home, mountPath: /home/claude }

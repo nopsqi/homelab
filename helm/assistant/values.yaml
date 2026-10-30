@@ -15,6 +15,7 @@ tz: Asia/Jakarta
 channels: telegram
 claude:
   enabled: false           # spike: Claude Code Remote Control session (your Max login), vault tools only
+  version: 2.1.312         # @anthropic-ai/claude-code, pinned (auto-updater off)
 
 telegram:
   enabled: true            # false until a bot token is sealed (gateway Deployment + its secret are skipped)

@@ -1,0 +1,97 @@
+{{- if .Values.ops.enabled }}
+# On-call tool server: cluster-mcp over HTTP behind a bearer, with the only ServiceAccount token in this
+# namespace (read-only ClusterRole below). No model of its own: the `ops` subagent is the brain.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: assistant-ops
+---
+# Read-only, exactly what cluster-mcp reads. No secrets, no configmaps, no exec, no write verb.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: assistant-reader
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, events, nodes, persistentvolumeclaims]
+    verbs: [get, list]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [get, list]
+  - apiGroups: [argoproj.io]
+    resources: [applications]
+    verbs: [get, list]
+  - apiGroups: [metrics.k8s.io]
+    resources: [pods, nodes]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: assistant-reader
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: assistant-reader }
+subjects:
+  - { kind: ServiceAccount, name: assistant-ops, namespace: {{ .Release.Namespace }} }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: assistant-ops
+  labels: { app: assistant-ops }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: assistant-ops } }
+  template:
+    metadata:
+      labels: { app: assistant-ops }
+    spec:
+      serviceAccountName: assistant-ops
+      automountServiceAccountToken: true
+      imagePullSecrets: [{ name: ghcr-pull }]
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: ops
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          command: ["node", "packages/cluster-mcp/dist/server.js"]
+          env:
+            - { name: MCP_HTTP_PORT, value: "8080" }
+            - { name: PROMETHEUS_URL, value: http://monitoring-kube-prometheus-prometheus.monitoring:9090 }
+            - { name: TZ, value: {{ .Values.tz | quote }} }
+          envFrom:
+            - secretRef: { name: assistant-ops-secret }   # MCP_SECRET
+          ports: [{ containerPort: 8080 }]
+          readinessProbe: { httpGet: { path: /healthz, port: 8080 }, initialDelaySeconds: 5, periodSeconds: 10 }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          resources: { requests: { cpu: 10m, memory: 64Mi }, limits: { memory: 256Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: assistant-ops
+spec:
+  selector: { app: assistant-ops }
+  ports: [{ port: 8080, targetPort: 8080, protocol: TCP }]
+{{- if .Values.networkPolicy.enabled }}
+---
+# In: only the Claude pod. Out: DNS, the API server (kube-router sees the post-DNAT node:6443) and Prometheus.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: assistant-ops }
+spec:
+  podSelector: { matchLabels: { app: assistant-ops } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{ podSelector: { matchLabels: { app: assistant-claude } } }]
+      ports: [{ protocol: TCP, port: 8080 }]
+  egress:
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } } }]
+      ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
+    - to: [{ ipBlock: { cidr: {{ .Values.apiServer.cidr }} } }]
+      ports: [{ protocol: TCP, port: 6443 }]
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: monitoring } } }]
+      ports: [{ protocol: TCP, port: 9090 }]
+{{- end }}
+{{- end }}

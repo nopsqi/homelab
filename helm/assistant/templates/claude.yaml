@@ -14,12 +14,15 @@ data:
       "permissions": {
         "defaultMode": "default",
         "allow": ["mcp__vault__tree", "mcp__vault__grep", "mcp__vault__read", "mcp__vault__open_tasks", "mcp__vault__workers_list",
-                  "mcp__finance__accounts", "mcp__finance__categories", "mcp__finance__recent", "mcp__finance__spending_by_category"],
+                  "mcp__finance__accounts", "mcp__finance__categories", "mcp__finance__recent", "mcp__finance__spending_by_category",
+                  "mcp__ops"],
         "deny": ["Bash", "Write", "Edit", "NotebookEdit", "WebFetch", "WebSearch", "Read(~/.claude/**)", "Read(//home/claude/.claude/**)", "Read(//proc/**)", "Read(//config/**)", "mcp__claude_ai_Gmail"]
       }
     }
   finance-agent.md: |
 {{ .Files.Get "files/finance-agent.md" | indent 4 }}
+  ops-agent.md: |
+{{ .Files.Get "files/ops-agent.md" | indent 4 }}
   start.sh: |
     set -eu
     export NPM_CONFIG_PREFIX=$HOME/.npm-global PATH=$HOME/.npm-global/bin:$PATH
@@ -31,7 +34,8 @@ data:
     # money tools. The file lives under ~/.claude, which the session's Read deny covers (it holds the bearer).
     mkdir -p $HOME/.claude/agents
     sed "s/__MCP_FINANCE_TOKEN__/$MCP_FINANCE_TOKEN/" /config/finance-agent.md > $HOME/.claude/agents/finance.md
-    unset MCP_FINANCE_TOKEN   # only the agent file (under the Read-denied ~/.claude) keeps it, not claude's environment
+    sed "s/__MCP_OPS_TOKEN__/$MCP_OPS_TOKEN/" /config/ops-agent.md > $HOME/.claude/agents/ops.md
+    unset MCP_FINANCE_TOKEN MCP_OPS_TOKEN   # only the agent files (under the Read-denied ~/.claude) keep them
     claude mcp remove vault --scope user >/dev/null 2>&1 || true
     claude mcp add vault --scope user -e VAULT_ROOT=/vault -e TZ="$TZ" -- node /naila/packages/vault-mcp/dist/server.js
     cd $HOME/work
@@ -62,7 +66,7 @@ spec:
   template:
     metadata:
       labels: { app: assistant-claude }
-      annotations: { checksum/config: {{ printf "%s%s" (.Files.Get "files/CLAUDE.md") (.Files.Get "files/finance-agent.md") | sha256sum | trunc 12 }} }
+      annotations: { checksum/config: {{ printf "%s%s" (.Files.Get "files/CLAUDE.md") (print (.Files.Get "files/finance-agent.md") (.Files.Get "files/ops-agent.md")) | sha256sum | trunc 12 }} }
     spec:
       automountServiceAccountToken: false
       imagePullSecrets: [{ name: ghcr-pull }]   # for the naila image in the initContainer
@@ -86,7 +90,7 @@ spec:
             - { name: CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH, value: "1" }   # workers never spawn workers
             - { name: TZ, value: {{ .Values.tz | quote }} }
           envFrom:
-            - secretRef: { name: assistant-claude-secret }   # MCP_FINANCE_TOKEN
+            - secretRef: { name: assistant-claude-secret }   # MCP_FINANCE_TOKEN MCP_OPS_TOKEN
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           volumeMounts:
             - { name: home, mountPath: /home/claude }
@@ -117,7 +121,7 @@ spec:
       ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
     - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16] } }]
       ports: [{ protocol: TCP, port: 443 }]
-    - to: [{ podSelector: { matchLabels: { app: assistant-finance } } }]
+    - to: [{ podSelector: { matchLabels: { app: assistant-finance } } }, { podSelector: { matchLabels: { app: assistant-ops } } }]
       ports: [{ protocol: TCP, port: 8080 }]
 {{- end }}
 {{- end }}

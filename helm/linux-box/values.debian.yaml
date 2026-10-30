@@ -1,4 +1,4 @@
-# Debian XFCE box — identity. Further distros reuse this chart with their own
+# Debian XFCE box — identity (replaced ubuntu-box). Further distros reuse this chart with their own
 # values.<distro>.yaml, values.<distro>.prod.yaml and Application.
 #
 # Served at https://debian-box.nopsqi.dev (one label deep: Universal SSL

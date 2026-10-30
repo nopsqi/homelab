@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: linux-box-debian
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:nopsqi/homelab.git
+    targetRevision: prod
+    path: helm/linux-box
+    helm:
+      valueFiles:
+        - values.yaml
+        - values.debian.yaml
+        - values.debian.prod.yaml
+        - values.warp.prod.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: linux-box-debian
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

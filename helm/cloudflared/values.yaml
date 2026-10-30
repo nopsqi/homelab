@@ -46,7 +46,7 @@ ingress:
         required: true
         teamName: nopsqi
         audTag:
-          - bc70a697385242a690776edb9ad90496cae083ef20d199dfc91c69590b7acd27
+          - 66344fd49f2e24642e7ed4cb68a0515fe1d92b610e8acaaef328f925c1603bdc
   - hostname: minio.nopsqi.dev
     service: http://minio-service.minio.svc.cluster.local:9000
   - hostname: minio-console.nopsqi.dev

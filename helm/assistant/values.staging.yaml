@@ -1,5 +1,5 @@
 image:
-  tag: sha-188f1b8
+  tag: sha-9a44f39
 vault:
   mode: localPath
 sealedSecret:

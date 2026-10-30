@@ -37,6 +37,15 @@ ingress:
         teamName: nopsqi
         audTag:
           - bc70a697385242a690776edb9ad90496cae083ef20d199dfc91c69590b7acd27
+  # Same Access app as ubuntu-box (both hostnames on it), hence the same AUD tag.
+  - hostname: debian-box.nopsqi.dev
+    service: http://linux-box-service.linux-box-debian.svc.cluster.local:3000
+    originRequest:
+      access:
+        required: true
+        teamName: nopsqi
+        audTag:
+          - bc70a697385242a690776edb9ad90496cae083ef20d199dfc91c69590b7acd27
   - hostname: minio.nopsqi.dev
     service: http://minio-service.minio.svc.cluster.local:9000
   - hostname: minio-console.nopsqi.dev

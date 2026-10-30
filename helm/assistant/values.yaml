@@ -13,7 +13,7 @@ finance:
 ops:
   enabled: false           # on-call tool server (cluster-mcp over HTTP, read-only ServiceAccount); the `ops` subagent calls it
   # Namespaces whose pod logs ops may read. Never: assistant (Naila's terminal), sealed-secrets, argocd, kube-system.
-  logNamespaces: [actual, alloy, astro, cloudflared, lakon, linux-box-ubuntu, loki, minio, monitoring, netpol-test, syncthing]
+  logNamespaces: [actual, alloy, astro, cloudflared, lakon, linux-box-debian, linux-box-ubuntu, loki, minio, monitoring, netpol-test, syncthing]
 # The node's IP: the ops pod reaches the API server there (kube-router evaluates egress after the ClusterIP DNAT).
 apiServer:
   cidr: 0.0.0.0/0   # overridden per env

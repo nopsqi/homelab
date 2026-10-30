@@ -26,14 +26,14 @@ env:
 # against the memory limit below.
 shmSize: "512Mi"
 
-# Idle desktop is ~260MB (measured). 1Gi leaves room for scripts and a few
-# Chromium tabs; heavy browsing will OOM-kill it.
-# ponytail: raise to 1.5Gi only after checking `kubectl top node` (~2.4Gi headroom).
+# Idle desktop is ~170-190MB anon+shmem (measured 2026-10-31). At 1Gi, Chromium
+# OOM-killed the whole session (2026-10-12); 1.5Gi leaves ~1.2Gi for the browser
+# out of the node's ~1.9Gi free. Low request: under node pressure the box goes first.
 # ephemeral-storage caps what lives outside $HOME (apt installs, /tmp, logs)
 # on the 40GB node disk; past the limit the kubelet evicts the pod.
 resources:
   limits:
-    memory: "1Gi"
+    memory: "1.5Gi"
     ephemeral-storage: "10Gi"
   requests:
     cpu: "0.1"
@@ -45,10 +45,11 @@ resources:
 warp:
   image:
     repository: ghcr.io/nopsqi/linux-box-warp
-  # ponytail: guessed; tune from `kubectl top pod --containers`.
+  # warp-svc idles ~100MB but crept to 256Mi and got OOM-killed every ~1.6 days
+  # (2026.7 client); each kill is a few seconds offline (fail-closed, no leak).
   resources:
     limits:
-      memory: "256Mi"
+      memory: "384Mi"
     requests:
       cpu: "10m"
       memory: "64Mi"

@@ -9,6 +9,7 @@ claude:
 
 finance:
   enabled: false           # accounting tool server (actual-mcp over HTTP); the claude session's `finance` subagent calls it
+  testBudget: false        # true: tell the worker its budget is a test copy (test writes allowed). Set false before pointing at the real budget.
 ops:
   enabled: false           # on-call tool server (cluster-mcp over HTTP, read-only ServiceAccount); the `ops` subagent calls it
   # Namespaces whose pod logs ops may read. Never: assistant (Naila's terminal), sealed-secrets, argocd, kube-system.

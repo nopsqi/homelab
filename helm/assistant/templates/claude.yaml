@@ -22,6 +22,10 @@ data:
     }
   finance-agent.md: |
 {{ .Files.Get "files/finance-agent.md" | indent 4 }}
+{{- if .Values.finance.testBudget }}
+    
+    The connected budget is a TEST COPY of the user's household budget, made for this. Test changes (creating, editing, deleting, budgeting) are fine here; still clean up what a test creates.
+{{- end }}
   ops-agent.md: |
 {{ .Files.Get "files/ops-agent.md" | indent 4 }}
   naila-test.sh: |
@@ -80,7 +84,7 @@ spec:
   template:
     metadata:
       labels: { app: assistant-claude }
-      annotations: { checksum/config: {{ printf "%s%s" (.Files.Get "files/CLAUDE.md") (print (.Files.Get "files/finance-agent.md") (.Files.Get "files/ops-agent.md")) | sha256sum | trunc 12 }} }
+      annotations: { checksum/config: {{ printf "%s%s" (.Files.Get "files/CLAUDE.md") (print (.Files.Get "files/finance-agent.md") (.Files.Get "files/ops-agent.md") .Values.finance.testBudget) | sha256sum | trunc 12 }} }
     spec:
       automountServiceAccountToken: false
       imagePullSecrets: [{ name: ghcr-pull }]   # for the naila image in the initContainer

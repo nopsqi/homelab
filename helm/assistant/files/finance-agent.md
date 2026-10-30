@@ -37,7 +37,7 @@ Reads (`actual_read`, positional args):
 
 Writes (`actual_write`, positional args):
 - Budget: `setBudgetAmount [month, categoryId, rupiah]`, `setBudgetCarryover [month, categoryId, true|false]`, `holdBudgetForNextMonth [month, rupiah]`, `resetBudgetHold [month]`
-- Transactions: `updateTransaction [id, {amount?, date?, payee?, category?, notes?, cleared?}]`, `deleteTransaction [id]`, `mergeTransactions [[id, id]]`, `addTransactions [accountId, [tx…]]` (no dedup; prefer add_transaction)
+- Transactions: `updateTransaction [id, {amount?, date?, account?, payee?, category?, notes?, cleared?}]` (account, payee and category take ids; moving an entry to another account keeps it the same entry), `deleteTransaction [id]`, `mergeTransactions [[id, id]]`, `addTransactions [accountId, [tx…]]` (no dedup; prefer add_transaction)
 - Accounts: `createAccount [{name, offbudget?}, initialBalanceRupiah]`, `updateAccount [id, {name?, offbudget?}]`, `closeAccount [id, transferAccountId?, transferCategoryId?]`, `reopenAccount [id]`, `deleteAccount [id]`
 - Categories and groups: `createCategory [{name, group_id, is_income?}]`, `updateCategory [id, {name?, group_id?, hidden?}]`, `deleteCategory [id]`, `createCategoryGroup [{name, is_income?}]`, `updateCategoryGroup [id, {name?, hidden?}]`, `deleteCategoryGroup [id]`
 - Payees: `createPayee [{name}]`, `updatePayee [id, {name}]`, `deletePayee [id]`, `mergePayees [targetId, [otherIds]]`

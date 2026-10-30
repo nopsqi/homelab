@@ -7,6 +7,10 @@ claude:
   enabled: false           # spike: Claude Code Remote Control session (your Max login), vault tools only
   version: 2.1.312         # @anthropic-ai/claude-code, pinned (auto-updater off)
 
+login:
+  enabled: false           # re-login page + login metrics (sidecar of assistant-claude), served at naila.nopsqi.dev via cloudflared
+  accessTeam: nopsqi       # Cloudflare Access team; the page verifies the Access JWT itself (signature, issuer, audience, expiry)
+  accessAud: ""            # Access application audience tag (the same app cloudflared enforces for the hostname)
 finance:
   enabled: false           # accounting tool server (actual-mcp over HTTP); the claude session's `finance` subagent calls it
   testBudget: false        # true: tell the worker its budget is a test copy (test writes allowed). Set false before pointing at the real budget.

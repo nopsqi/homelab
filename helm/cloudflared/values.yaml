@@ -38,6 +38,15 @@ ingress:
         teamName: nopsqi
         audTag:
           - bc70a697385242a690776edb9ad90496cae083ef20d199dfc91c69590b7acd27
+  # Naila re-login page: same fail-closed Access enforcement; the page also verifies the JWT itself.
+  - hostname: naila.nopsqi.dev
+    service: http://assistant-login.assistant.svc.cluster.local:8080
+    originRequest:
+      access:
+        required: true
+        teamName: nopsqi
+        audTag:
+          - bc70a697385242a690776edb9ad90496cae083ef20d199dfc91c69590b7acd27
   - hostname: minio.nopsqi.dev
     service: http://minio-service.minio.svc.cluster.local:9000
   - hostname: minio-console.nopsqi.dev

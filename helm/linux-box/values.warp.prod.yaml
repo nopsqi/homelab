@@ -1,4 +1,4 @@
 # Bumped by nopsqi/linux-box CI inside a promotion PR, merged by hand.
 warp:
   image:
-    tag: sha-168cfe2
+    tag: sha-0b58683

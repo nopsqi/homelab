@@ -27,13 +27,14 @@ env:
 shmSize: "512Mi"
 
 # Idle desktop is ~170-190MB anon+shmem (measured 2026-10-31). At 1Gi, Chromium
-# OOM-killed the whole session (2026-10-12); 1.5Gi leaves ~1.2Gi for the browser
-# out of the node's ~1.9Gi free. Low request: under node pressure the box goes first.
+# OOM-killed the whole session (2026-10-12); at 1.5Gi one speedtest.net tab
+# pinned it (1.3GB anon, ~50% full memory stall). 2Gi fits once ubuntu-box's
+# memory is freed. Low request: under node pressure the box goes first.
 # ephemeral-storage caps what lives outside $HOME (apt installs, /tmp, logs)
 # on the 40GB node disk; past the limit the kubelet evicts the pod.
 resources:
   limits:
-    memory: "1.5Gi"
+    memory: "2Gi"
     ephemeral-storage: "10Gi"
   requests:
     cpu: "0.1"

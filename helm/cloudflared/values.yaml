@@ -28,16 +28,8 @@ ingress:
   - hostname: lakon.nopsqi.dev
     service: http://lakon-service.lakon.svc.cluster.local:80
   # Web desktop with sudo: cloudflared itself rejects requests without a valid JWT
-  # for this Access app, so a deleted/misconfigured Access app fails closed.
-  - hostname: ubuntu-box.nopsqi.dev
-    service: http://linux-box-service.linux-box-ubuntu.svc.cluster.local:3000
-    originRequest:
-      access:
-        required: true
-        teamName: nopsqi
-        audTag:
-          - bc70a697385242a690776edb9ad90496cae083ef20d199dfc91c69590b7acd27
-  # Same Access app as ubuntu-box (both hostnames on it), hence the same AUD tag.
+  # for this Access app (created for ubuntu-box, which it replaced), so a
+  # deleted/misconfigured Access app fails closed.
   - hostname: debian-box.nopsqi.dev
     service: http://linux-box-service.linux-box-debian.svc.cluster.local:3000
     originRequest:

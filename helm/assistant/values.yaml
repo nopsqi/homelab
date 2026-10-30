@@ -7,6 +7,9 @@ claude:
   enabled: false           # spike: Claude Code Remote Control session (your Max login), vault tools only
   version: 2.1.312         # @anthropic-ai/claude-code, pinned (auto-updater off)
 
+finance:
+  enabled: false           # accounting tool server (actual-mcp over HTTP); the claude session's `finance` subagent calls it
+
 # The Obsidian vault. prod: the Storage Box SMB share the syncthing pod already syncs (subPath vault/).
 # staging: a local-path PVC seeded by hand (no syncthing, no SMB CSI driver there).
 vault:
@@ -27,3 +30,5 @@ networkPolicy:
 sealedSecret:
   ghcrPull: ""             # dockerconfigjson blob: the claude pod pulls the naila image (vault-mcp)
   smb: {}                  # username password: Storage Box sub-account for the vault mount (vault.mode smb)
+  finance: {}              # ACTUAL_URL ACTUAL_PASSWORD ACTUAL_SYNC_ID MCP_SECRET
+  claude: {}               # MCP_FINANCE_TOKEN (same value as finance's MCP_SECRET)

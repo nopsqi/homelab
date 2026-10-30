@@ -1,0 +1,62 @@
+{{- if .Values.finance.enabled }}
+# Accounting tool server: actual-mcp over HTTP behind a bearer. Holds the Actual credentials; no model of its
+# own (the `finance` subagent in the Claude session is the brain). Only the Claude pod may call it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: assistant-finance
+  labels: { app: assistant-finance }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: assistant-finance } }
+  template:
+    metadata:
+      labels: { app: assistant-finance }
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets: [{ name: ghcr-pull }]
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: finance
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          command: ["node", "packages/actual-mcp/dist/server.js"]
+          env:
+            - { name: MCP_HTTP_PORT, value: "8080" }
+            - { name: ACTUAL_DATA_DIR, value: /data/actual }
+            - { name: TZ, value: {{ .Values.tz | quote }} }
+          envFrom:
+            - secretRef: { name: assistant-finance-secret }   # ACTUAL_URL ACTUAL_PASSWORD ACTUAL_SYNC_ID MCP_SECRET
+          ports: [{ containerPort: 8080 }]
+          readinessProbe: { httpGet: { path: /healthz, port: 8080 }, initialDelaySeconds: 10, periodSeconds: 10 }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: data, mountPath: /data }]
+          resources: { requests: { cpu: 10m, memory: 64Mi }, limits: { memory: 256Mi } }
+      volumes:
+        - { name: data, emptyDir: {} }   # Actual's local cache, rebuilt from the server on start
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: assistant-finance
+spec:
+  selector: { app: assistant-finance }
+  ports: [{ port: 8080, targetPort: 8080, protocol: TCP }]
+{{- if .Values.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: assistant-finance }
+spec:
+  podSelector: { matchLabels: { app: assistant-finance } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{ podSelector: { matchLabels: { app: assistant-claude } } }]
+      ports: [{ protocol: TCP, port: 8080 }]
+  egress:
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } } }]
+      ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: actual } } }]
+      ports: [{ protocol: TCP, port: 5006 }]
+{{- end }}
+{{- end }}

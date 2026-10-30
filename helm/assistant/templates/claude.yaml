@@ -15,7 +15,7 @@ data:
         "defaultMode": "default",
         "allow": ["mcp__vault__tree", "mcp__vault__grep", "mcp__vault__read", "mcp__vault__open_tasks", "mcp__vault__workers_list",
                   "mcp__finance__accounts", "mcp__finance__categories", "mcp__finance__recent", "mcp__finance__spending_by_category"],
-        "deny": ["Bash", "Write", "Edit", "NotebookEdit", "WebFetch", "WebSearch", "Read(~/.claude/**)", "mcp__claude_ai_Gmail"]
+        "deny": ["Bash", "Write", "Edit", "NotebookEdit", "WebFetch", "WebSearch", "Read(~/.claude/**)", "Read(/proc/**)", "Read(/config/**)", "mcp__claude_ai_Gmail"]
       }
     }
   finance-agent.md: |
@@ -31,6 +31,7 @@ data:
     # money tools. The file lives under ~/.claude, which the session's Read deny covers (it holds the bearer).
     mkdir -p $HOME/.claude/agents
     sed "s/__MCP_FINANCE_TOKEN__/$MCP_FINANCE_TOKEN/" /config/finance-agent.md > $HOME/.claude/agents/finance.md
+    unset MCP_FINANCE_TOKEN   # only the agent file (under the Read-denied ~/.claude) keeps it, not claude's environment
     claude mcp remove vault --scope user >/dev/null 2>&1 || true
     claude mcp add vault --scope user -e VAULT_ROOT=/vault -e TZ="$TZ" -- node /naila/packages/vault-mcp/dist/server.js
     cd $HOME/work

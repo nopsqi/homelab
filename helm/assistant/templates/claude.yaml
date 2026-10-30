@@ -14,7 +14,7 @@ data:
       "permissions": {
         "defaultMode": "default",
         "allow": ["mcp__vault__tree", "mcp__vault__grep", "mcp__vault__read", "mcp__vault__open_tasks", "mcp__vault__workers_list",
-                  "mcp__finance__accounts", "mcp__finance__categories", "mcp__finance__recent", "mcp__finance__spending_by_category", "mcp__finance__actual_read",
+                  "mcp__finance__accounts", "mcp__finance__categories", "mcp__finance__recent", "mcp__finance__spending_by_category", "mcp__finance__payee_history", "mcp__finance__actual_read",
                   "mcp__ops"],
         "ask": ["mcp__finance__add_transaction", "mcp__finance__transfer", "mcp__finance__update_transaction", "mcp__finance__actual_write"],
         "deny": ["Bash", "Write", "Edit", "NotebookEdit", "WebFetch", "WebSearch", "Read(~/.claude/**)", "Read(//home/claude/.claude/**)", "Read(//proc/**)", "Read(//config/**)", "mcp__claude_ai_Gmail"]

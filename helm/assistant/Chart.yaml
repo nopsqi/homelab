@@ -1,5 +1,5 @@
 name: assistant
-description: Naila — personal secretary (core) with finance and ops workers and a Telegram gateway
+description: Naila — Claude Code Remote Control session with the vault MCP server
 version: 0.1.0
 apiVersion: v2
 appVersion: sha-a998fe7

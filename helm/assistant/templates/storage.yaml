@@ -41,15 +41,3 @@ spec:
   accessModes: [ReadWriteOnce]
   resources: { requests: { storage: {{ .Values.vault.size }} } }
 {{- end }}
-{{- range tuple "assistant-core-data" "assistant-finance-data" }}
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: {{ . }}
-  annotations: { argocd.argoproj.io/sync-options: Delete=false }
-spec:
-  storageClassName: local-path
-  accessModes: [ReadWriteOnce]
-  resources: { requests: { storage: {{ $.Values.data.size }} } }
-{{- end }}

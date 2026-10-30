@@ -24,6 +24,19 @@ data:
 {{ .Files.Get "files/finance-agent.md" | indent 4 }}
   ops-agent.md: |
 {{ .Files.Get "files/ops-agent.md" | indent 4 }}
+  naila-test.sh: |
+    # Unattended test of Naila's real setup (CLAUDE.md, subagents, MCP servers, deny list) without the phone:
+    #   kubectl -n assistant exec deploy/assistant-claude -- bash /config/naila-test.sh "<request>"
+    # Only the "ask" rules are dropped, in a throwaway HOME. Naila can't run this (Bash is denied to her).
+    set -eu
+    export PATH=$HOME/.npm-global/bin:$PATH
+    T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
+    mkdir -p "$T/.claude"
+    cp -a "$HOME/.claude/agents" "$HOME/.claude/.credentials.json" "$T/.claude/"
+    cp "$HOME/.claude.json" "$T/.claude.json"
+    node -e 'const s=require(process.argv[1]); delete s.permissions.ask; s.permissions.defaultMode="dontAsk"; s.permissions.allow.push("mcp__finance__add_transaction","mcp__finance__transfer","mcp__finance__update_transaction","mcp__finance__actual_write","mcp__vault__write_inbox","mcp__vault__append_daily","Agent"); process.stdout.write(JSON.stringify(s))' "$HOME/.claude/settings.json" > "$T/.claude/settings.json"
+    cd "$HOME/work"
+    HOME="$T" claude -p "$1" --output-format text
   start.sh: |
     set -eu
     export NPM_CONFIG_PREFIX=$HOME/.npm-global PATH=$HOME/.npm-global/bin:$PATH

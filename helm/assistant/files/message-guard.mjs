@@ -17,7 +17,8 @@ const i = e.tool_input ?? {}, to = String(i.to ?? i.recipient ?? ''), kind = i.r
 if (e.tool_name !== 'SendMessage') deny('Unreadable message request.')   // only registered for SendMessage
 else if (e.agent_id) deny('A temporary subagent sends nothing: report back in your final answer.')
 else if (!e.agent_type) {   // Naila
-  if (kind === 'agent' || named(to, lines)) { /* allowed */ } else deny(`Naila may message only her workers' lines (${lines.join(', ')}) and her own subagents.`)
+  // A subagent's address has a fixed form (a + 16 hex); the model's own recipient_kind label is not trusted.
+  if ((kind === 'agent' && /^a[0-9a-f]{16}$/.test(to)) || named(to, lines)) { /* allowed */ } else deny(`Naila may message only her workers' lines (${lines.join(', ')}) and her own subagents.`)
 } else if (lines.includes(e.agent_type)) {   // a worker's direct line
-  if (!named(to, ['naila', 'work'])) deny('Workers message Naila only (to: "naila").')
+  if (to !== 'naila') deny('Workers message Naila only (to: "naila").')
 } else deny('Not allowed to send messages.')

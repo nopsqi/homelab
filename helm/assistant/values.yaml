@@ -34,8 +34,8 @@ vault:
     source: ""             # terraform output syncthing_smb, same share as helm/syncthing
     secretName: syncthing-smb
     secretNamespace: syncthing
-    mountOptions: [seal, vers=3.1.1, uid=1000, gid=1000, file_mode=0660, dir_mode=0770, iocharset=utf8,
-  mfsymlinks]
+    # No mfsymlinks: with it, a specially formatted file synced in over WebDAV becomes a symlink on this side.
+    mountOptions: [seal, vers=3.1.1, uid=1000, gid=1000, file_mode=0660, dir_mode=0770, iocharset=utf8]
 
 networkPolicy:
   enabled: true

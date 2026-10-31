@@ -33,7 +33,8 @@ data:
       "hooks": {
         "PreToolUse": [{ "matcher": "WebFetch|WebSearch", "hooks": [{ "type": "command", "command": "node /config/web-guard.mjs" }] },
                        { "matcher": "Read|Glob|Grep", "hooks": [{ "type": "command", "command": "node /config/read-guard.mjs" }] },
-                       { "matcher": "SendMessage", "hooks": [{ "type": "command", "command": "node /config/message-guard.mjs" }] }]
+                       { "matcher": "SendMessage", "hooks": [{ "type": "command", "command": "node /config/message-guard.mjs" }] },
+                       { "matcher": "mcp__docs__convert", "hooks": [{ "type": "command", "command": "node /config/docs-grant.mjs" }] }]
       }
     }
   web-guard.mjs: |
@@ -42,6 +43,8 @@ data:
 {{ .Files.Get "files/read-guard.mjs" | indent 4 }}
   message-guard.mjs: |
 {{ .Files.Get "files/message-guard.mjs" | indent 4 }}
+  docs-grant.mjs: |
+{{ .Files.Get "files/docs-grant.mjs" | indent 4 }}
   naila-trace.mjs: |
 {{ .Files.Get "files/naila-trace.mjs" | indent 4 }}
 {{- range .Values.workers }}
@@ -87,7 +90,7 @@ spec:
   template:
     metadata:
       labels: { app: assistant-claude }
-      annotations: { checksum/config: {{ printf "%s%s" (.Files.Get "files/CLAUDE.md") (print (include "assistant.agentFiles" .) (toJson .Values.workers) (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/message-guard.mjs") (.Files.Get "files/naila-trace.mjs") (.Files.Get "files/start.sh") (.Files.Get "files/naila-test.sh") .Values.finance.testBudget) | sha256sum | trunc 12 }} }
+      annotations: { checksum/config: {{ printf "%s%s" (.Files.Get "files/CLAUDE.md") (print (include "assistant.agentFiles" .) (toJson .Values.workers) (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/message-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/naila-trace.mjs") (.Files.Get "files/start.sh") (.Files.Get "files/naila-test.sh") .Values.finance.testBudget) | sha256sum | trunc 12 }} }
     spec:
       automountServiceAccountToken: false
       shareProcessNamespace: true   # the pause container becomes PID 1 and reaps exited processes (claude doesn't)
@@ -138,7 +141,7 @@ spec:
           # It listens on 127.0.0.1 only, so the probe runs inside the container.
           readinessProbe: { exec: { command: ["python", "-c", "import socket; socket.create_connection(('127.0.0.1', 3002), 2)"] }, periodSeconds: 15 }
           # Its own user: the pod shares one process namespace (so login can restart Naila), and only a different
-          # uid keeps /proc/<claude's pids>/{environ,root,cwd} closed to it. Group 1000 (fsGroup) still reads uploads and the vault.
+          # uid keeps /proc/<claude's pids>/{environ,root,cwd} closed to it. Group 1000 (fsGroup) reads the vault, and uploads once docs-grant.mjs opens them.
           securityContext: { runAsUser: 1001, runAsGroup: 1001, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
           volumeMounts:
             - { name: naila, mountPath: /naila, readOnly: true }

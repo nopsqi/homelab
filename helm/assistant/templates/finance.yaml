@@ -11,7 +11,12 @@ metadata:
   name: {{ $name }}
   labels: { app: {{ $name }} }
 spec:
+  {{- if eq $name "assistant-finance" }}
   replicas: 1
+  {{- else }}
+  # The test server has no replicas here: it sits at 0 and tests/live/run.sh (naila repo) scales it up for a test run;
+  # ArgoCD leaves a field the manifest doesn't set alone.
+  {{- end }}
   strategy: { type: Recreate }
   selector: { matchLabels: { app: {{ $name }} } }
   template:

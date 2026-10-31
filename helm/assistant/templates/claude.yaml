@@ -28,7 +28,7 @@ data:
                   "Read(~/.claude/uploads/**)", "Read(//home/claude/.claude/uploads/**)", "Read(//home/claude/.claude/projects/*/*/tool-results/**)"],
         "ask": ["mcp__finance__add_transaction", "mcp__finance__transfer", "mcp__finance__update_transaction", "mcp__finance__actual_write"],
         "deny": ["Bash", "Write", "Edit", "NotebookEdit", "Read(~/.claude/.credentials.json)", "Read(//home/claude/.claude/.credentials.json)",
-                 "Read(~/.claude/agents/**)", "Read(//home/claude/.claude/agents/**)", "Read(//home/claude/.claude.json)", "Read(//proc/**)", "Read(//config/**)", "mcp__claude_ai_Gmail"]
+                 "Read(~/.claude/agents/**)", "Read(//home/claude/.claude/agents/**)", "Read(//home/claude/.claude/test.*/**)", "Read(//home/claude/.claude/projects/**/*.jsonl)", "Read(//home/claude/.claude.json)", "Read(//proc/**)", "Read(//config/**)", "mcp__claude_ai_Gmail"]
       },
       "hooks": {
         "PreToolUse": [{ "matcher": "WebFetch|WebSearch", "hooks": [{ "type": "command", "command": "node /config/web-guard.mjs" }] },
@@ -132,8 +132,11 @@ spec:
             - { name: DOCS_ROOTS, value: "/home/claude/.claude/uploads:/vault" }
             - { name: DOCS_PORT, value: "3002" }
             - { name: PIP_DISABLE_PIP_VERSION_CHECK, value: "1" }
-          readinessProbe: { tcpSocket: { port: 3002 }, periodSeconds: 10 }
-          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
+          # It listens on 127.0.0.1 only, so the probe runs inside the container.
+          readinessProbe: { exec: { command: ["python", "-c", "import socket; socket.create_connection(('127.0.0.1', 3002), 2)"] }, periodSeconds: 15 }
+          # Its own user: the pod shares one process namespace (so login can restart Naila), and only a different
+          # uid keeps /proc/<claude's pids>/{environ,root,cwd} closed to it. Group 1000 (fsGroup) still reads uploads and the vault.
+          securityContext: { runAsUser: 1001, runAsGroup: 1001, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
           volumeMounts:
             - { name: naila, mountPath: /naila, readOnly: true }
             - { name: home, mountPath: /home/claude/.claude/uploads, subPath: .claude/uploads, readOnly: true }

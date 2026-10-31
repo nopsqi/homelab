@@ -2,4 +2,4 @@ name: assistant
 description: Naila — Claude Code Remote Control session with the vault MCP server
 version: 0.1.0
 apiVersion: v2
-appVersion: sha-3bd1990
+appVersion: sha-7a2a350

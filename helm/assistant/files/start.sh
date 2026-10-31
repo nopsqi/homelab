@@ -4,13 +4,15 @@ export NPM_CONFIG_PREFIX=$HOME/.npm-global PATH=$HOME/.npm-global/bin:$PATH
 mkdir -p $HOME/.claude $HOME/work
 cp /config/settings.json $HOME/.claude/settings.json
 cp /config/CLAUDE.md $HOME/work/CLAUDE.md
-# Workers are subagents, named by division (finance-bookkeeper); the bookkeeper's MCP server is defined inline in its
-# file so the main session never has money tools. The files live under ~/.claude, which the session's Read deny
-# covers (they hold the bearers). The folder is rebuilt from /config on every start, so a renamed worker leaves nothing behind.
+# Workers are subagents, named by division (finance-bookkeeper, finance-advisor); their MCP servers are defined
+# inline in their files so the main session never has money tools (the advisor's bearer only sees read tools).
+# The files live under ~/.claude, which the session's Read deny covers (they hold the bearers). The folder is
+# rebuilt from /config on every start, so a renamed worker leaves nothing behind.
 rm -rf $HOME/.claude/agents && mkdir -p $HOME/.claude/agents
 sed "s/__MCP_FINANCE_TOKEN__/$MCP_FINANCE_TOKEN/" /config/finance-bookkeeper.md > $HOME/.claude/agents/finance-bookkeeper.md
+sed "s/__MCP_FINANCE_READ_TOKEN__/$MCP_FINANCE_READ_TOKEN/" /config/finance-advisor.md > $HOME/.claude/agents/finance-advisor.md
 sed "s/__MCP_OPS_TOKEN__/$MCP_OPS_TOKEN/" /config/ops-agent.md > $HOME/.claude/agents/ops.md
-unset MCP_FINANCE_TOKEN MCP_OPS_TOKEN   # only the agent files (under the Read-denied ~/.claude) keep them
+unset MCP_FINANCE_TOKEN MCP_FINANCE_READ_TOKEN MCP_OPS_TOKEN   # only the agent files (under the Read-denied ~/.claude) keep them
 claude mcp remove vault --scope user >/dev/null 2>&1 || true
 claude mcp add vault --scope user -e VAULT_ROOT=/vault -e TZ="$TZ" -- node /naila/packages/vault-mcp/dist/server.js
 # Direct line to the bookkeeper: its own folder runs the finance-bookkeeper agent as the main session. The model is

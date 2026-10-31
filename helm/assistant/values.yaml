@@ -14,6 +14,7 @@ login:
 finance:
   enabled: false           # accounting tool server (actual-mcp over HTTP); the claude session's `finance` subagent calls it
   testBudget: false        # true: tell the worker its budget is a test copy (test writes allowed). Set false before pointing at the real budget.
+  testServer: false        # a second server (assistant-finance-test) on the test copy, its own bearer; only naila-test.sh uses it
 ops:
   enabled: false           # on-call tool server (cluster-mcp over HTTP, read-only ServiceAccount); the `ops` subagent calls it
   # Namespaces whose pod logs ops may read. Never: assistant (Naila's terminal), sealed-secrets, argocd, kube-system.
@@ -43,5 +44,6 @@ sealedSecret:
   ghcrPull: ""             # dockerconfigjson blob: the claude pod pulls the naila image (vault-mcp)
   smb: {}                  # username password: Storage Box sub-account for the vault mount (vault.mode smb)
   finance: {}              # ACTUAL_URL ACTUAL_PASSWORD ACTUAL_SYNC_ID MCP_SECRET
+  financeTest: {}          # the same keys for assistant-finance-test: ACTUAL_SYNC_ID of the test copy, its own MCP_SECRET
   ops: {}                  # MCP_SECRET
-  claude: {}               # MCP_FINANCE_TOKEN MCP_OPS_TOKEN (same values as the tool servers' MCP_SECRET)
+  claude: {}               # MCP_FINANCE_TOKEN MCP_FINANCE_TEST_TOKEN MCP_OPS_TOKEN (same values as the tool servers' MCP_SECRET)

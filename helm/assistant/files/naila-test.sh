@@ -1,6 +1,6 @@
 # Unattended test of Naila's real setup (CLAUDE.md, subagents, MCP servers, deny list) without the phone:
 #   kubectl -n assistant exec deploy/assistant-claude -- bash /config/naila-test.sh "<request>"
-#   ... naila-test.sh --bookkeeper "<request>"   tests the direct bookkeeper session instead (--advisor: the advisor's)
+#   ... naila-test.sh --line <worker> "<request>"   tests that worker's direct line instead (e.g. --line finance-bookkeeper)
 #   NAILA_TEST_TRACE=1 ...   prints a TRACE line after the answer: subagents used and the tools each called
 # The finance workers in a test always use assistant-finance-test (the test copy), whatever budget Naila is on, and
 # the advisor reads the fixture cabinet /tmp/naila-cabinet instead of the vault's Finance/ folder.
@@ -17,15 +17,15 @@ node -e 'const s=require(process.argv[1]); delete s.permissions.ask; s.permissio
 # without a test server there are no finance workers at all.
 rm -f "$T/agents/finance-bookkeeper.md" "$T/agents/finance-advisor.md"
 if [ -n "${MCP_FINANCE_TEST_TOKEN:-}" ]; then
-  { sed -e "s/__MCP_FINANCE_TOKEN__/$MCP_FINANCE_TEST_TOKEN/" -e 's#//assistant-finance:#//assistant-finance-test:#' /config/finance-bookkeeper.md
-    grep -q 'TEST COPY' /config/finance-bookkeeper.md || { echo; cat /config/finance-test-note; }; } > "$T/agents/finance-bookkeeper.md"
+  { sed -e "s/__MCP_FINANCE_TOKEN__/$MCP_FINANCE_TEST_TOKEN/" -e 's#//assistant-finance:#//assistant-finance-test:#' /config/agent-finance-bookkeeper.md
+    grep -q 'TEST COPY' /config/agent-finance-bookkeeper.md || { echo; cat /config/finance-test-note; }; } > "$T/agents/finance-bookkeeper.md"
 fi
 if [ -n "${MCP_FINANCE_TEST_READ_TOKEN:-}" ]; then
   sed -e "s/__MCP_FINANCE_READ_TOKEN__/$MCP_FINANCE_TEST_READ_TOKEN/" -e 's#//assistant-finance:#//assistant-finance-test:#' \
-    -e 's#/vault/Finance/#/tmp/naila-cabinet/#g' /config/finance-advisor.md > "$T/agents/finance-advisor.md"
+    -e 's#/vault/Finance/#/tmp/naila-cabinet/#g' /config/agent-finance-advisor.md > "$T/agents/finance-advisor.md"
   node -e 'const f=process.argv[1], s=JSON.parse(require("fs").readFileSync(f)); s.permissions.allow.push("Read(//tmp/naila-cabinet/**)"); require("fs").writeFileSync(f, JSON.stringify(s))' "$T/settings.json"
 fi
-D=work; case "$1" in --bookkeeper) D=finance-bookkeeper; shift ;; --advisor) D=finance-advisor; shift ;; esac
+D=work; [ "$1" = --line ] && { D=$2; shift 2; grep -q "^$D " /config/direct-lines || { echo "no direct line: $D"; exit 2; }; }
 cd "$HOME/$D"
 if [ -n "${NAILA_TEST_TRACE:-}" ]; then
   CLAUDE_CONFIG_DIR="$T" claude -p "$1" --output-format stream-json --verbose </dev/null | node /config/naila-trace.mjs

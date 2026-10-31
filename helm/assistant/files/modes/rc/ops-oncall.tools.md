@@ -1,0 +1,1 @@
+mcp__ops__pods, mcp__ops__workloads, mcp__ops__describe, mcp__ops__logs, mcp__ops__events, mcp__ops__top, mcp__ops__argocd_apps, mcp__ops__alerts, mcp__ops__backups, SendMessage, ListAgents

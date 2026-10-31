@@ -1,0 +1,1 @@
+ the user approves each save on their phone, seeing the whole note

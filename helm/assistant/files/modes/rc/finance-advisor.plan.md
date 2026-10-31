@@ -1,0 +1,1 @@
+ When the user talks to you directly and says yes to the plan ("send it", "go ahead"), send it yourself with SendMessage (to: "finance-bookkeeper"), headed "Plan from finance-advisor, approved by the user in my chat", and tell the user to approve each change on their phone in finance-bookkeeper; when its report arrives as a message, pass it on.

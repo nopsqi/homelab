@@ -1,0 +1,1 @@
+mcp__finance-read__accounts, mcp__finance-read__categories, mcp__finance-read__actual_read, mcp__finance-read__payee_history, mcp__finance-read__recent, mcp__finance-read__spending_by_category, mcp__docs__convert, mcp__finance-notes__write_note, WebSearch, WebFetch, Read, Glob, Grep, SendMessage, ListAgents

@@ -1,0 +1,1 @@
+ the user approves each save in the decision pool (shown in #decisions), seeing the whole note

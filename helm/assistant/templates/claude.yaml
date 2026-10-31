@@ -4,6 +4,21 @@
 {{- define "assistant.agentFiles" -}}
 {{- range $p, $_ := .Files.Glob "files/agents/*.md" }}{{ $.Files.Get $p }}{{ end }}
 {{- end }}
+{{- define "assistant.modeFiles" -}}
+{{- range $p, $_ := .Files.Glob "files/modes/**" }}{{ $.Files.Get $p }}{{ end }}
+{{- end }}
+{{- /* A body file holds the shared text plus `<!-- mode -->` (the mode's main section) and optional
+       `<!-- mode:NAME -->` slots, filled from files/modes/<mode>/<base>.md and <base>.NAME.md. */ -}}
+{{- define "assistant.render" -}}
+{{- $out := .body -}}
+{{- $prefix := printf "files/modes/%s/%s." .mode .base -}}
+{{- range $p, $_ := .root.Files.Glob (printf "%s*.md" $prefix) }}
+{{- $name := $p | trimPrefix $prefix | trimSuffix ".md" }}
+{{- $out = replace (printf "<!-- mode:%s -->" $name) (trimSuffix "\n" ($.root.Files.Get $p)) $out }}
+{{- end }}
+{{- $main := printf "files/modes/%s/%s.md" .mode .base -}}
+{{- replace "<!-- mode -->" (trimSuffix "\n" (.root.Files.Get $main | required (printf "%s is missing" $main))) $out -}}
+{{- end }}
 {{- define "assistant.testCopyNote" -}}
 The connected budget is a TEST COPY of the user's household budget, made for this. Test changes (creating, editing, deleting, budgeting) are fine here; still clean up what a test creates.
 {{- end }}
@@ -17,7 +32,9 @@ metadata:
   name: assistant-claude
 data:
   CLAUDE.md: |
-{{ .Files.Get "files/CLAUDE.md" | indent 4 }}
+{{ include "assistant.render" (dict "root" . "body" (.Files.Get "files/CLAUDE.md") "mode" "rc" "base" "naila") | indent 4 }}
+  harness-CLAUDE.md: |
+{{ include "assistant.render" (dict "root" . "body" (.Files.Get "files/CLAUDE.md") "mode" "harness" "base" "naila") | indent 4 }}
   settings.json: |
     {
       "permissions": {
@@ -49,7 +66,13 @@ data:
 {{ .Files.Get "files/naila-trace.mjs" | indent 4 }}
 {{- range .Values.workers }}
   agent-{{ .name }}.md: |
-{{ $.Files.Get (printf "files/agents/%s.md" .name) | required (printf "files/agents/%s.md is missing" .name) | indent 4 }}
+{{ include "assistant.render" (dict "root" $ "body" ($.Files.Get (printf "files/agents/%s.md" .name) | required (printf "files/agents/%s.md is missing" .name)) "mode" "rc" "base" .name) | indent 4 }}
+{{- if and (eq .name "finance-bookkeeper") $.Values.finance.testBudget }}
+    
+{{ include "assistant.testCopyNote" $ | indent 4 }}
+{{- end }}
+  harness-agent-{{ .name }}.md: |
+{{ include "assistant.render" (dict "root" $ "body" ($.Files.Get (printf "files/agents/%s.md" .name)) "mode" "harness" "base" .name) | indent 4 }}
 {{- if and (eq .name "finance-bookkeeper") $.Values.finance.testBudget }}
     
 {{ include "assistant.testCopyNote" $ | indent 4 }}
@@ -74,6 +97,10 @@ data:
 {{ include "assistant.testCopyNote" . | indent 4 }}
   naila-test.sh: |
 {{ .Files.Get "files/naila-test.sh" | indent 4 }}
+  # the same against harness mode (packages/harness): kubectl exec … bash /config/harness-test.sh --worker W "text" …
+  # Not in the checksum: a test-script edit must not restart the RC lines (/config is a full mount, it updates in place).
+  harness-test.sh: |
+{{ .Files.Get "files/harness-test.sh" | indent 4 }}
   start.sh: |
 {{ .Files.Get "files/start.sh" | indent 4 }}
 ---
@@ -99,7 +126,7 @@ spec:
   template:
     metadata:
       labels: { app: assistant-claude }
-      annotations: { checksum/config: {{ printf "%s%s" (.Files.Get "files/CLAUDE.md") (print (include "assistant.agentFiles" .) (toJson .Values.workers) (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/message-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/naila-trace.mjs") (.Files.Get "files/start.sh") (.Files.Get "files/naila-test.sh") .Values.finance.testBudget) | sha256sum | trunc 12 }} }
+      annotations: { checksum/config: {{ printf "%s%s" (.Files.Get "files/CLAUDE.md") (print (include "assistant.agentFiles" .) (include "assistant.modeFiles" .) (toJson .Values.workers) (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/message-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/naila-trace.mjs") (.Files.Get "files/start.sh") (.Files.Get "files/naila-test.sh") .Values.finance.testBudget) | sha256sum | trunc 12 }} }
     spec:
       automountServiceAccountToken: false
       shareProcessNamespace: true   # the pause container becomes PID 1 and reaps exited processes (claude doesn't)

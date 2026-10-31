@@ -13,14 +13,15 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: cloudflared
-    # Naila's accounting tool server (actual-mcp); the only pod outside cloudflared that may talk to Actual.
+    # Naila's accounting tool servers (actual-mcp: the real one and the test one on the test copy); the only pods
+    # outside cloudflared that may talk to Actual.
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: assistant
           podSelector:
-            matchLabels:
-              app: assistant-finance
+            matchExpressions:
+              - { key: app, operator: In, values: [assistant-finance, assistant-finance-test] }
       ports:
         - protocol: TCP
           port: 5006

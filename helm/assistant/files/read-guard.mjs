@@ -34,10 +34,11 @@ const inside = (p) => p === '/home/claude/.claude.json' || ((p === CLAUDE || p.s
 // A Glob or Grep rooted above ~/.claude (/home/claude, /home, /) would search inside it.
 const above = (p) => e.tool_name !== 'Read' && (p === '/' || CLAUDE.startsWith(p.replace(/\/\*\*.*$/, '').replace(/\/+$/, '') + '/'))
 const deny = (why) => console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: why } }))
-// Checked on the raw Glob pattern, before resolving swallows them: no `..` at all, and no braces when the search
-// starts anywhere under /home/claude.
-const rawGlob = e.tool_name === 'Glob' && typeof i.pattern === 'string' ? home(i.pattern) : ''
-const base = isAbsolute(rawGlob) ? rawGlob : resolve(home(i.path ?? e.cwd ?? '/'))
-const sneaky = rawGlob.includes('..') || (rawGlob.includes('{') && (base + '/').startsWith('/home/claude/'))
-if (!e.tool_name || paths.some(inside) || raw.some(wild) || sneaky) deny('Under ~/.claude only uploads/ (files the user sent) and tool-results/ may be read.')
+// Patterns get the plain wildcards only (*, ?, **: none of them climbs past a `/`). Braces can hold absolute or `..`
+// alternatives, classes and escapes can spell `..` without the text: all refused, on the raw pattern, wherever the
+// search starts. Covers Glob's pattern and Grep's file filter.
+const pats = [e.tool_name === 'Glob' ? i.pattern : undefined, e.tool_name === 'Grep' ? i.glob : undefined].filter((p) => typeof p === 'string')
+const sneaky = pats.some((p) => /[{}[\]\\]/.test(p) || p.includes('..'))
+if (sneaky) deny('Use plain wildcards only (*, ?, **) in file patterns: no {braces}, [classes], backslashes or `..`. Search twice instead of using braces.')
+else if (!e.tool_name || paths.some(inside) || raw.some(wild)) deny('Under ~/.claude only uploads/ (files the user sent) and tool-results/ may be read.')
 else if (paths.some(above)) deny('That search would include ~/.claude: search a narrower folder (the vault, an upload folder, your own folder).')

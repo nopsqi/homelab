@@ -1,13 +1,17 @@
 // PreToolUse hook for SendMessage. Cross-session messages stay inside Naila's pod: Naila may message her own
-// temporary subagents and her workers' live lines; a worker's live line may message Naila only; a temporary subagent
-// (agent_id set) messages no one. Recipients are resolved by place, not by name: every session here has a socket
+// temporary subagents and her workers' live lines; a worker's live line may message Naila, plus the lines listed for
+// it in /config/message-peers (values.yaml sendsTo: the advisor and the bookkeeper, for approved plans); a temporary
+// subagent (agent_id set) messages no one. Recipients are resolved by place, not by name: every session here has a socket
 // /tmp/cc-socks/<pid>.sock, and a live line is the session whose parent is `claude remote-control --name <line>`.
 // The hook rewrites "naila" / "finance-bookkeeper" / … into that local address, so a session on another machine
 // (Remote Control lists them too) or a test stand-in can never be the recipient, whatever its name.
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 
 const SOCKS = '/tmp/cc-socks'
-const workers = (() => { try { return readFileSync('/config/direct-lines', 'utf8').split('\n').map((l) => l.trim().split(/\s+/)[0]).filter(Boolean) } catch { return [] } })()
+const CONF = process.env.MESSAGE_GUARD_CONFIG ?? '/config'   // tests point this at a copy
+const lines = (f) => { try { return readFileSync(`${CONF}/${f}`, 'utf8').split('\n').map((l) => l.trim().split(/\s+/)).filter((l) => l[0]) } catch { return [] } }
+const workers = lines('direct-lines').map((l) => l[0])
+const peers = Object.fromEntries(lines('message-peers').map(([n, to]) => [n, (to ?? '').split(',').filter((x) => x === 'naila' || workers.includes(x))]))
 const say = (o) => console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', ...o } }))
 const deny = (why) => say({ permissionDecision: 'deny', permissionDecisionReason: why })
 
@@ -48,9 +52,10 @@ else if (sender === 'temp') deny('A temporary subagent sends nothing: report bac
 else if (sender === 'naila' && i.recipient_kind === 'agent' && /^a[0-9a-f]{16}$/.test(to)) { /* her own subagent: no decision */ }
 else if (sender === 'other') deny('Not allowed to send messages.')
 else {
-  const line = wanted(to, sender === 'naila' ? workers : ['naila'])
+  const allowed = sender === 'naila' ? workers : peers[e.agent_type] ?? ['naila']
+  const line = wanted(to, allowed)
   const addr = line && addressOf(line)
-  if (!line) deny(sender === 'naila' ? `Naila may message only her workers' lines (${workers.join(', ')}).` : 'Workers message Naila only (to: "naila").')
+  if (!line) deny(sender === 'naila' ? `Naila may message only her workers' lines (${workers.join(', ')}).` : `${e.agent_type} may message only ${allowed.join(', ')} (by line name).`)
   else if (!addr) deny(`${line}'s live line isn't running right now.`)
   else say({ permissionDecision: 'allow', permissionDecisionReason: `local ${line}`, updatedInput: { ...i, to: addr, ...(i.recipient !== undefined ? { recipient: addr } : {}) } })
 }

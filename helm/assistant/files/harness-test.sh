@@ -8,9 +8,10 @@
 #                       runs' config: agents/<worker>.md, settings.json) and $HARNESS_TEST_HOME (the harness home)
 # Prints every message the harness posts ([chat] text; #decisions is the decision pool), then TRACE (the tools each run
 # called, from its stream-json; ! = refused), ASKS and DECISIONS from harness.db. Exit 1 if a step failed or timed out.
-# The core and every worker use the test server (assistant-finance-test) and its bearers, never the real budget. The
-# five write tools are denied to every run: a change happens only when a decision is approved and the core carries it
-# out. Vault: /vault/Harness-test; finance notes: $HARNESS_TEST_NOTES (default /vault/Harness-test/Finance;
+# The core and every worker use the test server (assistant-finance-test), never the real budget; only the core holds its
+# write bearer, the workers get the read-only one. The five write tools are denied to every run (harness-settings.json):
+# a change happens only when a decision is approved and the core carries it out. mcp__docs__convert reads only uploads
+# and /vault/Harness-test. Vault: /vault/Harness-test; finance notes: $HARNESS_TEST_NOTES (default /vault/Harness-test/Finance;
 # tests/live/run.sh points it at its fixture cabinet). Everything (harness.db, the runs' config with the login and the
 # test bearers, per-run MCP configs, traces) is one throwaway folder under ~/.claude, which the read guard closes to
 # every run; it is deleted on exit. NAILA_TEST_AGENTS / NAILA_TEST_HANDBOOKS: rendered files instead of /config and
@@ -34,17 +35,18 @@ for f in --tools --permission-mode --strict-mcp-config --mcp-config; do
 done
 [ -n "${MCP_FINANCE_TEST_TOKEN:-}" ] && [ -n "${MCP_FINANCE_TEST_READ_TOKEN:-}" ] \
   || die "no test server bearers (MCP_FINANCE_TEST_TOKEN, MCP_FINANCE_TEST_READ_TOKEN): harness mode is tested only on the test copy"
-# Every run is one more claude process (a few hundred MiB) in this pod, next to the RC lines: leave them room.
+# Every run is one more claude process (a few hundred MiB) in this pod, next to the RC lines: leave them room. The harness
+# runs at most 2 at once (MAX_CONCURRENT_RUNS); drive.mjs checks the same headroom again before every turn.
 cg=/sys/fs/cgroup
 if [ -r "$cg/memory.max" ] && [ -r "$cg/memory.current" ]; then
   max=$(cat "$cg/memory.max"); cur=$(cat "$cg/memory.current")
   if [ "$max" = max ]; then echo "harness-test: note: this pod has no memory limit, headroom not checked" >&2
   else
     free=$(( (max - cur) / 1048576 ))
-    [ "$free" -ge 800 ] || die "only $free MiB of memory headroom (limit $(( max / 1048576 )) MiB, in use $(( cur / 1048576 )) MiB); need 800 MiB so the runs can't push the RC lines into an OOM kill"
+    [ "$free" -ge "${HARNESS_TEST_MIN_FREE_MIB:-800}" ] || die "only $free MiB of memory headroom (limit $(( max / 1048576 )) MiB, in use $(( cur / 1048576 )) MiB); need ${HARNESS_TEST_MIN_FREE_MIB:-800} MiB so the runs can't push the RC lines into an OOM kill"
   fi
 else echo "harness-test: note: no cgroup v2 memory files, headroom not checked" >&2; fi
-for k in harness-CLAUDE.md harness-agent-finance-bookkeeper.md harness-agent-finance-advisor.md; do
+for k in harness-CLAUDE.md harness-agent-finance-bookkeeper.md harness-agent-finance-advisor.md harness-settings.json docs-grant.mjs; do
   [ -f "$A/$k" ] || die "$A/$k is missing: this chart predates harness mode"
 done
 
@@ -58,41 +60,51 @@ mkdir -p "$T/agents" "$HH/work/naila" "$HH/work/_summary" /vault/Harness-test "$
 cp -a "$HOME/.claude/.credentials.json" "$T/"
 cp "$HOME/.claude.json" "$T/.claude.json"
 
-# Workers from the harness-agent-* keys, pointed at the test server with its bearers (as naila-test.sh does).
+# Workers from the harness-agent-* keys, pointed at the test server with its read-only bearer. No worker gets the write
+# bearer: a stray __MCP_FINANCE_TOKEN__ stays unfilled and stops the test below.
 for f in "$A"/harness-agent-*.md; do
-  sed -e "s/__MCP_FINANCE_TOKEN__/$MCP_FINANCE_TEST_TOKEN/" -e "s/__MCP_FINANCE_READ_TOKEN__/$MCP_FINANCE_TEST_READ_TOKEN/" \
+  sed -e "s/__MCP_FINANCE_READ_TOKEN__/$MCP_FINANCE_TEST_READ_TOKEN/" \
       -e "s/__MCP_OPS_TOKEN__/${MCP_OPS_TOKEN:-}/" -e "s#/handbooks/#$H/#g" -e 's#//assistant-finance:#//assistant-finance-test:#' \
       -e "s#/vault/Finance/#$NOTES/#g" "$f" > "$T/agents/${f##*/harness-agent-}"
 done
 grep -q 'TEST COPY' "$T/agents/finance-bookkeeper.md" || { echo; cat /config/finance-test-note; } >> "$T/agents/finance-bookkeeper.md"
 ! grep -l '__MCP_' "$T"/agents/*.md >/dev/null || die "unfilled bearer placeholder in $(grep -l '__MCP_' "$T"/agents/*.md | xargs -n1 basename)"
 if grep -q '//assistant-finance:' "$T"/agents/*.md; then die "a worker still points at the real finance server"; fi
+if grep -qF -- "$MCP_FINANCE_TEST_TOKEN" "$T"/agents/*.md; then die "a worker holds the finance write bearer"; fi
 
-# Naila's settings: no "ask" (no phone here), every write tool and cross-session messaging denied, the core tools allowed.
-# The file tools never reach the real vault: no allow rule under //vault/ survives, and every entry of /vault except the
-# test folder (Finance always) is denied. The test notes root stays readable.
+# Naila's settings plus harness mode's (harness-settings.json from the chart: no "ask", since there is no phone here; every
+# write tool and cross-session messaging denied; the core tools allowed). Then what only a test needs: the file tools never
+# reach the real vault (no allow rule under //vault/ survives, and every entry of /vault except the test folder is denied,
+# Finance always), the test notes root stays readable, and docs conversion is limited to uploads and the test folder
+# (docs-grant.mjs --only, failing closed: `|| exit 2` blocks the call if the hook itself can't run).
 node -e '
-const fs = require("fs"), [src, dst, notes, hb] = process.argv.slice(1), s = JSON.parse(fs.readFileSync(src, "utf8")), p = s.permissions
+const fs = require("fs"), [src, patch, dst, notes, hb, grant, uploads] = process.argv.slice(1), s = JSON.parse(fs.readFileSync(src, "utf8")), p = s.permissions
+const h = JSON.parse(fs.readFileSync(patch, "utf8")).permissions
 delete p.ask
-p.defaultMode = "dontAsk"
-p.allow = p.allow.filter((r) => !r.includes("//vault/"))
-p.deny.push("mcp__finance__add_transaction", "mcp__finance__transfer", "mcp__finance__update_transaction", "mcp__finance__actual_write",
-  "mcp__finance-notes__write_note", "SendMessage", "ListAgents", "Agent", "Read(//home/claude/.claude/harness-test.*/**)", "Read(//vault/Finance/**)")
+p.defaultMode = h.defaultMode
+p.allow = p.allow.filter((r) => !r.includes("//vault/") && !h.deny.includes(r))
+p.deny.push(...h.deny, "Read(//home/claude/.claude/harness-test.*/**)", "Read(//vault/Finance/**)")
 let real = []
 try { real = fs.readdirSync("/vault", { withFileTypes: true }).filter((e) => e.name !== "Harness-test" && e.name !== "Finance") } catch {}
 for (const e of real) p.deny.push(e.isDirectory() ? `Read(//vault/${e.name}/**)` : `Read(//vault/${e.name})`)
-p.allow.push("mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__vault__write_inbox", "mcp__vault__append_daily", `Read(/${notes}/**)`, `Read(/${hb}/**)`)
-fs.writeFileSync(dst, JSON.stringify(s, null, 2))' "$HOME/.claude/settings.json" "$T/settings.json" "$NOTES" "$H"
-# Self-check on the written file: no file-tool allow rule may cover any of /vault outside /vault/Harness-test/.
+p.allow.push(...h.allow, `Read(/${notes}/**)`, `Read(/${hb}/**)`)
+const pre = (s.hooks ??= {}).PreToolUse ??= []
+s.hooks.PreToolUse = pre.filter((e) => !/docs/.test(e.matcher ?? ""))
+s.hooks.PreToolUse.push({ matcher: "mcp__docs__convert", hooks: [{ type: "command", command: `node ${grant} --only ${uploads}:/vault/Harness-test || exit 2` }] })
+fs.writeFileSync(dst, JSON.stringify(s, null, 2))' "$HOME/.claude/settings.json" "$A/harness-settings.json" "$T/settings.json" "$NOTES" "$H" "$A/docs-grant.mjs" "$HOME/.claude/uploads"
+# Self-check on the written file: no file-tool allow rule may cover any of /vault outside /vault/Harness-test/, and the
+# one hook for mcp__docs__convert is the limited one.
 node -e '
-const allow = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).permissions.allow
+const s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")), allow = s.permissions.allow
 const bad = allow.filter((r) => {
   if (/^(Read|Glob|Grep|Edit|Write)$/.test(r)) return true
   const m = /^(?:Read|Glob|Grep|Edit|Write)\((.*)\)$/.exec(r); if (!m) return false
   const path = m[1], lit = path.split(/[*?[{]/)[0]
   return (path.startsWith("//vault/") || path === "//vault") ? !path.startsWith("//vault/Harness-test/") : "//vault/".startsWith(lit)
 })
-if (bad.length) { console.error(`harness-test: the runs would be allowed into the real vault: ${bad.join(", ")}`); process.exit(2) }' "$T/settings.json"
+if (bad.length) { console.error(`harness-test: the runs would be allowed into the real vault: ${bad.join(", ")}`); process.exit(2) }
+const docs = s.hooks.PreToolUse.filter((e) => new RegExp(`^(${e.matcher})$`).test("mcp__docs__convert"))
+if (docs.length !== 1 || !/ --only \S+ \|\| exit 2$/.test(docs[0].hooks[0].command)) { console.error("harness-test: mcp__docs__convert is not limited to the test roots"); process.exit(2) }' "$T/settings.json"
 
 # Work dirs: naila's holds her harness CLAUDE.md; each direct-line worker's names its agent and model (as start.sh does).
 cp "$A/harness-CLAUDE.md" "$HH/work/naila/CLAUDE.md"
@@ -165,7 +177,7 @@ const maskTail = (t) => {
 // main.js gets only what it reads; its runs get even less (the Runner's own allowlist).
 const env = Object.fromEntries(['PATH', 'HOME', 'TZ', 'LANG', 'DISABLE_AUTOUPDATER', 'CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH'].filter((k) => E[k] !== undefined).map((k) => [k, E[k]]))
 Object.assign(env, {
-  HARNESS_HOME: HH, HARNESS_TEST: '1', GATEWAY_SECRETS: `test:${gw}`, CORE_TOOLS_SECRET: coreSecret,
+  HARNESS_HOME: HH, HARNESS_TEST: '1', GATEWAY_SECRETS: `test:${gw}`, CORE_TOOLS_SECRET: coreSecret, MAX_CONCURRENT_RUNS: '2',
   MCP_FINANCE_URL: 'http://assistant-finance-test:8080/mcp', MCP_FINANCE_TOKEN: E.MCP_FINANCE_TEST_TOKEN,
   VAULT_ROOT: '/vault/Harness-test', FINANCE_NOTES_ROOT: E.HARNESS_TEST_NOTES_ROOT,
   HOST: '127.0.0.1', PORT: String(port), CORE_TOOLS_PORT: String(corePort),
@@ -235,6 +247,15 @@ const confirm = async (approve, reason) => {
   return r.status === 200 ? undefined : `confirm #${id}: HTTP ${r.status} ${JSON.stringify(r.body)}`
 }
 
+/** Free memory under the pod's limit, in MiB, or undefined when it can't be read (no cgroup v2 files, no limit). */
+const headroom = () => {
+  try {
+    const max = readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim(), cur = Number(readFileSync('/sys/fs/cgroup/memory.current', 'utf8'))
+    return max === 'max' ? undefined : Math.floor((Number(max) - cur) / 1048576)
+  } catch { return undefined }
+}
+const MIN_FREE = Number(E.HARNESS_TEST_MIN_FREE_MIB || 800)
+
 let failed
 for (const [i, s] of steps.entries()) {
   if (i > 0 && between) {
@@ -242,7 +263,9 @@ for (const [i, s] of steps.entries()) {
     if (r.status !== 0) console.log(`--- between: exit ${r.status}`)
   }
   try {
-    if (s.kind === 'turn') { console.log(`--- turn [${s.w}]: ${s.text}`); failed = await turn(s.w, s.text) }
+    const free = s.kind === 'turn' ? headroom() : undefined
+    if (free !== undefined && free < MIN_FREE) failed = `only ${free} MiB of memory headroom before this turn; need ${MIN_FREE} MiB so the runs can't push the RC lines into an OOM kill`
+    else if (s.kind === 'turn') { console.log(`--- turn [${s.w}]: ${s.text}`); failed = await turn(s.w, s.text) }
     else failed = await confirm(s.approve, s.reason)
   } catch (e) { failed = e.message }
   if (failed) { console.log(`--- FAILED: ${redact(failed)}`); break }

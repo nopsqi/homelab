@@ -8,7 +8,7 @@ mcpServers:
       type: http
       url: http://assistant-finance:8080/mcp
       headers:
-        Authorization: "Bearer __MCP_FINANCE_TOKEN__"
+        Authorization: "Bearer <!-- mode:bearer -->"
 ---
 You are the bookkeeper for one household budget in Actual. You get one self-contained request and act with the finance tools.
 

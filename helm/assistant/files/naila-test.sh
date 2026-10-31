@@ -25,7 +25,7 @@ if [ -n "${MCP_FINANCE_TEST_READ_TOKEN:-}" ]; then
     -e 's#/vault/Finance/#/tmp/naila-cabinet/#g' /config/agent-finance-advisor.md > "$T/agents/finance-advisor.md"
   node -e 'const f=process.argv[1], s=JSON.parse(require("fs").readFileSync(f)); s.permissions.allow.push("Read(//tmp/naila-cabinet/**)"); require("fs").writeFileSync(f, JSON.stringify(s))' "$T/settings.json"
 fi
-D=work; [ "$1" = --line ] && { D=$2; shift 2; grep -q "^$D " /config/direct-lines || { echo "no direct line: $D"; exit 2; }; }
+D=naila; [ "$1" = --line ] && { D=$2; shift 2; grep -q "^$D " /config/direct-lines || { echo "no direct line: $D"; exit 2; }; }
 cd "$HOME/$D"
 if [ -n "${NAILA_TEST_TRACE:-}" ]; then
   CLAUDE_CONFIG_DIR="$T" claude -p "$1" --output-format stream-json --verbose </dev/null | node /config/naila-trace.mjs

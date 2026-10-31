@@ -33,8 +33,7 @@ const addressOf = (line) => {
 const wanted = (to, allowed) => {
   const u = /^uds:\/tmp\/cc-socks\/(\d+)\.sock$/.exec(to)
   if (u) { const l = lineOf(u[1]); return allowed.includes(l) ? l : undefined }
-  const alias = to === 'work' || /^work-[0-9a-f]+$/.test(to) ? 'naila' : to   // Naila is listed by her folder, ~/work
-  return allowed.find((n) => alias === n || new RegExp(`^${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-[0-9a-f]+$`).test(alias))
+  return allowed.find((n) => to === n || new RegExp(`^${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-[0-9a-f]+$`).test(to))
 }
 
 let input = ''

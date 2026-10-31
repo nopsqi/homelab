@@ -1,9 +1,9 @@
 set -eu
 export NPM_CONFIG_PREFIX=$HOME/.npm-global PATH=$HOME/.npm-global/bin:$PATH
 [ "$(claude --version 2>/dev/null | cut -d' ' -f1)" = "$CLAUDE_VERSION" ] || npm i -g @anthropic-ai/claude-code@$CLAUDE_VERSION
-mkdir -p $HOME/.claude $HOME/work
+mkdir -p $HOME/.claude $HOME/naila
 cp /config/settings.json $HOME/.claude/settings.json
-cp /config/CLAUDE.md $HOME/work/CLAUDE.md
+cp /config/CLAUDE.md $HOME/naila/CLAUDE.md
 # Workers are subagents (the chart's `workers` list, one /config/agent-<name>.md each, named <division>-<job>); their
 # MCP servers are defined inline in their files so the main session never has their tools (the advisor's bearer only
 # sees read tools). The files live under ~/.claude, which the session's Read deny covers (they hold the bearers). The
@@ -29,7 +29,9 @@ while read -r n m; do
   echo "{\"agent\": \"$n\", \"model\": \"$m\"}" > $HOME/$n/.claude/settings.json
   [ -f $HOME/.claude.json ] && node -e 'const f=process.argv[1], p=process.argv[2], c=require(f); c.projects ??= {}; c.projects[p] = { ...c.projects[p], hasTrustDialogAccepted: true }; require("fs").writeFileSync(f, JSON.stringify(c, null, 2))' $HOME/.claude.json "/home/claude/$n"
 done < /config/direct-lines
-cd $HOME/work
+# Naila's own folder is named after her, so the name other sessions see is naila-<code>, like the workers' lines.
+[ -f $HOME/.claude.json ] && node -e 'const f=process.argv[1], c=require(f); c.projects ??= {}; c.projects["/home/claude/naila"] = { ...c.projects["/home/claude/naila"], hasTrustDialogAccepted: true }; require("fs").writeFileSync(f, JSON.stringify(c, null, 2))' $HOME/.claude.json
+cd $HOME/naila
 # No login yet: start interactive Claude Code so you can `kubectl -n assistant attach -it deploy/assistant-claude`,
 # /login, then /exit; the pod restarts into Remote Control (attach once more to accept its trust/enable prompts).
 [ -f $HOME/.claude/.credentials.json ] || exec claude

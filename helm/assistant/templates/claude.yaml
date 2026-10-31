@@ -32,13 +32,16 @@ data:
       },
       "hooks": {
         "PreToolUse": [{ "matcher": "WebFetch|WebSearch", "hooks": [{ "type": "command", "command": "node /config/web-guard.mjs" }] },
-                       { "matcher": "Read|Glob|Grep", "hooks": [{ "type": "command", "command": "node /config/read-guard.mjs" }] }]
+                       { "matcher": "Read|Glob|Grep", "hooks": [{ "type": "command", "command": "node /config/read-guard.mjs" }] },
+                       { "matcher": "SendMessage", "hooks": [{ "type": "command", "command": "node /config/message-guard.mjs" }] }]
       }
     }
   web-guard.mjs: |
 {{ .Files.Get "files/web-guard.mjs" | indent 4 }}
   read-guard.mjs: |
 {{ .Files.Get "files/read-guard.mjs" | indent 4 }}
+  message-guard.mjs: |
+{{ .Files.Get "files/message-guard.mjs" | indent 4 }}
   naila-trace.mjs: |
 {{ .Files.Get "files/naila-trace.mjs" | indent 4 }}
 {{- range .Values.workers }}
@@ -84,7 +87,7 @@ spec:
   template:
     metadata:
       labels: { app: assistant-claude }
-      annotations: { checksum/config: {{ printf "%s%s" (.Files.Get "files/CLAUDE.md") (print (include "assistant.agentFiles" .) (toJson .Values.workers) (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/naila-trace.mjs") (.Files.Get "files/start.sh") (.Files.Get "files/naila-test.sh") .Values.finance.testBudget) | sha256sum | trunc 12 }} }
+      annotations: { checksum/config: {{ printf "%s%s" (.Files.Get "files/CLAUDE.md") (print (include "assistant.agentFiles" .) (toJson .Values.workers) (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/message-guard.mjs") (.Files.Get "files/naila-trace.mjs") (.Files.Get "files/start.sh") (.Files.Get "files/naila-test.sh") .Values.finance.testBudget) | sha256sum | trunc 12 }} }
     spec:
       automountServiceAccountToken: false
       shareProcessNamespace: true   # the pause container becomes PID 1 and reaps exited processes (claude doesn't)

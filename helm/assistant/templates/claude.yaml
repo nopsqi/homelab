@@ -1,3 +1,6 @@
+{{- define "assistant.testCopyNote" -}}
+The connected budget is a TEST COPY of the user's household budget, made for this. Test changes (creating, editing, deleting, budgeting) are fine here; still clean up what a test creates.
+{{- end }}
 {{- if .Values.claude.enabled }}
 # Spike: Naila as an always-on Claude Code Remote Control server, driven from the Claude app (your Max login,
 # done once with `kubectl attach -it` + /login). Tools: vault-mcp only. Anything not allowed below prompts on
@@ -24,8 +27,11 @@ data:
 {{ .Files.Get "files/finance-agent.md" | indent 4 }}
 {{- if .Values.finance.testBudget }}
     
-    The connected budget is a TEST COPY of the user's household budget, made for this. Test changes (creating, editing, deleting, budgeting) are fine here; still clean up what a test creates.
+{{ include "assistant.testCopyNote" . | indent 4 }}
 {{- end }}
+  # naila-test.sh appends this to the finance worker it points at assistant-finance-test
+  finance-test-note: |
+{{ include "assistant.testCopyNote" . | indent 4 }}
   ops-agent.md: |
 {{ .Files.Get "files/ops-agent.md" | indent 4 }}
   naila-test.sh: |
@@ -80,7 +86,7 @@ spec:
             - { name: CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH, value: "1" }   # workers never spawn workers
             - { name: TZ, value: {{ .Values.tz | quote }} }
           envFrom:
-            - secretRef: { name: assistant-claude-secret }   # MCP_FINANCE_TOKEN MCP_OPS_TOKEN
+            - secretRef: { name: assistant-claude-secret }   # MCP_FINANCE_TOKEN MCP_FINANCE_TEST_TOKEN MCP_OPS_TOKEN
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           volumeMounts:
             - { name: home, mountPath: /home/claude }
@@ -139,7 +145,7 @@ spec:
       ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
     - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16] } }]
       ports: [{ protocol: TCP, port: 443 }]
-    - to: [{ podSelector: { matchLabels: { app: assistant-finance } } }, { podSelector: { matchLabels: { app: assistant-ops } } }]
+    - to: [{ podSelector: { matchLabels: { app: assistant-finance } } }, { podSelector: { matchLabels: { app: assistant-finance-test } } }, { podSelector: { matchLabels: { app: assistant-ops } } }]
       ports: [{ protocol: TCP, port: 8080 }]
 {{- end }}
 {{- end }}

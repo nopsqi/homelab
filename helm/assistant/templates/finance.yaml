@@ -1,32 +1,36 @@
-{{- if .Values.finance.enabled }}
 # Accounting tool server: actual-mcp over HTTP behind a bearer. Holds the Actual credentials; no model of its
 # own (the `finance` subagent in the Claude session is the brain). Only the Claude pod may call it.
+# assistant-finance serves Naila and the finance session; assistant-finance-test (finance.testServer) is the same
+# server on the test copy of the budget, with its own bearer, used only by /config/naila-test.sh and the live suite.
+{{- range $name, $on := dict "assistant-finance" .Values.finance.enabled "assistant-finance-test" (and .Values.finance.enabled .Values.finance.testServer) }}
+{{- if $on }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: assistant-finance
-  labels: { app: assistant-finance }
+  name: {{ $name }}
+  labels: { app: {{ $name }} }
 spec:
   replicas: 1
   strategy: { type: Recreate }
-  selector: { matchLabels: { app: assistant-finance } }
+  selector: { matchLabels: { app: {{ $name }} } }
   template:
     metadata:
-      labels: { app: assistant-finance }
+      labels: { app: {{ $name }} }
     spec:
       automountServiceAccountToken: false
       imagePullSecrets: [{ name: ghcr-pull }]
       securityContext: { runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
       containers:
         - name: finance
-          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          image: {{ $.Values.image.repository }}:{{ $.Values.image.tag }}
           command: ["node", "packages/actual-mcp/dist/server.js"]
           env:
             - { name: MCP_HTTP_PORT, value: "8080" }
             - { name: ACTUAL_DATA_DIR, value: /data/actual }
-            - { name: TZ, value: {{ .Values.tz | quote }} }
+            - { name: TZ, value: {{ $.Values.tz | quote }} }
           envFrom:
-            - secretRef: { name: assistant-finance-secret }   # ACTUAL_URL ACTUAL_PASSWORD ACTUAL_SYNC_ID MCP_SECRET
+            - secretRef: { name: {{ $name }}-secret }   # ACTUAL_URL ACTUAL_PASSWORD ACTUAL_SYNC_ID MCP_SECRET
           ports: [{ containerPort: 8080 }]
           readinessProbe: { httpGet: { path: /healthz, port: 8080 }, initialDelaySeconds: 10, periodSeconds: 10 }
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
@@ -38,17 +42,17 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: assistant-finance
+  name: {{ $name }}
 spec:
-  selector: { app: assistant-finance }
+  selector: { app: {{ $name }} }
   ports: [{ port: 8080, targetPort: 8080, protocol: TCP }]
-{{- if .Values.networkPolicy.enabled }}
+{{- if $.Values.networkPolicy.enabled }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
-metadata: { name: assistant-finance }
+metadata: { name: {{ $name }} }
 spec:
-  podSelector: { matchLabels: { app: assistant-finance } }
+  podSelector: { matchLabels: { app: {{ $name }} } }
   policyTypes: [Ingress, Egress]
   ingress:
     - from: [{ podSelector: { matchLabels: { app: assistant-claude } } }]
@@ -58,5 +62,6 @@ spec:
       ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: actual } } }]
       ports: [{ protocol: TCP, port: 5006 }]
+{{- end }}
 {{- end }}
 {{- end }}

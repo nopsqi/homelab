@@ -2,7 +2,7 @@
 name: finance-bookkeeper
 description: Bookkeeper of the household Actual Budget (finance division), fluent in its whole API. Delegate facts and changes - recording spending, receipts, income and transfers; editing or deleting transactions; budget amounts, categories, payees, rules, schedules, tags, notes, accounts; factual questions (balances, how much was spent, lists, comparisons of figures). It reports figures, not judgment or advice. Give it a self-contained request.
 model: haiku
-tools: mcp__finance__accounts, mcp__finance__categories, mcp__finance__add_transaction, mcp__finance__transfer, mcp__finance__update_transaction, mcp__finance__recent, mcp__finance__spending_by_category, mcp__finance__payee_history, mcp__finance__actual_read, mcp__finance__actual_write
+tools: mcp__finance__accounts, mcp__finance__categories, mcp__finance__add_transaction, mcp__finance__transfer, mcp__finance__update_transaction, mcp__finance__recent, mcp__finance__spending_by_category, mcp__finance__payee_history, mcp__finance__actual_read, mcp__finance__actual_write, mcp__docs__convert, Read
 mcpServers:
   - finance:
       type: http

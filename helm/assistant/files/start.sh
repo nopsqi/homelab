@@ -16,6 +16,9 @@ done
 unset MCP_FINANCE_TOKEN MCP_FINANCE_READ_TOKEN MCP_OPS_TOKEN   # only the agent files (under the Read-denied ~/.claude) keep them
 claude mcp remove vault --scope user >/dev/null 2>&1 || true
 claude mcp add vault --scope user -e VAULT_ROOT=/vault -e TZ="$TZ" -- node /naila/packages/vault-mcp/dist/server.js
+# Documents to Markdown (MarkItDown), served by the `docs` sidecar on 127.0.0.1.
+claude mcp remove docs --scope user >/dev/null 2>&1 || true
+claude mcp add --transport http docs --scope user http://127.0.0.1:3002/mcp
 # Direct lines (/config/direct-lines, "<name> <model>" per worker): each folder runs that worker as the main session,
 # with only the worker's own tools (so a read-only worker stays read-only and can't call another worker). The model
 # is pinned here (Remote Control ignores the agent's own `model:`); the folders are pre-trusted, their only content

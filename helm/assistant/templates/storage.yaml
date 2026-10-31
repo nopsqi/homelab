@@ -1,10 +1,11 @@
 {{- if eq .Values.vault.mode "smb" }}
-# Static PV on the same Storage Box share syncthing uses; a PV binds one PVC, so this is a second PV
-# (distinct volumeHandle) over the same source. Nothing is provisioned or deleted by Kubernetes.
+# Static PV on the Storage Box vault directory (the `assistant` SMB sub-account over obsidian/, the same files the
+# devices sync over WebDAV with Remotely Save). Its own name, so the local-path copy below can stay as a rollback.
+# Nothing is provisioned or deleted by Kubernetes.
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: assistant-vault
+  name: assistant-vault-smb
 spec:
   capacity: { storage: 1Ti }
   accessModes: [ReadWriteMany]
@@ -13,7 +14,7 @@ spec:
   mountOptions: {{- toYaml .Values.vault.smb.mountOptions | nindent 4 }}
   csi:
     driver: smb.csi.k8s.io
-    volumeHandle: assistant-vault
+    volumeHandle: assistant-vault-smb
     volumeAttributes:
       source: {{ required "vault.smb.source is required in smb mode" .Values.vault.smb.source | quote }}
     nodeStageSecretRef:
@@ -23,19 +24,23 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: assistant-vault
-  annotations: { argocd.argoproj.io/sync-options: Delete=false }
+  name: assistant-vault-smb
+  annotations: { argocd.argoproj.io/sync-options: "Delete=false,Prune=false" }
 spec:
   storageClassName: ""
-  volumeName: assistant-vault
+  volumeName: assistant-vault-smb
   accessModes: [ReadWriteMany]
   resources: { requests: { storage: 1Ti } }
-{{- else }}
+{{- end }}
+{{- if or (ne .Values.vault.mode "smb") .Values.vault.keepLocalCopy }}
+---
+# The hand-seeded local copy: the vault in localPath mode, a rollback in smb mode while vault.keepLocalCopy is true.
+# Prune=false as well as Delete=false: ArgoCD's prune ignores Delete=false.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: assistant-vault
-  annotations: { argocd.argoproj.io/sync-options: Delete=false }
+  annotations: { argocd.argoproj.io/sync-options: "Delete=false,Prune=false" }
 spec:
   storageClassName: local-path
   accessModes: [ReadWriteOnce]

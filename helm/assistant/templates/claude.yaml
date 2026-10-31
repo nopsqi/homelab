@@ -104,7 +104,7 @@ spec:
             - name: vault
               mountPath: /vault
               {{- if eq .Values.vault.mode "smb" }}
-              subPath: {{ .Values.vault.subPath }}
+              subPath: {{ .Values.vault.subPath | quote }}
               {{- end }}
           resources: { requests: { cpu: 50m, memory: 256Mi }, limits: { memory: 1Gi } }
         {{- if .Values.login.enabled }}
@@ -132,7 +132,7 @@ spec:
         - { name: home, persistentVolumeClaim: { claimName: assistant-claude-home } }
         - { name: config, configMap: { name: assistant-claude } }
         - { name: naila, emptyDir: {} }
-        - { name: vault, persistentVolumeClaim: { claimName: assistant-vault } }
+        - { name: vault, persistentVolumeClaim: { claimName: {{ if eq .Values.vault.mode "smb" }}assistant-vault-smb{{ else }}assistant-vault{{ end }} } }
 {{- if .Values.networkPolicy.enabled }}
 ---
 # Out: DNS and the internet on 443 (Anthropic for model + Remote Control, npm for the one-time install, Cloudflare Access keys).

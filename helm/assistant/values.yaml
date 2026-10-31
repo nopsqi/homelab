@@ -15,6 +15,13 @@ finance:
   enabled: false           # accounting tool server (actual-mcp over HTTP); the claude session's `finance` subagent calls it
   testBudget: false        # true: tell the worker its budget is a test copy (test writes allowed). Set false before pointing at the real budget.
   testServer: false        # a second server (assistant-finance-test) on the test copy, its own bearer; only naila-test.sh uses it
+# Naila's workers: one subagent each (files/agents/<name>.md, named <division>-<job>), and by default a direct
+# Remote Control line of the same name in the Claude app (direct: false for a worker that only makes sense as a
+# step Naila runs). model pins the direct line (Remote Control ignores the agent file's own model:).
+workers:
+  - { name: finance-bookkeeper, model: haiku, direct: true }
+  - { name: finance-advisor, model: opus, direct: true }
+  - { name: ops-oncall, model: sonnet, direct: true }
 ops:
   enabled: false           # on-call tool server (cluster-mcp over HTTP, read-only ServiceAccount); the `ops` subagent calls it
   # Namespaces whose pod logs ops may read. Never: assistant (Naila's terminal), sealed-secrets, argocd, kube-system.

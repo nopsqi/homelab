@@ -29,7 +29,7 @@ spec:
           labels: { severity: critical }
           annotations:
             summary: "Naila's Claude Code is logged out"
-            description: "Naila, the bookkeeper and the advisor can't work. Log in again at https://naila.nopsqi.dev"
+            description: "Naila and her direct lines can't work. Log in again at https://naila.nopsqi.dev"
         # Claude Code renews the access token with its refresh token; an expiry well in the past means renewal is failing.
         - alert: NailaTokenNotRenewed
           expr: time() - naila_claude_token_expiry_timestamp_seconds > 1800

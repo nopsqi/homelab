@@ -1,3 +1,9 @@
+{{- define "assistant.directNames" -}}
+{{- range .Values.workers }}{{ if .direct }},{{ .name }}{{ end }}{{ end }}
+{{- end }}
+{{- define "assistant.agentFiles" -}}
+{{- range $p, $_ := .Files.Glob "files/agents/*.md" }}{{ $.Files.Get $p }}{{ end }}
+{{- end }}
 {{- define "assistant.testCopyNote" -}}
 The connected budget is a TEST COPY of the user's household budget, made for this. Test changes (creating, editing, deleting, budgeting) are fine here; still clean up what a test creates.
 {{- end }}
@@ -26,23 +32,26 @@ data:
         "PreToolUse": [{ "matcher": "WebFetch|WebSearch", "hooks": [{ "type": "command", "command": "node /config/web-guard.mjs" }] }]
       }
     }
-  finance-advisor.md: |
-{{ .Files.Get "files/finance-advisor.md" | indent 4 }}
   web-guard.mjs: |
 {{ .Files.Get "files/web-guard.mjs" | indent 4 }}
   naila-trace.mjs: |
 {{ .Files.Get "files/naila-trace.mjs" | indent 4 }}
-  finance-bookkeeper.md: |
-{{ .Files.Get "files/finance-bookkeeper.md" | indent 4 }}
-{{- if .Values.finance.testBudget }}
+{{- range .Values.workers }}
+  agent-{{ .name }}.md: |
+{{ $.Files.Get (printf "files/agents/%s.md" .name) | required (printf "files/agents/%s.md is missing" .name) | indent 4 }}
+{{- if and (eq .name "finance-bookkeeper") $.Values.finance.testBudget }}
     
-{{ include "assistant.testCopyNote" . | indent 4 }}
+{{ include "assistant.testCopyNote" $ | indent 4 }}
 {{- end }}
+{{- end }}
+  # start.sh opens one Remote Control line per entry: "<name> <model>"
+  direct-lines: |
+{{- range .Values.workers }}{{ if .direct }}
+    {{ .name }} {{ .model }}
+{{- end }}{{ end }}
   # naila-test.sh appends this to the bookkeeper it points at assistant-finance-test
   finance-test-note: |
 {{ include "assistant.testCopyNote" . | indent 4 }}
-  ops-agent.md: |
-{{ .Files.Get "files/ops-agent.md" | indent 4 }}
   naila-test.sh: |
 {{ .Files.Get "files/naila-test.sh" | indent 4 }}
   start.sh: |
@@ -70,7 +79,7 @@ spec:
   template:
     metadata:
       labels: { app: assistant-claude }
-      annotations: { checksum/config: {{ printf "%s%s" (.Files.Get "files/CLAUDE.md") (print (.Files.Get "files/finance-bookkeeper.md") (.Files.Get "files/finance-advisor.md") (.Files.Get "files/web-guard.mjs") (.Files.Get "files/naila-trace.mjs") (.Files.Get "files/ops-agent.md") (.Files.Get "files/start.sh") (.Files.Get "files/naila-test.sh") .Values.finance.testBudget) | sha256sum | trunc 12 }} }
+      annotations: { checksum/config: {{ printf "%s%s" (.Files.Get "files/CLAUDE.md") (print (include "assistant.agentFiles" .) (toJson .Values.workers) (.Files.Get "files/web-guard.mjs") (.Files.Get "files/naila-trace.mjs") (.Files.Get "files/start.sh") (.Files.Get "files/naila-test.sh") .Values.finance.testBudget) | sha256sum | trunc 12 }} }
     spec:
       automountServiceAccountToken: false
       shareProcessNamespace: true   # the pause container becomes PID 1 and reaps exited processes (claude doesn't)
@@ -106,7 +115,7 @@ spec:
               {{- if eq .Values.vault.mode "smb" }}
               subPath: {{ .Values.vault.subPath | quote }}
               {{- end }}
-          resources: { requests: { cpu: 50m, memory: 384Mi }, limits: { memory: 1536Mi } }   # three Remote Control servers, ~120Mi each idle, ~200Mi more per active conversation
+          resources: { requests: { cpu: 50m, memory: 512Mi }, limits: { memory: 1536Mi } }   # one Remote Control server per line, ~120Mi each idle, ~200Mi more per active conversation; past ~6 lines, move the direct lines to their own pod
         {{- if .Values.login.enabled }}
         # Phone page to re-login (naila.nopsqi.dev, behind Cloudflare Access) and login metrics. Same image as `claude`
         # because it runs the same glibc Claude Code binary from the shared home; restarts Naila through the shared PID namespace.
@@ -115,7 +124,7 @@ spec:
           command: ["node", "/naila/packages/login-web/dist/server.js"]
           env:
             - { name: HOME, value: /home/claude }
-            - { name: SESSIONS, value: "naila,finance-bookkeeper,finance-advisor" }   # Remote Control servers it reports and checks
+            - { name: SESSIONS, value: {{ printf "naila%s" (include "assistant.directNames" .) | quote }} }   # Remote Control servers it reports and checks
             - { name: ACCESS_TEAM, value: {{ .Values.login.accessTeam | quote }} }
             - { name: ACCESS_AUD, value: {{ .Values.login.accessAud | quote }} }
             - name: ALLOWED_EMAIL

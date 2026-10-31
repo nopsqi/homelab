@@ -23,13 +23,13 @@ data:
         "deny": ["Bash", "Write", "Edit", "NotebookEdit", "WebFetch", "WebSearch", "Read(~/.claude/**)", "Read(//home/claude/.claude/**)", "Read(//proc/**)", "Read(//config/**)", "mcp__claude_ai_Gmail"]
       }
     }
-  finance-agent.md: |
-{{ .Files.Get "files/finance-agent.md" | indent 4 }}
+  finance-bookkeeper.md: |
+{{ .Files.Get "files/finance-bookkeeper.md" | indent 4 }}
 {{- if .Values.finance.testBudget }}
     
 {{ include "assistant.testCopyNote" . | indent 4 }}
 {{- end }}
-  # naila-test.sh appends this to the finance worker it points at assistant-finance-test
+  # naila-test.sh appends this to the bookkeeper it points at assistant-finance-test
   finance-test-note: |
 {{ include "assistant.testCopyNote" . | indent 4 }}
   ops-agent.md: |
@@ -61,7 +61,7 @@ spec:
   template:
     metadata:
       labels: { app: assistant-claude }
-      annotations: { checksum/config: {{ printf "%s%s" (.Files.Get "files/CLAUDE.md") (print (.Files.Get "files/finance-agent.md") (.Files.Get "files/ops-agent.md") (.Files.Get "files/start.sh") (.Files.Get "files/naila-test.sh") .Values.finance.testBudget) | sha256sum | trunc 12 }} }
+      annotations: { checksum/config: {{ printf "%s%s" (.Files.Get "files/CLAUDE.md") (print (.Files.Get "files/finance-bookkeeper.md") (.Files.Get "files/ops-agent.md") (.Files.Get "files/start.sh") (.Files.Get "files/naila-test.sh") .Values.finance.testBudget) | sha256sum | trunc 12 }} }
     spec:
       automountServiceAccountToken: false
       shareProcessNamespace: true   # the pause container becomes PID 1 and reaps exited processes (claude doesn't)
@@ -106,6 +106,7 @@ spec:
           command: ["node", "/naila/packages/login-web/dist/server.js"]
           env:
             - { name: HOME, value: /home/claude }
+            - { name: SESSIONS, value: "naila,bookkeeper" }   # Remote Control servers it reports and checks
             - { name: ACCESS_TEAM, value: {{ .Values.login.accessTeam | quote }} }
             - { name: ACCESS_AUD, value: {{ .Values.login.accessAud | quote }} }
             - name: ALLOWED_EMAIL

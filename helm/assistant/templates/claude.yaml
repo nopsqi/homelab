@@ -4,8 +4,9 @@
 {{- define "assistant.agentFiles" -}}
 {{- range $p, $_ := .Files.Glob "files/agents/*.md" }}{{ $.Files.Get $p }}{{ end }}
 {{- end }}
+{{- /* RC mode files only: the checksum below restarts the RC lines, and a harness-only edit must not. */ -}}
 {{- define "assistant.modeFiles" -}}
-{{- range $p, $_ := .Files.Glob "files/modes/**" }}{{ $.Files.Get $p }}{{ end }}
+{{- range $p, $_ := .Files.Glob "files/modes/rc/**" }}{{ $.Files.Get $p }}{{ end }}
 {{- end }}
 {{- /* A body file holds the shared text plus `<!-- mode -->` (the mode's main section) and optional
        `<!-- mode:NAME -->` slots, filled from files/modes/<mode>/<base>.md and <base>.NAME.md. */ -}}
@@ -101,6 +102,9 @@ data:
   # Not in the checksum: a test-script edit must not restart the RC lines (/config is a full mount, it updates in place).
   harness-test.sh: |
 {{ .Files.Get "files/harness-test.sh" | indent 4 }}
+  # Harness mode's permissions on top of settings.json (harness-test.sh applies them); not in the checksum either.
+  harness-settings.json: |
+{{ .Files.Get "files/harness-settings.json" | indent 4 }}
   start.sh: |
 {{ .Files.Get "files/start.sh" | indent 4 }}
 ---

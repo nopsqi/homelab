@@ -1,0 +1,22 @@
+{
+  "_comment": "Harness mode: the permissions every worker run gets on top of the RC settings (no phone, so no ask). Write tools and cross-session messaging are denied to every model; only the core carries out writes, for an approved decision.",
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "allow": [
+      "mcp__core__propose_plan",
+      "mcp__core__ask_worker",
+      "mcp__vault__write_inbox",
+      "mcp__vault__append_daily"
+    ],
+    "deny": [
+      "mcp__finance__add_transaction",
+      "mcp__finance__transfer",
+      "mcp__finance__update_transaction",
+      "mcp__finance__actual_write",
+      "mcp__finance-notes__write_note",
+      "SendMessage",
+      "ListAgents",
+      "Agent"
+    ]
+  }
+}

@@ -6,7 +6,8 @@
 # HOME count as an untrusted project folder and lose their inline MCP servers). Naila can't run this (Bash is denied).
 set -eu
 export PATH=$HOME/.npm-global/bin:$PATH
-T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
+# The copy holds the login and the finance bearer, so it lives under ~/.claude, which Naila's Read deny covers.
+T=$(mktemp -d -p "$HOME/.claude" test.XXXXXX); trap 'rm -rf "$T"' EXIT
 cp -a "$HOME/.claude/agents" "$HOME/.claude/.credentials.json" "$T/"
 cp "$HOME/.claude.json" "$T/.claude.json"
 node -e 'const s=require(process.argv[1]); delete s.permissions.ask; s.permissions.defaultMode="dontAsk"; s.permissions.allow.push("mcp__finance__add_transaction","mcp__finance__transfer","mcp__finance__update_transaction","mcp__finance__actual_write","mcp__vault__write_inbox","mcp__vault__append_daily","Agent"); process.stdout.write(JSON.stringify(s))' "$HOME/.claude/settings.json" > "$T/settings.json"

@@ -20,11 +20,17 @@ for await (const chunk of process.stdin) input += chunk
 let e = {}
 try { e = JSON.parse(input) } catch { /* unreadable: fall through to the deny below */ }
 const i = e.tool_input ?? {}
-const paths = [i.file_path, i.path, typeof i.pattern === 'string' && isAbsolute(i.pattern) ? i.pattern : undefined]
-  .filter((p) => typeof p === 'string' && p).map((p) => real(resolve(e.cwd ?? '/', p.replace(/^~(?=\/|$)/, '/home/claude'))))
+const home = (p) => p.replace(/^~(?=\/|$)/, '/home/claude')
+// Glob's pattern is a path (relative ones start at its `path` or the cwd); Grep's pattern is a regex, not a path.
+const globPath = e.tool_name === 'Glob' && typeof i.pattern === 'string' ? resolve(home(i.path ?? e.cwd ?? '/'), home(i.pattern)) : undefined
+const raw = [i.file_path, i.path, globPath].filter((p) => typeof p === 'string' && p).map((p) => resolve(e.cwd ?? '/', home(p)))
+const paths = raw.map(real)
+// A wildcard before ~/.claude ends (/home/claud*/…, /home/*/.claude/…) could match inside it; `..` after one could climb out.
+const wild = (p) => { const k = p.search(/[*?[{]/); if (k < 0) return false; const lit = p.slice(0, k)
+  return /(^|\/)\.\.(\/|$)/.test(p.slice(k)) || CLAUDE.startsWith(lit) || ((lit + '/').startsWith(CLAUDE + '/') && !OK.some((r) => r.test(lit))) }
 const inside = (p) => p === '/home/claude/.claude.json' || ((p === CLAUDE || p.startsWith(CLAUDE + '/')) && !OK.some((r) => r.test(p)))
 // A Glob or Grep rooted above ~/.claude (/home/claude, /home, /) would search inside it.
 const above = (p) => e.tool_name !== 'Read' && (p === '/' || CLAUDE.startsWith(p.replace(/\/\*\*.*$/, '').replace(/\/+$/, '') + '/'))
 const deny = (why) => console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: why } }))
-if (!e.tool_name || paths.some(inside)) deny('Under ~/.claude only uploads/ (files the user sent) and tool-results/ may be read.')
+if (!e.tool_name || paths.some(inside) || raw.some(wild)) deny('Under ~/.claude only uploads/ (files the user sent) and tool-results/ may be read.')
 else if (paths.some(above)) deny('That search would include ~/.claude: search a narrower folder (the vault, an upload folder, your own folder).')

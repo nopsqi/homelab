@@ -24,7 +24,7 @@ data:
         "defaultMode": "default",
         "allow": ["mcp__vault__tree", "mcp__vault__grep", "mcp__vault__read", "mcp__vault__open_tasks", "mcp__vault__workers_list",
                   "mcp__finance__accounts", "mcp__finance__categories", "mcp__finance__recent", "mcp__finance__spending_by_category", "mcp__finance__payee_history", "mcp__finance__actual_read",
-                  "mcp__ops", "mcp__finance-read", "Read(//vault/Finance/**)", "mcp__docs__convert",
+                  "mcp__ops", "mcp__finance-read", "Read(//vault/Finance/**)", "Read(//handbooks/**)", "mcp__docs__convert",
                   "Read(~/.claude/uploads/**)", "Read(//home/claude/.claude/uploads/**)", "Read(//home/claude/.claude/projects/*/*/tool-results/**)"],
         "ask": ["mcp__finance__add_transaction", "mcp__finance__transfer", "mcp__finance__update_transaction", "mcp__finance__actual_write", "mcp__finance-notes__write_note"],
         "deny": ["Bash", "Write", "Edit", "NotebookEdit", "Read(~/.claude/.credentials.json)", "Read(//home/claude/.claude/.credentials.json)",
@@ -49,7 +49,7 @@ data:
 {{ .Files.Get "files/naila-trace.mjs" | indent 4 }}
 {{- range .Values.workers }}
   agent-{{ .name }}.md: |
-{{ $.Files.Get (printf "files/agents/%s.md" .name) | required (printf "files/agents/%s.md is missing" .name) | replace "<!-- actual-handbook -->" ($.Files.Get "files/actual-handbook.md" | trim) | indent 4 }}
+{{ $.Files.Get (printf "files/agents/%s.md" .name) | required (printf "files/agents/%s.md is missing" .name) | indent 4 }}
 {{- if and (eq .name "finance-bookkeeper") $.Values.finance.testBudget }}
     
 {{ include "assistant.testCopyNote" $ | indent 4 }}
@@ -60,6 +60,10 @@ data:
 {{- range .Values.workers }}{{ if .direct }}
     {{ .name }} {{ .model }}
 {{- end }}{{ end }}
+  # Mounted at /handbooks (not a subPath), so an edit reaches running conversations within a minute or two, no restart:
+  # the workers read it when they need it. Deliberately left out of the checksum below.
+  actual-handbook.md: |
+{{ .Files.Get "files/actual-handbook.md" | indent 4 }}
   # message-guard.mjs: "<line> <who it may message>" per direct line; a line not listed messages naila only
   message-peers: |
 {{- range .Values.workers }}{{ if and .direct .sendsTo }}
@@ -95,7 +99,7 @@ spec:
   template:
     metadata:
       labels: { app: assistant-claude }
-      annotations: { checksum/config: {{ printf "%s%s" (.Files.Get "files/CLAUDE.md") (print (include "assistant.agentFiles" .) (.Files.Get "files/actual-handbook.md") (toJson .Values.workers) (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/message-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/naila-trace.mjs") (.Files.Get "files/start.sh") (.Files.Get "files/naila-test.sh") .Values.finance.testBudget) | sha256sum | trunc 12 }} }
+      annotations: { checksum/config: {{ printf "%s%s" (.Files.Get "files/CLAUDE.md") (print (include "assistant.agentFiles" .) (toJson .Values.workers) (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/message-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/naila-trace.mjs") (.Files.Get "files/start.sh") (.Files.Get "files/naila-test.sh") .Values.finance.testBudget) | sha256sum | trunc 12 }} }
     spec:
       automountServiceAccountToken: false
       shareProcessNamespace: true   # the pause container becomes PID 1 and reaps exited processes (claude doesn't)
@@ -125,6 +129,7 @@ spec:
           volumeMounts:
             - { name: home, mountPath: /home/claude }
             - { name: config, mountPath: /config, readOnly: true }
+            - { name: handbooks, mountPath: /handbooks, readOnly: true }
             - { name: naila, mountPath: /naila, readOnly: true }
             - name: vault
               mountPath: /vault
@@ -184,6 +189,7 @@ spec:
       volumes:
         - { name: home, persistentVolumeClaim: { claimName: assistant-claude-home } }
         - { name: config, configMap: { name: assistant-claude } }
+        - { name: handbooks, configMap: { name: assistant-claude, items: [{ key: actual-handbook.md, path: actual.md }] } }
         - { name: naila, emptyDir: {} }
         - { name: docs-venv, emptyDir: {} }
         - { name: docs-tmp, emptyDir: {} }

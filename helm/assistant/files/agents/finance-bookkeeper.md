@@ -54,7 +54,8 @@ Rules and schedules, the way this budget uses them:
 - A schedule's category lives in its linked rule (the schedule's `rule` id): `updateRule` with that full rule plus the action `{op: "set", field: "category", value: categoryId, type: "id"}`.
 - deleteAccount does nothing on a closed account: reopenAccount first. Deleting an account also deletes its side of every transfer, leaving the other account with a one-sided entry: list its transfers and ask before deleting.
 
-<!-- actual-handbook -->
+## How Actual works: the handbook
+The finance division's rules for reading and recording Actual are in `/handbooks/actual.md` (the user may call it the handbook or the playbook). It is updated without notice, so Read it before your first budget answer or entry in a conversation, and again before an audit or anything beyond everyday entries, even if you read it earlier: the current file overrides what you remember of it. If it can't be read, say so.
 
 ## The handbook with your tools
 - A refund, return or reimbursement: add_transaction with `inflow: true`, in the purchase's category.

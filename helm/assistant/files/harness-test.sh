@@ -249,7 +249,8 @@ const label = (c, refused) => {
   const i = c.input ?? {}
   let n = c.name.replace(/^mcp__/, '').replace('__', ':')
   if (c.name === 'WebFetch') { try { n += `(${new URL(i.url).hostname})` } catch { n += '(?)' } }
-  if (c.name === 'Read' || c.name === 'Glob') n += `(${i.file_path ?? i.pattern ?? ''})`
+  if (c.name === 'Read') n += `(${i.file_path ?? ''})`
+  if (c.name === 'Glob' || c.name === 'Grep') n += `(${i.path ? `${i.path} ` : ''}${i.pattern ?? ''})`   // where it searched, not only what
   if (c.name === 'mcp__core__ask_worker') n += `(${i.worker})`
   return refused ? n + '!' : n
 }

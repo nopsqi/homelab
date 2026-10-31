@@ -35,7 +35,7 @@ spec:
             - { name: ACTUAL_DATA_DIR, value: /data/actual }
             - { name: TZ, value: {{ $.Values.tz | quote }} }
           envFrom:
-            - secretRef: { name: {{ $name }}-secret }   # ACTUAL_URL ACTUAL_PASSWORD ACTUAL_SYNC_ID MCP_SECRET
+            - secretRef: { name: {{ $name }}-secret }   # ACTUAL_URL ACTUAL_PASSWORD ACTUAL_SYNC_ID MCP_SECRET MCP_READ_SECRET
           ports: [{ containerPort: 8080 }]
           readinessProbe: { httpGet: { path: /healthz, port: 8080 }, initialDelaySeconds: 10, periodSeconds: 10 }
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }

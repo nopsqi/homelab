@@ -43,7 +43,7 @@ networkPolicy:
 sealedSecret:
   ghcrPull: ""             # dockerconfigjson blob: the claude pod pulls the naila image (vault-mcp)
   smb: {}                  # username password: Storage Box sub-account for the vault mount (vault.mode smb)
-  finance: {}              # ACTUAL_URL ACTUAL_PASSWORD ACTUAL_SYNC_ID MCP_SECRET
+  finance: {}              # ACTUAL_URL ACTUAL_PASSWORD ACTUAL_SYNC_ID MCP_SECRET MCP_READ_SECRET (the advisor's read-only bearer)
   financeTest: {}          # the same keys for assistant-finance-test: ACTUAL_SYNC_ID of the test copy, its own MCP_SECRET
   ops: {}                  # MCP_SECRET
-  claude: {}               # MCP_FINANCE_TOKEN MCP_FINANCE_TEST_TOKEN MCP_OPS_TOKEN (same values as the tool servers' MCP_SECRET)
+  claude: {}               # MCP_FINANCE_TOKEN MCP_FINANCE_READ_TOKEN MCP_FINANCE_TEST_TOKEN MCP_FINANCE_TEST_READ_TOKEN MCP_OPS_TOKEN (same values as the tool servers' MCP_SECRET)

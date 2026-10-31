@@ -29,6 +29,22 @@ while read -r n m; do
   echo "{\"agent\": \"$n\", \"model\": \"$m\"}" > $HOME/$n/.claude/settings.json
   [ -f $HOME/.claude.json ] && node -e 'const f=process.argv[1], p=process.argv[2], c=require(f); c.projects ??= {}; c.projects[p] = { ...c.projects[p], hasTrustDialogAccepted: true }; require("fs").writeFileSync(f, JSON.stringify(c, null, 2))' $HOME/.claude.json "/home/claude/$n"
 done < /config/direct-lines
+# Exact session names (naila, finance-bookkeeper, …) instead of the automatic <folder>-<code>, which the app shows on
+# messages between sessions: the same title record `/rename` writes, added to each line's newest conversation file,
+# which Remote Control resumes (added by the user, 2026-10-31). A line with no conversation yet gets its name after
+# its first one and the next start. Idempotent: nothing is added if the name is already set.
+node -e '
+const fs = require("fs"), path = require("path")
+const lines = [["work", "naila"], ...fs.readFileSync("/config/direct-lines", "utf8").split("\n").map((l) => l.trim().split(/\s+/)[0]).filter(Boolean).map((n) => [n, n])]
+for (const [dir, name] of lines) {
+  const p = path.join(process.env.HOME, ".claude/projects", "-home-claude-" + dir)
+  let files = []; try { files = fs.readdirSync(p).filter((f) => f.endsWith(".jsonl")).map((f) => path.join(p, f)) } catch {}
+  const f = files.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0]
+  if (!f) continue
+  const titles = fs.readFileSync(f, "utf8").split("\n").filter((l) => l.includes("\"custom-title\""))
+  if (titles.length && JSON.parse(titles[titles.length - 1]).customTitle === name) continue
+  fs.appendFileSync(f, JSON.stringify({ type: "custom-title", customTitle: name, sessionId: path.basename(f, ".jsonl") }) + "\n")
+}'
 cd $HOME/work
 # No login yet: start interactive Claude Code so you can `kubectl -n assistant attach -it deploy/assistant-claude`,
 # /login, then /exit; the pod restarts into Remote Control (attach once more to accept its trust/enable prompts).

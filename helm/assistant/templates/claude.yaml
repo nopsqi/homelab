@@ -26,7 +26,7 @@ data:
                   "mcp__finance__accounts", "mcp__finance__categories", "mcp__finance__recent", "mcp__finance__spending_by_category", "mcp__finance__payee_history", "mcp__finance__actual_read",
                   "mcp__ops", "mcp__finance-read", "Read(//vault/Finance/**)", "mcp__docs__convert",
                   "Read(~/.claude/uploads/**)", "Read(//home/claude/.claude/uploads/**)", "Read(//home/claude/.claude/projects/*/*/tool-results/**)"],
-        "ask": ["mcp__finance__add_transaction", "mcp__finance__transfer", "mcp__finance__update_transaction", "mcp__finance__actual_write"],
+        "ask": ["mcp__finance__add_transaction", "mcp__finance__transfer", "mcp__finance__update_transaction", "mcp__finance__actual_write", "mcp__finance-notes__write_note"],
         "deny": ["Bash", "Write", "Edit", "NotebookEdit", "Read(~/.claude/.credentials.json)", "Read(//home/claude/.claude/.credentials.json)",
                  "Read(~/.claude/agents/**)", "Read(//home/claude/.claude/agents/**)", "Read(//home/claude/.claude/test.*/**)", "Read(//home/claude/.claude/projects/**/*.jsonl)", "Read(//home/claude/.claude.json)", "Read(//proc/**)", "Read(//config/**)", "mcp__claude_ai_Gmail"]
       },

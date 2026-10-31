@@ -3,7 +3,7 @@
 #   ... naila-test.sh --line <worker> "<request>"   tests that worker's direct line instead (e.g. --line finance-bookkeeper)
 #   NAILA_TEST_TRACE=1 ...   prints a TRACE line after the answer: subagents used and the tools each called
 # The finance workers in a test always use assistant-finance-test (the test copy), whatever budget Naila is on, and
-# the advisor reads the fixture cabinet /tmp/naila-cabinet instead of the vault's Finance/ folder.
+# the advisor reads and writes the fixture cabinet /tmp/naila-cabinet instead of the vault's Finance/ folder.
 # Only the "ask" rules are dropped, in a throwaway CLAUDE_CONFIG_DIR (not HOME: agents copied under a swapped
 # HOME count as an untrusted project folder and lose their inline MCP servers). Naila can't run this (Bash is denied).
 set -eu
@@ -12,7 +12,7 @@ export PATH=$HOME/.npm-global/bin:$PATH
 T=$(mktemp -d -p "$HOME/.claude" test.XXXXXX); trap 'rm -rf "$T"' EXIT
 cp -a "$HOME/.claude/agents" "$HOME/.claude/.credentials.json" "$T/"
 cp "$HOME/.claude.json" "$T/.claude.json"
-node -e 'const s=require(process.argv[1]); delete s.permissions.ask; s.permissions.defaultMode="dontAsk"; s.permissions.deny.push("SendMessage","ListAgents"); s.permissions.allow.push("mcp__finance__add_transaction","mcp__finance__transfer","mcp__finance__update_transaction","mcp__finance__actual_write","mcp__vault__write_inbox","mcp__vault__append_daily","Agent"); process.stdout.write(JSON.stringify(s))' "$HOME/.claude/settings.json" > "$T/settings.json"
+node -e 'const s=require(process.argv[1]); delete s.permissions.ask; s.permissions.defaultMode="dontAsk"; s.permissions.deny.push("SendMessage","ListAgents"); s.permissions.allow.push("mcp__finance__add_transaction","mcp__finance__transfer","mcp__finance__update_transaction","mcp__finance__actual_write","mcp__vault__write_inbox","mcp__vault__append_daily","mcp__finance-notes__write_note","Agent"); process.stdout.write(JSON.stringify(s))' "$HOME/.claude/settings.json" > "$T/settings.json"
 # The finance workers go to the test server (the test copy of the budget, its own bearers), never the real one;
 # without a test server there are no finance workers at all.
 rm -f "$T/agents/finance-bookkeeper.md" "$T/agents/finance-advisor.md"

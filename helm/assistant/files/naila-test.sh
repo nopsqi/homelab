@@ -25,7 +25,7 @@ if [ -n "${MCP_FINANCE_TEST_READ_TOKEN:-}" ]; then
     -e 's#/vault/Finance/#/tmp/naila-cabinet/#g' /config/finance-advisor.md > "$T/agents/finance-advisor.md"
   node -e 'const f=process.argv[1], s=JSON.parse(require("fs").readFileSync(f)); s.permissions.allow.push("Read(//tmp/naila-cabinet/**)"); require("fs").writeFileSync(f, JSON.stringify(s))' "$T/settings.json"
 fi
-D=work; case "$1" in --bookkeeper) D=bookkeeper; shift ;; --advisor) D=advisor; shift ;; esac
+D=work; case "$1" in --bookkeeper) D=finance-bookkeeper; shift ;; --advisor) D=finance-advisor; shift ;; esac
 cd "$HOME/$D"
 if [ -n "${NAILA_TEST_TRACE:-}" ]; then
   CLAUDE_CONFIG_DIR="$T" claude -p "$1" --output-format stream-json --verbose </dev/null | node /config/naila-trace.mjs

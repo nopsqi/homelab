@@ -115,7 +115,7 @@ spec:
           command: ["node", "/naila/packages/login-web/dist/server.js"]
           env:
             - { name: HOME, value: /home/claude }
-            - { name: SESSIONS, value: "naila,bookkeeper,advisor" }   # Remote Control servers it reports and checks
+            - { name: SESSIONS, value: "naila,finance-bookkeeper,finance-advisor" }   # Remote Control servers it reports and checks
             - { name: ACCESS_TEAM, value: {{ .Values.login.accessTeam | quote }} }
             - { name: ACCESS_AUD, value: {{ .Values.login.accessAud | quote }} }
             - name: ALLOWED_EMAIL

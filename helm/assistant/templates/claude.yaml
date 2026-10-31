@@ -97,6 +97,9 @@ data:
 {{ include "assistant.testCopyNote" . | indent 4 }}
   naila-test.sh: |
 {{ .Files.Get "files/naila-test.sh" | indent 4 }}
+  # the same against harness mode (packages/harness): kubectl exec … bash /config/harness-test.sh --worker W "text" …
+  harness-test.sh: |
+{{ .Files.Get "files/harness-test.sh" | indent 4 }}
   start.sh: |
 {{ .Files.Get "files/start.sh" | indent 4 }}
 ---
@@ -122,7 +125,7 @@ spec:
   template:
     metadata:
       labels: { app: assistant-claude }
-      annotations: { checksum/config: {{ printf "%s%s" (.Files.Get "files/CLAUDE.md") (print (include "assistant.agentFiles" .) (include "assistant.modeFiles" .) (toJson .Values.workers) (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/message-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/naila-trace.mjs") (.Files.Get "files/start.sh") (.Files.Get "files/naila-test.sh") .Values.finance.testBudget) | sha256sum | trunc 12 }} }
+      annotations: { checksum/config: {{ printf "%s%s" (.Files.Get "files/CLAUDE.md") (print (include "assistant.agentFiles" .) (include "assistant.modeFiles" .) (toJson .Values.workers) (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/message-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/naila-trace.mjs") (.Files.Get "files/start.sh") (.Files.Get "files/naila-test.sh") (.Files.Get "files/harness-test.sh") .Values.finance.testBudget) | sha256sum | trunc 12 }} }
     spec:
       automountServiceAccountToken: false
       shareProcessNamespace: true   # the pause container becomes PID 1 and reaps exited processes (claude doesn't)

@@ -2,7 +2,7 @@
 # Usage: tests/render-modes.sh [git-ref]   (default origin/master)
 # Renders helm/assistant at <git-ref> and in the working tree, then checks ConfigMap assistant-claude:
 #  - the RC keys (CLAUDE.md, agent-*.md) are byte-identical between the two renders;
-#  - no harness-* key contains SendMessage, ListAgents, naila-c4 or phone.
+#  - no harness-*.md key contains SendMessage, ListAgents, naila-c4 or phone.
 set -euo pipefail
 ref="${1:-origin/master}"
 root="$(git rev-parse --show-toplevel)"
@@ -29,7 +29,7 @@ bad = []
 for k in rc:
     if old.get(k) != new.get(k):
         bad.append(f"RC key {k} differs (or is missing on one side)")
-harness = sorted(k for k in new if k.startswith("harness-"))
+harness = sorted(k for k in new if k.startswith("harness-") and k.endswith(".md"))   # instructions; harness-test.sh denies those tools by name
 if not harness:
     bad.append("no harness-* keys in the working-tree render")
 for k in harness:

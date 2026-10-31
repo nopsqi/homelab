@@ -27,10 +27,17 @@ const raw = [i.file_path, i.path, globPath].filter((p) => typeof p === 'string' 
 const paths = raw.map(real)
 // A wildcard before ~/.claude ends (/home/claud*/…, /home/*/.claude/…) could match inside it; `..` after one could climb out.
 const wild = (p) => { const k = p.search(/[*?[{]/); if (k < 0) return false; const lit = p.slice(0, k)
-  return /(^|\/)\.\.(\/|$)/.test(p.slice(k)) || CLAUDE.startsWith(lit) || ((lit + '/').startsWith(CLAUDE + '/') && !OK.some((r) => r.test(lit))) }
+  // Braces hide paths (uploads/{x,../agents}/*): none under /home/claude, and no `..` anywhere after a wildcard.
+  if (p.slice(k).includes('..') || (p.includes('{') && (p.startsWith('/home/claude/') || '/home/claude/'.startsWith(lit)))) return true
+  return CLAUDE.startsWith(lit) || ((lit + '/').startsWith(CLAUDE + '/') && !OK.some((r) => r.test(lit))) }
 const inside = (p) => p === '/home/claude/.claude.json' || ((p === CLAUDE || p.startsWith(CLAUDE + '/')) && !OK.some((r) => r.test(p)))
 // A Glob or Grep rooted above ~/.claude (/home/claude, /home, /) would search inside it.
 const above = (p) => e.tool_name !== 'Read' && (p === '/' || CLAUDE.startsWith(p.replace(/\/\*\*.*$/, '').replace(/\/+$/, '') + '/'))
 const deny = (why) => console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: why } }))
-if (!e.tool_name || paths.some(inside) || raw.some(wild)) deny('Under ~/.claude only uploads/ (files the user sent) and tool-results/ may be read.')
+// Checked on the raw Glob pattern, before resolving swallows them: no `..` at all, and no braces when the search
+// starts anywhere under /home/claude.
+const rawGlob = e.tool_name === 'Glob' && typeof i.pattern === 'string' ? home(i.pattern) : ''
+const base = isAbsolute(rawGlob) ? rawGlob : resolve(home(i.path ?? e.cwd ?? '/'))
+const sneaky = rawGlob.includes('..') || (rawGlob.includes('{') && (base + '/').startsWith('/home/claude/'))
+if (!e.tool_name || paths.some(inside) || raw.some(wild) || sneaky) deny('Under ~/.claude only uploads/ (files the user sent) and tool-results/ may be read.')
 else if (paths.some(above)) deny('That search would include ~/.claude: search a narrower folder (the vault, an upload folder, your own folder).')

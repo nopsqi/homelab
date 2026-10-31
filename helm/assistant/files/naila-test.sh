@@ -12,7 +12,7 @@ export PATH=$HOME/.npm-global/bin:$PATH
 T=$(mktemp -d -p "$HOME/.claude" test.XXXXXX); trap 'rm -rf "$T"' EXIT
 cp -a "$HOME/.claude/agents" "$HOME/.claude/.credentials.json" "$T/"
 cp "$HOME/.claude.json" "$T/.claude.json"
-node -e 'const s=require(process.argv[1]); delete s.permissions.ask; s.permissions.defaultMode="dontAsk"; s.permissions.allow.push("mcp__finance__add_transaction","mcp__finance__transfer","mcp__finance__update_transaction","mcp__finance__actual_write","mcp__vault__write_inbox","mcp__vault__append_daily","Agent"); process.stdout.write(JSON.stringify(s))' "$HOME/.claude/settings.json" > "$T/settings.json"
+node -e 'const s=require(process.argv[1]); delete s.permissions.ask; s.permissions.defaultMode="dontAsk"; s.permissions.deny.push("SendMessage","ListAgents"); s.permissions.allow.push("mcp__finance__add_transaction","mcp__finance__transfer","mcp__finance__update_transaction","mcp__finance__actual_write","mcp__vault__write_inbox","mcp__vault__append_daily","Agent"); process.stdout.write(JSON.stringify(s))' "$HOME/.claude/settings.json" > "$T/settings.json"
 # The finance workers go to the test server (the test copy of the budget, its own bearers), never the real one;
 # without a test server there are no finance workers at all.
 rm -f "$T/agents/finance-bookkeeper.md" "$T/agents/finance-advisor.md"

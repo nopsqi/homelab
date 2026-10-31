@@ -17,19 +17,28 @@ node -e 'const s=require(process.argv[1]); delete s.permissions.ask; s.permissio
 # without a test server there are no finance workers at all.
 rm -f "$T/agents/finance-bookkeeper.md" "$T/agents/finance-advisor.md"
 A=${NAILA_TEST_AGENTS:-/config}   # tests/live/run.sh PREVIEW=…: agent files rendered from the chart, before they ship
+H=${NAILA_TEST_HANDBOOKS:-/handbooks}   # …and the handbooks that go with them
 if [ -n "${MCP_FINANCE_TEST_TOKEN:-}" ]; then
-  { sed -e "s/__MCP_FINANCE_TOKEN__/$MCP_FINANCE_TEST_TOKEN/" -e 's#//assistant-finance:#//assistant-finance-test:#' $A/agent-finance-bookkeeper.md
+  { sed -e "s/__MCP_FINANCE_TOKEN__/$MCP_FINANCE_TEST_TOKEN/" -e "s#/handbooks/#$H/#g" -e 's#//assistant-finance:#//assistant-finance-test:#' $A/agent-finance-bookkeeper.md
     grep -q 'TEST COPY' $A/agent-finance-bookkeeper.md || { echo; cat /config/finance-test-note; }; } > "$T/agents/finance-bookkeeper.md"
 fi
 if [ -n "${MCP_FINANCE_TEST_READ_TOKEN:-}" ]; then
-  sed -e "s/__MCP_FINANCE_READ_TOKEN__/$MCP_FINANCE_TEST_READ_TOKEN/" -e 's#//assistant-finance:#//assistant-finance-test:#' \
+  sed -e "s/__MCP_FINANCE_READ_TOKEN__/$MCP_FINANCE_TEST_READ_TOKEN/" -e "s#/handbooks/#$H/#g" -e 's#//assistant-finance:#//assistant-finance-test:#' \
     -e 's#/vault/Finance/#/tmp/naila-cabinet/#g' $A/agent-finance-advisor.md > "$T/agents/finance-advisor.md"
-  node -e 'const f=process.argv[1], s=JSON.parse(require("fs").readFileSync(f)); s.permissions.allow.push("Read(//tmp/naila-cabinet/**)"); require("fs").writeFileSync(f, JSON.stringify(s))' "$T/settings.json"
+  node -e 'const f=process.argv[1], s=JSON.parse(require("fs").readFileSync(f)); s.permissions.allow.push("Read(//tmp/naila-cabinet/**)", "Read(/" + process.argv[2] + "/**)"); require("fs").writeFileSync(f, JSON.stringify(s))' "$T/settings.json" "$H"
 fi
 D=naila; [ "$1" = --line ] && { D=$2; shift 2; grep -q "^$D " /config/direct-lines || { echo "no direct line: $D"; exit 2; }; }
 cd "$HOME/$D"
-if [ -n "${NAILA_TEST_TRACE:-}" ]; then
-  CLAUDE_CONFIG_DIR="$T" claude -p "$1" --output-format stream-json --verbose </dev/null | node /config/naila-trace.mjs
-else
-  CLAUDE_CONFIG_DIR="$T" claude -p "$1" --output-format text </dev/null
-fi
+# More than one prompt is one conversation: each later prompt continues it (same folder, same config), after running
+# NAILA_TEST_BETWEEN if set (e.g. change a handbook mid-conversation).
+more=
+for p in "$@"; do
+  [ -z "$more" ] || [ -z "${NAILA_TEST_BETWEEN:-}" ] || sh -c "$NAILA_TEST_BETWEEN"
+  [ $# -gt 1 ] && echo "--- turn: $p"
+  if [ -n "${NAILA_TEST_TRACE:-}" ]; then
+    CLAUDE_CONFIG_DIR="$T" claude -p "$p" $more --output-format stream-json --verbose </dev/null | node /config/naila-trace.mjs
+  else
+    CLAUDE_CONFIG_DIR="$T" claude -p "$p" $more --output-format text </dev/null
+  fi
+  more=--continue
+done

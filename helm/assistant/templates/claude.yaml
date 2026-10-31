@@ -49,7 +49,7 @@ data:
 {{ .Files.Get "files/naila-trace.mjs" | indent 4 }}
 {{- range .Values.workers }}
   agent-{{ .name }}.md: |
-{{ $.Files.Get (printf "files/agents/%s.md" .name) | required (printf "files/agents/%s.md is missing" .name) | indent 4 }}
+{{ $.Files.Get (printf "files/agents/%s.md" .name) | required (printf "files/agents/%s.md is missing" .name) | replace "<!-- actual-handbook -->" ($.Files.Get "files/actual-handbook.md" | trim) | indent 4 }}
 {{- if and (eq .name "finance-bookkeeper") $.Values.finance.testBudget }}
     
 {{ include "assistant.testCopyNote" $ | indent 4 }}
@@ -59,6 +59,11 @@ data:
   direct-lines: |
 {{- range .Values.workers }}{{ if .direct }}
     {{ .name }} {{ .model }}
+{{- end }}{{ end }}
+  # message-guard.mjs: "<line> <who it may message>" per direct line; a line not listed messages naila only
+  message-peers: |
+{{- range .Values.workers }}{{ if and .direct .sendsTo }}
+    {{ .name }} {{ join "," .sendsTo }}
 {{- end }}{{ end }}
   # naila-test.sh appends this to the bookkeeper it points at assistant-finance-test
   finance-test-note: |
@@ -90,7 +95,7 @@ spec:
   template:
     metadata:
       labels: { app: assistant-claude }
-      annotations: { checksum/config: {{ printf "%s%s" (.Files.Get "files/CLAUDE.md") (print (include "assistant.agentFiles" .) (toJson .Values.workers) (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/message-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/naila-trace.mjs") (.Files.Get "files/start.sh") (.Files.Get "files/naila-test.sh") .Values.finance.testBudget) | sha256sum | trunc 12 }} }
+      annotations: { checksum/config: {{ printf "%s%s" (.Files.Get "files/CLAUDE.md") (print (include "assistant.agentFiles" .) (.Files.Get "files/actual-handbook.md") (toJson .Values.workers) (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/message-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/naila-trace.mjs") (.Files.Get "files/start.sh") (.Files.Get "files/naila-test.sh") .Values.finance.testBudget) | sha256sum | trunc 12 }} }
     spec:
       automountServiceAccountToken: false
       shareProcessNamespace: true   # the pause container becomes PID 1 and reaps exited processes (claude doesn't)

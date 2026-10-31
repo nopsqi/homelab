@@ -16,13 +16,14 @@ node -e 'const s=require(process.argv[1]); delete s.permissions.ask; s.permissio
 # The finance workers go to the test server (the test copy of the budget, its own bearers), never the real one;
 # without a test server there are no finance workers at all.
 rm -f "$T/agents/finance-bookkeeper.md" "$T/agents/finance-advisor.md"
+A=${NAILA_TEST_AGENTS:-/config}   # tests/live/run.sh PREVIEW=…: agent files rendered from the chart, before they ship
 if [ -n "${MCP_FINANCE_TEST_TOKEN:-}" ]; then
-  { sed -e "s/__MCP_FINANCE_TOKEN__/$MCP_FINANCE_TEST_TOKEN/" -e 's#//assistant-finance:#//assistant-finance-test:#' /config/agent-finance-bookkeeper.md
-    grep -q 'TEST COPY' /config/agent-finance-bookkeeper.md || { echo; cat /config/finance-test-note; }; } > "$T/agents/finance-bookkeeper.md"
+  { sed -e "s/__MCP_FINANCE_TOKEN__/$MCP_FINANCE_TEST_TOKEN/" -e 's#//assistant-finance:#//assistant-finance-test:#' $A/agent-finance-bookkeeper.md
+    grep -q 'TEST COPY' $A/agent-finance-bookkeeper.md || { echo; cat /config/finance-test-note; }; } > "$T/agents/finance-bookkeeper.md"
 fi
 if [ -n "${MCP_FINANCE_TEST_READ_TOKEN:-}" ]; then
   sed -e "s/__MCP_FINANCE_READ_TOKEN__/$MCP_FINANCE_TEST_READ_TOKEN/" -e 's#//assistant-finance:#//assistant-finance-test:#' \
-    -e 's#/vault/Finance/#/tmp/naila-cabinet/#g' /config/agent-finance-advisor.md > "$T/agents/finance-advisor.md"
+    -e 's#/vault/Finance/#/tmp/naila-cabinet/#g' $A/agent-finance-advisor.md > "$T/agents/finance-advisor.md"
   node -e 'const f=process.argv[1], s=JSON.parse(require("fs").readFileSync(f)); s.permissions.allow.push("Read(//tmp/naila-cabinet/**)"); require("fs").writeFileSync(f, JSON.stringify(s))' "$T/settings.json"
 fi
 D=naila; [ "$1" = --line ] && { D=$2; shift 2; grep -q "^$D " /config/direct-lines || { echo "no direct line: $D"; exit 2; }; }

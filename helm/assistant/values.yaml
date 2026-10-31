@@ -28,7 +28,8 @@ apiServer:
 vault:
   mode: localPath          # localPath | smb
   size: 2Gi                # localPath only
-  subPath: vault           # smb only: folder inside the share
+  subPath: vault           # smb only: folder inside the share (Remotely Save's remote base dir)
+  keepLocalCopy: true      # smb only: keep the old local-path copy (PVC assistant-vault) as a rollback; false removes it from the chart
   smb:
     source: ""             # terraform output syncthing_smb, same share as helm/syncthing
     secretName: syncthing-smb

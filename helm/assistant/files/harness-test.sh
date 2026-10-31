@@ -34,14 +34,25 @@ for f in --tools --permission-mode --strict-mcp-config --mcp-config; do
 done
 [ -n "${MCP_FINANCE_TEST_TOKEN:-}" ] && [ -n "${MCP_FINANCE_TEST_READ_TOKEN:-}" ] \
   || die "no test server bearers (MCP_FINANCE_TEST_TOKEN, MCP_FINANCE_TEST_READ_TOKEN): harness mode is tested only on the test copy"
+# Every run is one more claude process (a few hundred MiB) in this pod, next to the RC lines: leave them room.
+cg=/sys/fs/cgroup
+if [ -r "$cg/memory.max" ] && [ -r "$cg/memory.current" ]; then
+  max=$(cat "$cg/memory.max"); cur=$(cat "$cg/memory.current")
+  if [ "$max" = max ]; then echo "harness-test: note: this pod has no memory limit, headroom not checked" >&2
+  else
+    free=$(( (max - cur) / 1048576 ))
+    [ "$free" -ge 800 ] || die "only $free MiB of memory headroom (limit $(( max / 1048576 )) MiB, in use $(( cur / 1048576 )) MiB); need 800 MiB so the runs can't push the RC lines into an OOM kill"
+  fi
+else echo "harness-test: note: no cgroup v2 memory files, headroom not checked" >&2; fi
 for k in harness-CLAUDE.md harness-agent-finance-bookkeeper.md harness-agent-finance-advisor.md; do
   [ -f "$A/$k" ] || die "$A/$k is missing: this chart predates harness mode"
 done
 
 HH=$(mktemp -d -p "$HOME/.claude" harness-test.XXXXXX)
 # On exit: stop the harness (its process group) and any run it started (they name $HH in their arguments), then delete it all.
-trap 'p=$(cat "$HH/main.pid" 2>/dev/null) && kill -TERM -- "-$p" 2>/dev/null; pkill -TERM -f -- "$HH/" 2>/dev/null || true; rm -rf "$HH"' EXIT
-trap 'kill -TERM "${DP:-}" 2>/dev/null || true; sleep 1; exit 130' INT TERM HUP
+# set +e first: a kill that finds nothing must not end the trap before the rm.
+trap 'set +e; p=$(cat "$HH/main.pid" 2>/dev/null); [ -z "$p" ] || kill -TERM -- "-$p" 2>/dev/null; pkill -TERM -f -- "$HH/" 2>/dev/null; rm -rf "$HH"' EXIT
+trap 'set +e; [ -z "${DP:-}" ] || kill -TERM "$DP" 2>/dev/null; sleep 1; exit 130' INT TERM HUP
 T=$HH/config   # the runs' CLAUDE_CONFIG_DIR; not named .claude, so no run's folder has it as a parent project config
 mkdir -p "$T/agents" "$HH/work/naila" "$HH/work/_summary" /vault/Harness-test "$NOTES"
 cp -a "$HOME/.claude/.credentials.json" "$T/"
@@ -58,14 +69,30 @@ grep -q 'TEST COPY' "$T/agents/finance-bookkeeper.md" || { echo; cat /config/fin
 if grep -q '//assistant-finance:' "$T"/agents/*.md; then die "a worker still points at the real finance server"; fi
 
 # Naila's settings: no "ask" (no phone here), every write tool and cross-session messaging denied, the core tools allowed.
+# The file tools never reach the real vault: no allow rule under //vault/ survives, and every entry of /vault except the
+# test folder (Finance always) is denied. The test notes root stays readable.
 node -e '
-const [src, dst, notes, hb] = process.argv.slice(1), s = require(src), p = s.permissions
+const fs = require("fs"), [src, dst, notes, hb] = process.argv.slice(1), s = JSON.parse(fs.readFileSync(src, "utf8")), p = s.permissions
 delete p.ask
 p.defaultMode = "dontAsk"
+p.allow = p.allow.filter((r) => !r.includes("//vault/"))
 p.deny.push("mcp__finance__add_transaction", "mcp__finance__transfer", "mcp__finance__update_transaction", "mcp__finance__actual_write",
-  "mcp__finance-notes__write_note", "SendMessage", "ListAgents", "Agent", "Read(//home/claude/.claude/harness-test.*/**)")
+  "mcp__finance-notes__write_note", "SendMessage", "ListAgents", "Agent", "Read(//home/claude/.claude/harness-test.*/**)", "Read(//vault/Finance/**)")
+let real = []
+try { real = fs.readdirSync("/vault", { withFileTypes: true }).filter((e) => e.name !== "Harness-test" && e.name !== "Finance") } catch {}
+for (const e of real) p.deny.push(e.isDirectory() ? `Read(//vault/${e.name}/**)` : `Read(//vault/${e.name})`)
 p.allow.push("mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__vault__write_inbox", "mcp__vault__append_daily", `Read(/${notes}/**)`, `Read(/${hb}/**)`)
-require("fs").writeFileSync(dst, JSON.stringify(s, null, 2))' "$HOME/.claude/settings.json" "$T/settings.json" "$NOTES" "$H"
+fs.writeFileSync(dst, JSON.stringify(s, null, 2))' "$HOME/.claude/settings.json" "$T/settings.json" "$NOTES" "$H"
+# Self-check on the written file: no file-tool allow rule may cover any of /vault outside /vault/Harness-test/.
+node -e '
+const allow = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).permissions.allow
+const bad = allow.filter((r) => {
+  if (/^(Read|Glob|Grep|Edit|Write)$/.test(r)) return true
+  const m = /^(?:Read|Glob|Grep|Edit|Write)\((.*)\)$/.exec(r); if (!m) return false
+  const path = m[1], lit = path.split(/[*?[{]/)[0]
+  return (path.startsWith("//vault/") || path === "//vault") ? !path.startsWith("//vault/Harness-test/") : "//vault/".startsWith(lit)
+})
+if (bad.length) { console.error(`harness-test: the runs would be allowed into the real vault: ${bad.join(", ")}`); process.exit(2) }' "$T/settings.json"
 
 # Work dirs: naila's holds her harness CLAUDE.md; each direct-line worker's names its agent and model (as start.sh does).
 cp "$A/harness-CLAUDE.md" "$HH/work/naila/CLAUDE.md"
@@ -77,14 +104,14 @@ while read -r n m; do
   printf '{"agent": "%s", "model": "%s"}\n' "$n" "$m" > "$HH/work/$n/.claude/settings.json"
   dirs+=("$HH/work/$n")
 done < /config/direct-lines
-# The vault server writes into the test folder only; the work dirs are trusted.
+# User-scope MCP: only vault (on the test folder) and docs, nothing else inherited; projects: only the trusted work dirs.
 node -e '
 const fs = require("fs"), [f, root, ...dirs] = process.argv.slice(1), c = JSON.parse(fs.readFileSync(f, "utf8"))
 const v = c.mcpServers && c.mcpServers.vault
 if (!v) { console.error("harness-test: no user-scope vault server in ~/.claude.json (start.sh adds it)"); process.exit(2) }
 v.env = { ...v.env, VAULT_ROOT: root }
-c.projects ??= {}
-for (const d of dirs) c.projects[d] = { ...c.projects[d], hasTrustDialogAccepted: true }
+c.mcpServers = { vault: v, ...(c.mcpServers.docs ? { docs: c.mcpServers.docs } : {}) }
+c.projects = Object.fromEntries(dirs.map((d) => [d, { hasTrustDialogAccepted: true }]))
 fs.writeFileSync(f, JSON.stringify(c, null, 2))' "$T/.claude.json" /vault/Harness-test "${dirs[@]}"
 
 cat > "$HH/drive.mjs" <<'EOF'

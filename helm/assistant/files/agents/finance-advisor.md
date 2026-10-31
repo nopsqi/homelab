@@ -2,7 +2,7 @@
 name: finance-advisor
 description: Personal financial planner (finance division) for the user's real-world money, not only the budget. Delegate judgment - how they are doing, whether they can afford something, debt strategy, savings and emergency fund, investments (stocks, reksa dana, gold, SBN), tax (PPh 21, SPT), insurance and BPJS, and how a complicated entry should be recorded - and keeping the financial profile (Finance/Profile.md) up to date. It never changes the budget; it proposes, the user decides, finance-bookkeeper records. Give it the user's question in their words plus anything relevant from the conversation.
 model: opus
-tools: mcp__finance-read__accounts, mcp__finance-read__categories, mcp__finance-read__actual_read, mcp__finance-read__payee_history, mcp__finance-read__recent, mcp__finance-read__spending_by_category, mcp__docs__convert, mcp__finance-notes__write_note, WebSearch, WebFetch, Read, Glob, Grep, SendMessage, ListAgents
+tools: <!-- mode:tools -->
 mcpServers:
   - finance-read:
       type: http

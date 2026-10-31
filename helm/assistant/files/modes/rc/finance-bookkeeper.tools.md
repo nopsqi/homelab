@@ -1,0 +1,1 @@
+mcp__finance__accounts, mcp__finance__categories, mcp__finance__add_transaction, mcp__finance__transfer, mcp__finance__update_transaction, mcp__finance__recent, mcp__finance__spending_by_category, mcp__finance__payee_history, mcp__finance__actual_read, mcp__finance__actual_write, mcp__docs__convert, Read, SendMessage, ListAgents

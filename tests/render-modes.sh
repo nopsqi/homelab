@@ -36,6 +36,20 @@ for k in harness:
     for w in ("SendMessage", "ListAgents", "naila-c4", "phone"):
         if w in new[k]:
             bad.append(f"{k} contains {w!r}")
+import re
+WRITES = ["mcp__finance__add_transaction", "mcp__finance__transfer", "mcp__finance__update_transaction",
+          "mcp__finance__actual_write", "mcp__finance-notes__write_note"]
+want = {"finance-bookkeeper": ({"mcp__core__propose_plan"}, {"mcp__core__ask_worker"}),
+        "finance-advisor": ({"mcp__core__propose_plan", "mcp__core__ask_worker"}, set()),
+        "ops-oncall": (set(), {"mcp__core__propose_plan", "mcp__core__ask_worker"})}
+for name, (has, hasnt) in want.items():
+    k = f"harness-agent-{name}.md"
+    m = re.search(r"^tools: (.*)$", new.get(k, ""), re.M)
+    if not m:
+        bad.append(f"{k}: no tools line"); continue
+    tools = set(m.group(1).split(", "))
+    for t in has - tools: bad.append(f"{k}: tools lack {t}")
+    for t in (hasnt | set(WRITES) | {"SendMessage", "ListAgents"}) & tools: bad.append(f"{k}: tools include {t}")
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad))
     sys.exit(1)

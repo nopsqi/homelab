@@ -72,7 +72,7 @@ data:
 {{ include "assistant.testCopyNote" $ | indent 4 }}
 {{- end }}
   harness-agent-{{ .name }}.md: |
-{{ include "assistant.render" (dict "root" $ "body" ($.Files.Get (printf "files/agents/%s.md" .name) | replace ", SendMessage, ListAgents" "") "mode" "harness" "base" .name) | indent 4 }}
+{{ include "assistant.render" (dict "root" $ "body" ($.Files.Get (printf "files/agents/%s.md" .name)) "mode" "harness" "base" .name) | indent 4 }}
 {{- if and (eq .name "finance-bookkeeper") $.Values.finance.testBudget }}
     
 {{ include "assistant.testCopyNote" $ | indent 4 }}

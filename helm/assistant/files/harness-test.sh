@@ -156,6 +156,11 @@ while (corePort === port) corePort = await freePort()
 const gw = randomBytes(32).toString('hex'), coreSecret = randomBytes(32).toString('hex')
 const secrets = [gw, coreSecret, E.MCP_FINANCE_TEST_TOKEN, E.MCP_FINANCE_TEST_READ_TOKEN].filter(Boolean)
 const redact = (s) => secrets.reduce((t, x) => t.split(x).join('[REDACTED]'), s).replace(/sk-ant-[A-Za-z0-9_-]+/g, '[REDACTED]')
+/** For a string cut short: a tail that is the start (8+ chars) of a known secret, or a cut-off sk-ant- token, is masked too. */
+const maskTail = (t) => {
+  for (const x of secrets) for (let k = Math.min(x.length - 1, t.length); k >= 8; k--) if (t.endsWith(x.slice(0, k))) return `${t.slice(0, t.length - k)}[REDACTED]`
+  return t.replace(/sk-ant-[A-Za-z0-9_-]*$/, '[REDACTED]')
+}
 
 // main.js gets only what it reads; its runs get even less (the Runner's own allowlist).
 const env = Object.fromEntries(['PATH', 'HOME', 'TZ', 'LANG', 'DISABLE_AUTOUPDATER', 'CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH'].filter((k) => E[k] !== undefined).map((k) => [k, E[k]]))
@@ -203,7 +208,7 @@ const drain = async () => {
   if (r.status !== 200) throw new Error(`outbox: HTTP ${r.status}`)
   for (const m of r.body) {
     const tag = m.chat === 'decisions' ? `#decisions${m.decisionId !== undefined ? ` #${m.decisionId}` : ''}` : m.chat
-    console.log(`[${tag}] ${m.text.replace(/\n/g, '\n    ')}`)
+    console.log(redact(`[${tag}] ${m.text.replace(/\n/g, '\n    ')}`))
     if (m.chat === 'decisions' && m.decisionId !== undefined && /^Decision #\d+ from /.test(m.text)) pending.push(m.decisionId)
     await api('POST', '/api/v1/ack', { id: m.id })
   }
@@ -249,7 +254,8 @@ const label = (c, refused) => {
   const i = c.input ?? {}
   let n = c.name.replace(/^mcp__/, '').replace('__', ':')
   if (c.name === 'WebFetch') { try { n += `(${new URL(i.url).hostname})` } catch { n += '(?)' } }
-  if (c.name === 'Read' || c.name === 'Glob') n += `(${i.file_path ?? i.pattern ?? ''})`
+  if (c.name === 'Read') n += `(${i.file_path ?? ''})`
+  if (c.name === 'Glob' || c.name === 'Grep') n += `(${i.path ? `${i.path} ` : ''}${i.pattern ?? ''})`   // where it searched, not only what
   if (c.name === 'mcp__core__ask_worker') n += `(${i.worker})`
   return refused ? n + '!' : n
 }
@@ -266,17 +272,18 @@ for (const f of existsSync(trace) ? readdirSync(trace).sort() : []) {
   const who = f.replace(/^\d+-/, '').replace(/\.jsonl$/, '')
   runs.push(`${who}: ${[...calls].map(([id, c]) => label(c, refused.has(id))).join(' ') || '-'}`)
 }
-console.log(`TRACE runs=${runs.length}${runs.length ? ' | ' + runs.join(' | ') : ''}`)
+console.log(redact(`TRACE runs=${runs.length}${runs.length ? ' | ' + runs.join(' | ') : ''}`))
 if (existsSync(join(HH, 'harness.db'))) {
   const db = new DatabaseSync(join(HH, 'harness.db'))
-  const oneLine = (s, n) => { const t = String(s ?? '').replace(/\s+/g, ' '); return t.length > n ? `${t.slice(0, n)}…` : t }
+  // redact first, then cut, then mask what the cut left of a secret
+  const oneLine = (s, n) => { const t = redact(String(s ?? '')).replace(/\s+/g, ' '); return t.length > n ? `${maskTail(t.slice(0, n))}…` : t }
   const asks = db.prepare("select worker, from_worker, text from turns where role = 'delegation' order by ts").all()
-  console.log(`ASKS ${asks.map((x) => `${x.from_worker}->${x.worker}: ${oneLine(x.text, 120)}`).join(' | ') || 'none'}`)
+  console.log(redact(`ASKS ${asks.map((x) => `${x.from_worker}->${x.worker}: ${oneLine(x.text, 120)}`).join(' | ') || 'none'}`))
   const ds = db.prepare('select id, worker, status, settle_reason from decisions order by id').all()
   for (const d of ds) {
     const st = db.prepare('select idx, server, tool, args, result, error from decision_steps where decision_id = ? order by idx').all(d.id)
-    console.log(`DECISION #${d.id} ${d.worker} ${d.status}${d.settle_reason ? ` (${oneLine(d.settle_reason, 80)})` : ''} | ` +
-      st.map((x) => `${x.idx + 1}. ${x.server}:${x.tool} ${oneLine(x.args, 200)} -> ${x.result != null ? `ok ${oneLine(x.result, 120)}` : x.error != null ? `failed ${oneLine(x.error, 120)}` : 'not run'}`).join(' | '))
+    console.log(redact(`DECISION #${d.id} ${d.worker} ${d.status}${d.settle_reason ? ` (${oneLine(d.settle_reason, 80)})` : ''} | ` +
+      st.map((x) => `${x.idx + 1}. ${x.server}:${x.tool} ${oneLine(x.args, 200)} -> ${x.result != null ? `ok ${oneLine(x.result, 120)}` : x.error != null ? `failed ${oneLine(x.error, 120)}` : 'not run'}`).join(' | ')))
   }
   if (!ds.length) console.log('DECISIONS none')
   db.close()

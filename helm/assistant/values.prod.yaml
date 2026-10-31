@@ -1,5 +1,5 @@
 image:
-  tag: sha-fadbdf0
+  tag: sha-7a2a350
 vault:
   # First prod test: a local-path copy of the vault (seeded by hand). Switch to smb once the Syncthing
   # 'vault' folder exists on the Storage Box share.

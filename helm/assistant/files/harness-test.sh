@@ -156,6 +156,11 @@ while (corePort === port) corePort = await freePort()
 const gw = randomBytes(32).toString('hex'), coreSecret = randomBytes(32).toString('hex')
 const secrets = [gw, coreSecret, E.MCP_FINANCE_TEST_TOKEN, E.MCP_FINANCE_TEST_READ_TOKEN].filter(Boolean)
 const redact = (s) => secrets.reduce((t, x) => t.split(x).join('[REDACTED]'), s).replace(/sk-ant-[A-Za-z0-9_-]+/g, '[REDACTED]')
+/** For a string cut short: a tail that is the start (8+ chars) of a known secret, or a cut-off sk-ant- token, is masked too. */
+const maskTail = (t) => {
+  for (const x of secrets) for (let k = Math.min(x.length - 1, t.length); k >= 8; k--) if (t.endsWith(x.slice(0, k))) return `${t.slice(0, t.length - k)}[REDACTED]`
+  return t.replace(/sk-ant-[A-Za-z0-9_-]*$/, '[REDACTED]')
+}
 
 // main.js gets only what it reads; its runs get even less (the Runner's own allowlist).
 const env = Object.fromEntries(['PATH', 'HOME', 'TZ', 'LANG', 'DISABLE_AUTOUPDATER', 'CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH'].filter((k) => E[k] !== undefined).map((k) => [k, E[k]]))
@@ -270,7 +275,8 @@ for (const f of existsSync(trace) ? readdirSync(trace).sort() : []) {
 console.log(redact(`TRACE runs=${runs.length}${runs.length ? ' | ' + runs.join(' | ') : ''}`))
 if (existsSync(join(HH, 'harness.db'))) {
   const db = new DatabaseSync(join(HH, 'harness.db'))
-  const oneLine = (s, n) => { const t = String(s ?? '').replace(/\s+/g, ' '); return t.length > n ? `${t.slice(0, n)}…` : t }
+  // redact first, then cut, then mask what the cut left of a secret
+  const oneLine = (s, n) => { const t = redact(String(s ?? '')).replace(/\s+/g, ' '); return t.length > n ? `${maskTail(t.slice(0, n))}…` : t }
   const asks = db.prepare("select worker, from_worker, text from turns where role = 'delegation' order by ts").all()
   console.log(redact(`ASKS ${asks.map((x) => `${x.from_worker}->${x.worker}: ${oneLine(x.text, 120)}`).join(' | ') || 'none'}`))
   const ds = db.prepare('select id, worker, status, settle_reason from decisions order by id').all()

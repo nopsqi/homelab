@@ -1,6 +1,6 @@
 # Unattended test of Naila's real setup (CLAUDE.md, subagents, MCP servers, deny list) without the phone:
 #   kubectl -n assistant exec deploy/assistant-claude -- bash /config/naila-test.sh "<request>"
-#   ... naila-test.sh --bookkeeper "<request>"   tests the direct bookkeeper session instead
+#   ... naila-test.sh --bookkeeper "<request>"   tests the direct bookkeeper session instead (--advisor: the advisor's)
 #   NAILA_TEST_TRACE=1 ...   prints a TRACE line after the answer: subagents used and the tools each called
 # The finance workers in a test always use assistant-finance-test (the test copy), whatever budget Naila is on, and
 # the advisor reads the fixture cabinet /tmp/naila-cabinet instead of the vault's Finance/ folder.
@@ -25,7 +25,7 @@ if [ -n "${MCP_FINANCE_TEST_READ_TOKEN:-}" ]; then
     -e 's#/vault/Finance/#/tmp/naila-cabinet/#g' /config/finance-advisor.md > "$T/agents/finance-advisor.md"
   node -e 'const f=process.argv[1], s=JSON.parse(require("fs").readFileSync(f)); s.permissions.allow.push("Read(//tmp/naila-cabinet/**)"); require("fs").writeFileSync(f, JSON.stringify(s))' "$T/settings.json"
 fi
-D=work; [ "$1" = --bookkeeper ] && { D=bookkeeper; shift; }
+D=work; case "$1" in --bookkeeper) D=bookkeeper; shift ;; --advisor) D=advisor; shift ;; esac
 cd "$HOME/$D"
 if [ -n "${NAILA_TEST_TRACE:-}" ]; then
   CLAUDE_CONFIG_DIR="$T" claude -p "$1" --output-format stream-json --verbose </dev/null | node /config/naila-trace.mjs

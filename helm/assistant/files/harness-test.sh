@@ -203,7 +203,7 @@ const drain = async () => {
   if (r.status !== 200) throw new Error(`outbox: HTTP ${r.status}`)
   for (const m of r.body) {
     const tag = m.chat === 'decisions' ? `#decisions${m.decisionId !== undefined ? ` #${m.decisionId}` : ''}` : m.chat
-    console.log(`[${tag}] ${m.text.replace(/\n/g, '\n    ')}`)
+    console.log(redact(`[${tag}] ${m.text.replace(/\n/g, '\n    ')}`))
     if (m.chat === 'decisions' && m.decisionId !== undefined && /^Decision #\d+ from /.test(m.text)) pending.push(m.decisionId)
     await api('POST', '/api/v1/ack', { id: m.id })
   }
@@ -267,17 +267,17 @@ for (const f of existsSync(trace) ? readdirSync(trace).sort() : []) {
   const who = f.replace(/^\d+-/, '').replace(/\.jsonl$/, '')
   runs.push(`${who}: ${[...calls].map(([id, c]) => label(c, refused.has(id))).join(' ') || '-'}`)
 }
-console.log(`TRACE runs=${runs.length}${runs.length ? ' | ' + runs.join(' | ') : ''}`)
+console.log(redact(`TRACE runs=${runs.length}${runs.length ? ' | ' + runs.join(' | ') : ''}`))
 if (existsSync(join(HH, 'harness.db'))) {
   const db = new DatabaseSync(join(HH, 'harness.db'))
   const oneLine = (s, n) => { const t = String(s ?? '').replace(/\s+/g, ' '); return t.length > n ? `${t.slice(0, n)}…` : t }
   const asks = db.prepare("select worker, from_worker, text from turns where role = 'delegation' order by ts").all()
-  console.log(`ASKS ${asks.map((x) => `${x.from_worker}->${x.worker}: ${oneLine(x.text, 120)}`).join(' | ') || 'none'}`)
+  console.log(redact(`ASKS ${asks.map((x) => `${x.from_worker}->${x.worker}: ${oneLine(x.text, 120)}`).join(' | ') || 'none'}`))
   const ds = db.prepare('select id, worker, status, settle_reason from decisions order by id').all()
   for (const d of ds) {
     const st = db.prepare('select idx, server, tool, args, result, error from decision_steps where decision_id = ? order by idx').all(d.id)
-    console.log(`DECISION #${d.id} ${d.worker} ${d.status}${d.settle_reason ? ` (${oneLine(d.settle_reason, 80)})` : ''} | ` +
-      st.map((x) => `${x.idx + 1}. ${x.server}:${x.tool} ${oneLine(x.args, 200)} -> ${x.result != null ? `ok ${oneLine(x.result, 120)}` : x.error != null ? `failed ${oneLine(x.error, 120)}` : 'not run'}`).join(' | '))
+    console.log(redact(`DECISION #${d.id} ${d.worker} ${d.status}${d.settle_reason ? ` (${oneLine(d.settle_reason, 80)})` : ''} | ` +
+      st.map((x) => `${x.idx + 1}. ${x.server}:${x.tool} ${oneLine(x.args, 200)} -> ${x.result != null ? `ok ${oneLine(x.result, 120)}` : x.error != null ? `failed ${oneLine(x.error, 120)}` : 'not run'}`).join(' | ')))
   }
   if (!ds.length) console.log('DECISIONS none')
   db.close()

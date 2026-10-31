@@ -163,7 +163,7 @@ spec:
               {{- if eq .Values.vault.mode "smb" }}
               subPath: {{ .Values.vault.subPath | quote }}
               {{- end }}
-          resources: { requests: { cpu: 50m, memory: 512Mi }, limits: { memory: 1536Mi } }   # one Remote Control server per line, ~120Mi each idle, ~200Mi more per active conversation; past ~6 lines, move the direct lines to their own pod
+          resources: { requests: { cpu: 50m, memory: 512Mi }, limits: { memory: 2048Mi } }   # per line ~105Mi for its Remote Control server plus ~180Mi for the session it keeps open (4 lines ≈ 900Mi idle), more per active conversation; harness-test.sh needs 800Mi headroom on top; past ~6 lines, move the direct lines to their own pod
         # MarkItDown as the `docs` MCP tool (packages/docs-mcp from the naila image), on 127.0.0.1 only. Its own
         # container on purpose: document parsers are attack surface, and this one sees no login and no keys, only the
         # uploads folder and the vault, both read-only. Pinned packages go into a venv at start.

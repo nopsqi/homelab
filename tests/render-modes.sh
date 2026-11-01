@@ -170,6 +170,17 @@ for ph, x in phases.items():
             if c["name"] == "harness" and k == x["write"] and e["name"] != "MCP_FINANCE_TOKEN": bad.append(f"{tag}: the write bearer also as {e['name']}")
     if val(h, "GATEWAY_SECRETS") != "discord:$(GATEWAY_DISCORD_SECRET)": bad.append(f"{tag}: GATEWAY_SECRETS is {val(h, 'GATEWAY_SECRETS')!r}")
     if key(ctr(r, "discord"), "GATEWAY_SECRET") != "GATEWAY_DISCORD_SECRET": bad.append(f"{tag}: discord GATEWAY_SECRET from {key(ctr(r, 'discord'), 'GATEWAY_SECRET')!r}")
+    # uids: the shared process namespace opens /proc/<pid>/{environ,root} to the same uid, so only harness and login run as 1000
+    # (init containers finish before any of them start); the gateway is 1002 in group 1000, writing into a setgid 2770 folder.
+    psc = pod(r).get("securityContext", {})
+    uid = lambda c: c.get("securityContext", {}).get("runAsUser", psc.get("runAsUser"))
+    dsc = ctr(r, "discord").get("securityContext", {})
+    if (dsc.get("runAsUser"), dsc.get("runAsGroup")) != (1002, 1000): bad.append(f"discord container runs as {dsc.get('runAsUser')}:{dsc.get('runAsGroup')}, want 1002:1000 ({ph})")
+    for c in pod(r)["containers"]:
+        if c["name"] not in ("harness", "login") and uid(c) == 1000: bad.append(f"{c['name']} runs as uid 1000, the core's uid ({ph})")
+    init = " ".join(" ".join(c.get("command", [])) for c in pod(r).get("initContainers", []))
+    if "chmod 2770 /home/claude/.claude/uploads/discord" not in init or "chmod 750 /home/claude/.claude/uploads " not in init:
+        bad.append(f"uploads/discord is not created setgid group-writable (2770) under a group-traversable uploads/ (750) ({ph})")
     lg = ctr(r, "login")
     for k, want in (("BASE_PATH", "/harness"), ("POD_ROLE", "harness"), ("RESTART_MATCH", "harness/dist/main.js")):
         if val(lg, k) != want: bad.append(f"login sidecar {k} is {val(lg, k)!r}, want {want!r} ({ph})")

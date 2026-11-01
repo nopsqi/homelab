@@ -65,11 +65,12 @@ spec:
       imagePullSecrets: [{ name: ghcr-pull }]
       securityContext: { runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
       initContainers:
-        # /naila from the naila image, and the uploads folders the gateway writes into (uploads/ group-traversable for the
-        # docs sidecar, discord/ owner-only like the Claude app's; docs-grant.mjs opens one file at a time).
+        # /naila from the naila image, and the uploads folders the gateway writes into: uploads/ group-traversable (0750),
+        # discord/ setgid and group-writable (2770, group 1000), so the gateway (uid 1002, group 1000) creates its per-message
+        # folders there and they stay in group 1000, readable by the runs (uid 1000) and the docs sidecar (group 1000).
         - name: naila-tools
           image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
-          command: ["sh", "-c", "cp -a /app/. /naila/ && mkdir -p /home/claude/.claude/uploads/discord && chmod 750 /home/claude/.claude/uploads && chmod 700 /home/claude/.claude/uploads/discord"]
+          command: ["sh", "-c", "cp -a /app/. /naila/ && mkdir -p /home/claude/.claude/uploads/discord && chmod 750 /home/claude/.claude/uploads && chmod 2770 /home/claude/.claude/uploads/discord"]
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           volumeMounts:
             - { name: naila, mountPath: /naila }
@@ -121,7 +122,9 @@ spec:
               {{- end }}
           resources: { requests: { cpu: 50m, memory: 256Mi }, limits: { memory: 1536Mi } }   # the core ~100Mi idle, plus up to 2 runs at once
         # Discord gateway (packages/channels/discord): owner-only, posts the core's outbox, relays messages and buttons to
-        # the core on 127.0.0.1. Attachments go to uploads/discord/<uuid>/ (uid 1000, 0700/0600), nothing else of the home.
+        # the core on 127.0.0.1. Attachments go to uploads/discord/<uuid>/ (0750/0640, group 1000), nothing else of the home.
+        # Its own uid (1002), not the core's: the pod shares one process namespace (so login can restart the core), and only a
+        # different uid keeps /proc/<core pid>/{environ,root} (the write bearer, the login) closed to the Discord-facing process.
         - name: discord
           image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
           command: ["node", "packages/channels/discord/dist/main.js"]
@@ -135,7 +138,7 @@ spec:
               valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: DISCORD_TOKEN } }
             - name: GATEWAY_SECRET
               valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: GATEWAY_DISCORD_SECRET } }
-          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
+          securityContext: { runAsUser: 1002, runAsGroup: 1000, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
           volumeMounts:
             - { name: home, mountPath: /home/claude/.claude/uploads, subPath: .claude/uploads }
           resources: { requests: { cpu: 10m, memory: 64Mi }, limits: { memory: 256Mi } }

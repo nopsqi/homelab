@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Usage: tests/render-modes.sh [git-ref]   (default origin/master)
 # Renders helm/assistant at <git-ref> and in the working tree, then checks ConfigMap assistant-claude:
-#  - the RC keys (CLAUDE.md, agent-*.md) are byte-identical between the two renders;
+#  - every RC key (all but harness-*) is byte-identical between the two renders, except that harness-test.sh (retired) may be
+#    gone; any other difference fails (R9), and no ConfigMap key or file names harness-test.sh;
 #  - no harness-*.md key contains SendMessage, ListAgents, naila-c4 or phone, nor the finance write bearer;
 #  - harness-settings.json denies the write tools, SendMessage, ListAgents and Agent, and allows the core tools;
 #  - the RC checksum ignores a harness-only mode edit and follows an RC one.
@@ -60,12 +61,31 @@ def keys(path):
     sys.exit(f"FAIL: ConfigMap assistant-claude not found in {path}")
 
 old, new = keys(sys.argv[1]), keys(sys.argv[2])
-rc = sorted(k for k in set(old) | set(new) if k == "CLAUDE.md" or (k.startswith("agent-") and k.endswith(".md")))
-bad = []
-for k in rc:
-    if old.get(k) != new.get(k):
-        bad.append(f"RC key {k} differs (or is missing on one side)")
-harness = sorted(k for k in new if k.startswith("harness-") and k.endswith(".md"))   # instructions; harness-test.sh denies those tools by name
+RETIRED = "harness-test.sh"   # retired with RC mode; the only RC ConfigMap difference allowed (R9)
+def rcdiff(o, n):
+    """Differences in the RC ConfigMap keys (every key but harness-*) other than the retired key's removal."""
+    out = []
+    for k in sorted(set(o) | set(n)):
+        if k.startswith("harness-") and k != RETIRED: continue
+        if k == RETIRED:
+            if k in n: out.append(f"{k} is still in the ConfigMap")
+            continue
+        if o.get(k) != n.get(k): out.append(f"RC key {k} differs (or is missing on one side)")
+    return out
+bad = rcdiff(old, new)
+# the check itself: the retired key's removal alone passes, any other difference fails
+gone = {k: v for k, v in old.items() if k != RETIRED}
+if rcdiff({**old, RETIRED: "x"}, gone): bad.append("rcdiff rejects the removal of the retired key")
+probe = next(k for k in sorted(old) if not k.startswith("harness-"))
+for what, mut in (("a changed RC key", {**gone, probe: old[probe] + "x"}), ("a removed RC key", {k: v for k, v in gone.items() if k != probe}),
+                  ("an added RC key", {**gone, "extra.txt": "x"}), ("the retired key kept", {**gone, RETIRED: "x"})):
+    if not rcdiff(old, mut): bad.append(f"rcdiff accepts {what}")
+for k in new:
+    if "harness-test.sh" in new[k]: bad.append(f"ConfigMap key {k} names harness-test.sh")
+if RETIRED in new: bad.append("ConfigMap assistant-claude still has the harness-test.sh key")
+import os
+if os.path.exists("helm/assistant/files/harness-test.sh"): bad.append("helm/assistant/files/harness-test.sh still exists")
+harness = sorted(k for k in new if k.startswith("harness-") and k.endswith(".md"))   # instructions; harness-settings.json denies those tools by name
 if not harness:
     bad.append("no harness-* keys in the working-tree render")
 for k in harness:
@@ -406,6 +426,18 @@ tw = {"label": "Telegram", "name": "telegram", "settle": "reject"}
 if tw not in (channels(th) or []): bad.append(f"{tag}: HARNESS_CHANNELS lacks {compact(tw)}: {val(th, 'HARNESS_CHANNELS')!r}")
 if ctr(two, "discord") != ctr(test, "discord"): bad.append(f"{tag}: the discord container changes when telegram is added")
 
+tag = "prod renders the test channel: settle reject, retainMs, its secret from assistant-harness-secret, no container"
+tc = {"label": "Test", "name": "test", "retainMs": 3600000, "settle": "reject"}
+for label, r in (("test", test), ("real", real)):
+    h = ctr(r, "harness")
+    if tc not in (channels(h) or []): bad.append(f"{tag}: HARNESS_CHANNELS lacks {compact(tc)}: {val(h, 'HARNESS_CHANNELS')!r} ({label})")
+    if "test:$(GATEWAY_TEST_SECRET)" not in entries(h): bad.append(f"{tag}: GATEWAY_SECRETS is {val(h, 'GATEWAY_SECRETS')!r} ({label})")
+    ref_ = (((envmap(h).get("GATEWAY_TEST_SECRET") or {}).get("valueFrom") or {}).get("secretKeyRef") or {})
+    if ref_ != {"name": "assistant-harness-secret", "key": "GATEWAY_TEST_SECRET"}: bad.append(f"{tag}: the core's GATEWAY_TEST_SECRET is {ref_!r} ({label})")
+    if ctr(r, "test") is not None: bad.append(f"{tag}: a test container renders ({label})")
+ss = test.get(("SealedSecret", "assistant-harness-secret"))
+if not ss or "GATEWAY_TEST_SECRET" not in ss["spec"]["encryptedData"]: bad.append(f"{tag}: the SealedSecret has no GATEWAY_TEST_SECRET")
+
 tag = "a missing secretKey, an unknown settle, a failing check and test with approve in the real phase each fail the render"   # also: shared or borrowed gateway secrets
 P = ["helm", "template", "helm/assistant", "-f", "helm/assistant/values.yaml", "-f", "helm/assistant/values.prod.yaml", "--set", "claude.rcLines=true"]
 def render(*a): return subprocess.run(P + list(a), capture_output=True, text=True)
@@ -417,7 +449,7 @@ for what, args, msg in (("a missing secretKey", ["--set", "harness.channels.disc
                         ("test with approve in the test phase", ["--set", "harness.phase=test", *T("approve")], "the test channel may not approve: the pod's core is never a test instance"),
                         ("a non-bool enabled", ["--set-json", 'harness.channels.tg={"enabled":"yes","label":"x","settle":"none","secretKey":"K"}'], "harness.channels.tg.enabled"),
                         ("retainMs above 2^53-1", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"K","retainMs":9007199254740992}'], "harness.channels.tg.retainMs"),
-                        ("no channel enabled", ["--set", "harness.channels.discord.enabled=false"], "no channel"),
+                        ("no channel enabled", ["--set", "harness.channels.discord.enabled=false", "--set", "harness.channels.test.enabled=false"], "no channel"),
                         ("a bad name", ["--set-json", 'harness.channels.Ops_x={"enabled":true,"label":"x","settle":"none","secretKey":"K"}'], "Ops_x"),
                         ("two channels sharing a secretKey", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_DISCORD_SECRET"}'], "harness.channels.tg.secretKey"),
                         ("a gateway handed another channel's secretKey", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"GATEWAY_DISCORD_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X"),

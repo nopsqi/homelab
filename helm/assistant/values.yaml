@@ -57,6 +57,14 @@ harness:
           DISCORD_OWNER_ID: "^[0-9]{17,20}$"
           DISCORD_GUILD_ID: "^[0-9]{17,20}$"
           DISCORD_CHANNELS: "^naila:[0-9]{17,20},finance-bookkeeper:[0-9]{17,20},finance-advisor:[0-9]{17,20},ops-oncall:[0-9]{17,20},decisions:[0-9]{17,20}$"
+    # test: the unattended channel of the live checks (tests/live). It is served from outside the pod, so no gateway container.
+    # Outside a test instance the core lets it only reject (or do nothing), and the render refuses settle approve.
+    test:
+      enabled: false
+      label: Test
+      settle: reject
+      retainMs: 3600000                   # nobody polls it between live runs
+      secretKey: GATEWAY_TEST_SECRET
 ops:
   enabled: false           # on-call tool server (cluster-mcp over HTTP, read-only ServiceAccount); the `ops` subagent calls it
   # Namespaces whose pod logs ops may read. Never: assistant (Naila's terminal), sealed-secrets, argocd, kube-system.

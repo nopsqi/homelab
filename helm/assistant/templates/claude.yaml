@@ -105,11 +105,7 @@ data:
 {{ include "assistant.testCopyNote" . | indent 4 }}
   naila-test.sh: |
 {{ .Files.Get "files/naila-test.sh" | indent 4 }}
-  # the same against harness mode (packages/harness): kubectl exec … bash /config/harness-test.sh --worker W "text" …
-  # Not in the checksum: a test-script edit must not restart the RC lines (/config is a full mount, it updates in place).
-  harness-test.sh: |
-{{ .Files.Get "files/harness-test.sh" | indent 4 }}
-  # Harness mode's permissions on top of settings.json (harness-test.sh applies them); not in the checksum either.
+  # Harness mode's permissions on top of settings.json (harness-start.sh applies them); not in the checksum.
   harness-settings.json: |
 {{ .Files.Get "files/harness-settings.json" | indent 4 }}
   start.sh: |

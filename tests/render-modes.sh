@@ -8,6 +8,7 @@
 # Then the assistant-harness pod (harness.enabled, harness.phase):
 #  - it renders only when enabled, and enabling it leaves the RC objects as they were;
 #  - test phase points at assistant-finance-test and /vault/Harness-test, real phase at assistant-finance and /vault;
+#  - the real phase denies //vault/Harness-test/** to the runs (settings patch run as rendered) and sets VAULT_EXCLUDE;
 #  - the finance write bearer reaches only the core's env (the harness container's MCP_FINANCE_TOKEN), never another container;
 #  - login alerts are per pod, and cloudflared routes naila.nopsqi.dev/harness to the harness login page.
 set -euo pipefail
@@ -196,6 +197,50 @@ for ph, x in phases.items():
     if not pod(r)["containers"] or req > 512: bad.append(f"harness pod memory requests {req}Mi (want <= 512Mi) ({ph})")
     if h.get("resources", {}).get("limits", {}).get("memory") != "1536Mi": bad.append(f"harness container memory limit {h.get('resources', {}).get('limits', {}).get('memory')!r} ({ph})")
 start = (test.get(("ConfigMap", "assistant-harness")) or {}).get("data", {}).get("harness-start.sh", "")
+# The real phase's runs can't see the test folder (Ruling 29): harness-start.sh's settings patch, run as rendered for each
+# phase, denies //vault/Harness-test/** in the real phase only, and the vault servers get VAULT_EXCLUDE=Harness-test there.
+import os, shlex, subprocess, tempfile
+def patched_settings(r, ph):
+    data = {**r[("ConfigMap", "assistant-claude")]["data"], **r[("ConfigMap", "assistant-harness")]["data"]}
+    m = re.search(r"^# Settings:.*?^node -e '(.*?)' (/config/settings\.json[^\n]*)$", data["harness-start.sh"], re.M | re.S)
+    if not m: return None, "harness-start.sh: settings patch not found"
+    d = tempfile.mkdtemp()
+    vars_ = {k: (e.get("value") or "") for k, e in env(ctr(r, "harness")).items()}
+    vars_.update(C=d, HARNESS_PHASE=ph, HOME=d)
+    def expand(a):
+        a = re.sub(r"\$\{(\w+)(?::-[^}]*)?\}|\$(\w+)", lambda x: vars_.get(x.group(1) or x.group(2), ""), a)
+        if a.startswith("/config/"):
+            f = os.path.join(d, a[len("/config/"):]); open(f, "w").write(data[a[len("/config/"):]]); return f
+        return a
+    args = [expand(a) for a in shlex.split(m.group(2))]
+    out = os.path.join(d, "settings.json")
+    p = subprocess.run(["node", "-e", m.group(1), *args], capture_output=True, text=True)
+    if p.returncode != 0: return None, f"settings patch failed ({ph}): {p.stderr.strip()}"
+    return json.loads(open(out).read()), None
+import json
+for ph, r in (("test", test), ("real", real)):
+    s, err = patched_settings(r, ph)
+    if err: bad.append(err); continue
+    denied = "Read(//vault/Harness-test/**)" in s["permissions"]["deny"]
+    if ph == "real" and not denied: bad.append("real phase: the runs' settings do not deny Read(//vault/Harness-test/**)")
+    if ph == "test" and denied: bad.append("test phase: the runs' settings deny Read(//vault/Harness-test/**), their own vault")
+    hook = " ".join(h["command"] for e in s.get("hooks", {}).get("PreToolUse", []) if "docs" in e.get("matcher", "") for h in e["hooks"])
+    if ph == "real" and "--exclude /vault/Harness-test" not in hook: bad.append(f"real phase: the docs hook does not exclude /vault/Harness-test: {hook}")
+    if ph == "test" and "--exclude" in hook: bad.append(f"test phase: the docs hook excludes a folder: {hook}")
+    want = "Harness-test" if ph == "real" else None
+    if val(ctr(r, "harness"), "VAULT_EXCLUDE") != want: bad.append(f"{ph} phase: harness VAULT_EXCLUDE is {val(ctr(r, 'harness'), 'VAULT_EXCLUDE')!r}, want {want!r}")
+chk = re.search(r'^if \[ -n "\$\{VAULT_EXCLUDE:-\}" \] && ! grep -qF .*$', start, re.M)
+if not chk: bad.append("harness-start.sh: no check that the vault server honours VAULT_EXCLUDE")
+else:
+    d = tempfile.mkdtemp(); srv = os.path.join(d, "server.js")
+    def check(body, exclude):
+        open(srv, "w").write(body)
+        return subprocess.run(["bash", "-c", 'die() { echo "$*" >&2; exit 2; }; VAULT_SERVER=$1; VAULT_EXCLUDE=$2; ' + chk.group(0), "x", srv, exclude], capture_output=True, text=True).returncode
+    if check("old image", "Harness-test") == 0: bad.append("harness-start.sh: starts with VAULT_EXCLUDE set although the vault server lacks support")
+    if check("console.error(`vault-mcp: VAULT_EXCLUDE supported; leaving out ${x}`)", "Harness-test") != 0: bad.append("harness-start.sh: refuses a vault server that supports VAULT_EXCLUDE")
+    if check("old image", "") != 0: bad.append("harness-start.sh: the test phase (no VAULT_EXCLUDE) needs the support marker")
+if not (re.search(r'^\[ -z "\$\{VAULT_EXCLUDE:-\}" \] \|\| vault_env\+=\(-e VAULT_EXCLUDE="\$VAULT_EXCLUDE"\)', start, re.M) and re.search(r'^claude mcp add vault [^\n]*"\$\{vault_env\[@\]\}"', start, re.M)): bad.append("harness-start.sh: the runs' vault server does not get VAULT_EXCLUDE")
+
 if not re.search(r"^unset .*MCP_FINANCE_READ_TOKEN", start, re.M) or not re.search(r"^unset .*GATEWAY_DISCORD_SECRET", start, re.M):
     bad.append("the harness pod never holds a worker write bearer outside the core env: harness-start.sh does not unset the read bearer and the gateway secret before the core starts")
 

@@ -2,7 +2,8 @@
 # core (packages/harness) as the container's main process. Everything it writes is rebuilt on every start.
 #   HARNESS_PHASE=test: the test budget (assistant-finance-test, its bearers) and /vault/Harness-test, the only vault folder
 #                       this pod mounts in the test phase.
-#   HARNESS_PHASE=real: the real budget (assistant-finance) and the whole vault at /vault.
+#   HARNESS_PHASE=real: the real budget (assistant-finance) and the whole vault at /vault, except /vault/Harness-test
+#                       (VAULT_EXCLUDE: denied to the file tools, left out by the vault servers).
 # The runs' CLAUDE_CONFIG_DIR is ~/.claude itself: the login page (the login sidecar, naila.nopsqi.dev/harness) logs in
 # there, and a run that renews the token writes it back to the same file, so the pod has one login. Under ~/.claude only
 # uploads/ and tool-results/ are open to the runs (read-guard.mjs): the login, the agent files with the bearers and
@@ -13,7 +14,14 @@ C=$HOME/.claude
 MAIN=/naila/packages/harness/dist/main.js
 die() { echo "harness-start: $*" >&2; exit 2; }
 case "${HARNESS_PHASE:-}" in test|real) ;; *) die "HARNESS_PHASE must be test or real, got '${HARNESS_PHASE:-}'" ;; esac
+if [ "$HARNESS_PHASE" = real ]; then
+  case ",${VAULT_EXCLUDE:-}," in *,Harness-test,*) ;; *) die "the real phase needs VAULT_EXCLUDE to name Harness-test, got '${VAULT_EXCLUDE:-}'" ;; esac
+fi
 [ -f "$MAIN" ] || die "$MAIN is missing: this naila image predates harness mode"
+# The vault server must honour VAULT_EXCLUDE, or the real phase's runs would see the test folder (an image older than the
+# chart): fail closed. The phrase is the one the server logs at startup when VAULT_EXCLUDE is set.
+VAULT_SERVER=/naila/packages/vault-mcp/dist/server.js
+if [ -n "${VAULT_EXCLUDE:-}" ] && ! grep -qF 'vault-mcp: VAULT_EXCLUDE supported' "$VAULT_SERVER"; then die "VAULT_EXCLUDE is set but $VAULT_SERVER doesn't support it: this naila image is older than the chart"; fi
 for k in harness-CLAUDE.md harness-agent-finance-bookkeeper.md harness-settings.json settings.json docs-grant.mjs direct-lines; do
   [ -f "/config/$k" ] || die "/config/$k is missing: this chart predates harness mode"
 done
@@ -54,10 +62,10 @@ if grep -qF -- "$MCP_FINANCE_TOKEN" "$C"/agents/*.md; then die "a worker holds t
 
 # Settings: Naila's (/config/settings.json) plus harness mode's (harness-settings.json: no "ask", since nobody is there to
 # answer; the write tools and cross-session messaging denied; the core tools allowed). Docs conversion is limited to
-# uploads and this phase's vault (docs-grant.mjs --only, failing closed). Test phase: no file-tool rule reaches the vault
-# outside /vault/Harness-test, and the test notes cabinet is readable.
+# uploads and this phase's vault (docs-grant.mjs --only, failing closed), minus VAULT_EXCLUDE in the real phase. Test phase: no file-tool rule reaches the vault
+# outside /vault/Harness-test, and the test notes cabinet is readable. Real phase: no file tool reads a VAULT_EXCLUDE folder.
 node -e '
-const fs = require("fs"), [src, patch, dst, phase, root, notes, grant, uploads] = process.argv.slice(1)
+const fs = require("fs"), [src, patch, dst, phase, root, notes, grant, uploads, exclude] = process.argv.slice(1)
 const s = JSON.parse(fs.readFileSync(src, "utf8")), p = s.permissions, h = JSON.parse(fs.readFileSync(patch, "utf8")).permissions
 delete p.ask
 p.defaultMode = h.defaultMode
@@ -70,11 +78,14 @@ if (phase === "test") {
   for (const e of other) p.deny.push(e.isDirectory() ? `Read(//vault/${e.name}/**)` : `Read(//vault/${e.name})`)
   p.allow.push(`Read(/${notes}/**)`)
 }
+const excluded = phase === "real" ? (exclude ?? "").split(",").map((e) => e.trim()).filter(Boolean) : []
+for (const x of excluded) p.deny.push(`Read(/${root}/${x}/**)`)
+const docsExclude = excluded.length ? ` --exclude ${excluded.map((x) => `${root}/${x}`).join(",")}` : ""
 p.allow.push(...h.allow)
 const pre = (s.hooks ??= {}).PreToolUse ??= []
 s.hooks.PreToolUse = pre.filter((e) => !/docs/.test(e.matcher ?? ""))
-s.hooks.PreToolUse.push({ matcher: "mcp__docs__convert", hooks: [{ type: "command", command: `node ${grant} --only ${uploads}:${root} || exit 2` }] })
-fs.writeFileSync(dst, JSON.stringify(s, null, 2))' /config/settings.json /config/harness-settings.json "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" "$FINANCE_NOTES_ROOT" /config/docs-grant.mjs "$C/uploads"
+s.hooks.PreToolUse.push({ matcher: "mcp__docs__convert", hooks: [{ type: "command", command: `node ${grant} --only ${uploads}:${root}${docsExclude} || exit 2` }] })
+fs.writeFileSync(dst, JSON.stringify(s, null, 2))' /config/settings.json /config/harness-settings.json "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" "$FINANCE_NOTES_ROOT" /config/docs-grant.mjs "$C/uploads" "${VAULT_EXCLUDE:-}"
 node -e '
 const s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")), allow = s.permissions.allow, phase = process.argv[2]
 const bad = phase !== "test" ? [] : allow.filter((r) => {
@@ -85,7 +96,8 @@ const bad = phase !== "test" ? [] : allow.filter((r) => {
 })
 if (bad.length) { console.error(`harness-start: test-phase runs would be allowed into the real vault: ${bad.join(", ")}`); process.exit(2) }
 const docs = s.hooks.PreToolUse.filter((e) => new RegExp(`^(${e.matcher})$`).test("mcp__docs__convert"))
-if (docs.length !== 1 || !/ --only \S+ \|\| exit 2$/.test(docs[0].hooks[0].command)) { console.error("harness-start: mcp__docs__convert is not limited to the phase roots"); process.exit(2) }' "$C/settings.json" "$HARNESS_PHASE"
+if (docs.length !== 1 || !/ --only \S+( --exclude \S+)? \|\| exit 2$/.test(docs[0].hooks[0].command)) { console.error("harness-start: mcp__docs__convert is not limited to the phase roots"); process.exit(2) }
+if (phase === "real" && !/ --exclude \S+ \|\| exit 2$/.test(docs[0].hooks[0].command)) { console.error("harness-start: mcp__docs__convert does not exclude VAULT_EXCLUDE in the real phase"); process.exit(2) }' "$C/settings.json" "$HARNESS_PHASE"
 
 # Work dirs (the core runs each worker in HARNESS_HOME/work/<worker>): naila's holds her harness CLAUDE.md; each direct-line
 # worker's names its agent and model, as start.sh does for the RC lines.
@@ -104,7 +116,9 @@ done < /config/direct-lines
 # User-scope MCP: only vault (rooted at this phase's vault) and docs; projects: only the trusted work dirs. Written to
 # ~/.claude.json and copied to ~/.claude/.claude.json, where Claude Code looks once CLAUDE_CONFIG_DIR is set.
 claude mcp remove vault --scope user >/dev/null 2>&1 || true
-claude mcp add vault --scope user -e VAULT_ROOT="$VAULT_ROOT" -e TZ="$TZ" -- node /naila/packages/vault-mcp/dist/server.js >/dev/null
+vault_env=(-e VAULT_ROOT="$VAULT_ROOT" -e TZ="$TZ")
+[ -z "${VAULT_EXCLUDE:-}" ] || vault_env+=(-e VAULT_EXCLUDE="$VAULT_EXCLUDE")   # real phase: the test folder stays out
+claude mcp add vault --scope user "${vault_env[@]}" -- node "$VAULT_SERVER" >/dev/null
 claude mcp remove docs --scope user >/dev/null 2>&1 || true
 claude mcp add --transport http docs --scope user http://127.0.0.1:3002/mcp >/dev/null
 node -e '

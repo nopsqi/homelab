@@ -85,7 +85,7 @@ for k in new:
 if RETIRED in new: bad.append("ConfigMap assistant-claude still has the harness-test.sh key")
 import os
 if os.path.exists("helm/assistant/files/harness-test.sh"): bad.append("helm/assistant/files/harness-test.sh still exists")
-harness = sorted(k for k in new if k.startswith("harness-") and k.endswith(".md"))   # instructions; harness-test.sh denies those tools by name
+harness = sorted(k for k in new if k.startswith("harness-") and k.endswith(".md"))   # instructions; harness-settings.json denies those tools by name
 if not harness:
     bad.append("no harness-* keys in the working-tree render")
 for k in harness:

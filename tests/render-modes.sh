@@ -11,6 +11,8 @@
 #  - the real phase denies //vault/Harness-test/** to the runs (settings patch run as rendered) and sets VAULT_EXCLUDE;
 #  - the finance write bearer reaches only the core's env (the harness container's MCP_FINANCE_TOKEN), never another container;
 #  - login alerts are per pod, and cloudflared routes naila.nopsqi.dev/harness to the harness login page.
+# Then the RC off switch (claude.rcLines, both phases): false stops the RC pod (replicas 0) and drops its login alerts;
+#  every other object, the harness pod and its checksum among them, renders exactly as with rcLines true.
 set -euo pipefail
 ref="${1:-origin/master}"
 root="$(git rev-parse --show-toplevel)"
@@ -31,6 +33,8 @@ helm template "$tmp/r" -f "$tmp/r/values.yaml" -f "$tmp/r/values.prod.yaml" > "$
 P=(-f helm/assistant/values.yaml -f helm/assistant/values.prod.yaml)
 helm template helm/assistant "${P[@]}" --set harness.enabled=false > "$tmp/off.yaml"
 helm template helm/assistant "${P[@]}" --set harness.phase=real > "$tmp/real.yaml"
+helm template helm/assistant "${P[@]}" --set claude.rcLines=false > "$tmp/test-rcoff.yaml"
+helm template helm/assistant "${P[@]}" --set harness.phase=real --set claude.rcLines=false > "$tmp/real-rcoff.yaml"
 helm template helm/assistant -f helm/assistant/values.yaml -f helm/assistant/values.staging.yaml > "$tmp/staging.yaml"
 helm template helm/cloudflared -f helm/cloudflared/values.yaml > "$tmp/cloudflared.yaml"
 # The harness checksum follows what harness-start.sh takes from the RC ConfigMap: settings.json, direct-lines, finance-test-note.
@@ -294,4 +298,32 @@ elif min(i for i, x in naila if "path" not in x) < hp[0][0]: bad.append("cloudfl
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
 print("harness pod: renders only when enabled; phases wired; write bearer only in the core env; RC render identical")
+PY
+
+python3 - "$tmp/new.yaml" "$tmp/test-rcoff.yaml" "$tmp/real.yaml" "$tmp/real-rcoff.yaml" <<'PY'
+import sys, yaml, copy
+def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
+bad = []
+RC, RULE = ("Deployment", "assistant-claude"), ("PrometheusRule", "assistant-login")
+for ph, on, off in (("test", load(sys.argv[1]), load(sys.argv[2])), ("real", load(sys.argv[3]), load(sys.argv[4]))):
+    tag = f"RC off switch ({ph} phase)"
+    if on[RC]["spec"].get("replicas") != 1: bad.append(f"{tag}: rcLines true renders assistant-claude with replicas {on[RC]['spec'].get('replicas')!r}, want 1")
+    if RC not in off: bad.append(f"{tag}: rcLines false drops the assistant-claude Deployment (keep it at replicas 0)"); continue
+    if off[RC]["spec"].get("replicas") != 0: bad.append(f"{tag}: rcLines false renders assistant-claude with replicas {off[RC]['spec'].get('replicas')!r}, want 0")
+    if RULE not in on: bad.append(f"{tag}: rcLines true has no RC login alerts")
+    if RULE in off: bad.append(f"{tag}: rcLines false still renders the RC login alerts (a stopped RC pod would page)")
+    a, b = copy.deepcopy(on[RC]), copy.deepcopy(off[RC])
+    a["spec"].pop("replicas", None); b["spec"].pop("replicas", None)
+    if a != b: bad.append(f"{tag}: the assistant-claude Deployment differs beyond replicas")
+    for k in sorted(set(on) | set(off)):
+        if k in (RC, RULE): continue
+        if k not in off: bad.append(f"{tag}: rcLines false drops {k[0]}/{k[1]}")
+        elif k not in on: bad.append(f"{tag}: rcLines false adds {k[0]}/{k[1]}")
+        elif on[k] != off[k]: bad.append(f"{tag}: {k[0]}/{k[1]} changes with rcLines")
+    H = ("Deployment", "assistant-harness")
+    if H not in off or on[H]["spec"]["template"]["metadata"]["annotations"]["checksum/config"] != off[H]["spec"]["template"]["metadata"]["annotations"]["checksum/config"]:
+        bad.append(f"{tag}: the harness checksum changes with rcLines (an RC stop would restart the harness)")
+if bad:
+    print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
+print("RC off switch: replicas 0 and no RC login alerts; everything else identical, harness checksum unchanged")
 PY

@@ -97,6 +97,9 @@ spec:
             - { name: VAULT_ROOT, value: {{ $vaultRoot }} }
             - { name: FINANCE_NOTES_ROOT, value: {{ $vaultRoot }}/Finance }
             - { name: VIEW_FILE, value: {{ $vaultRoot }}/Naila/Decisions.md }
+            {{- if not $test }}
+            - { name: VAULT_EXCLUDE, value: Harness-test }   # the test phase's folder: out of the real phase's vault tools (Ruling 29)
+            {{- end }}
             # The write bearer stays in the core's env; harness-start.sh puts the read-only one and the ops one into the
             # agent files and unsets them, and the gateway secret goes on only inside GATEWAY_SECRETS.
             - name: MCP_FINANCE_TOKEN

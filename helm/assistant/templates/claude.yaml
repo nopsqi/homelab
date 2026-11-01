@@ -131,7 +131,7 @@ metadata:
   name: assistant-claude
   labels: { app: assistant-claude }
 spec:
-  replicas: 1
+  replicas: {{ if .Values.claude.rcLines }}1{{ else }}0{{ end }}   # claude.rcLines false: RC stopped, everything else kept
   strategy: { type: Recreate }   # one session server, one home volume
   selector: { matchLabels: { app: assistant-claude } }
   template:

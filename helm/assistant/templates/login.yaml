@@ -15,7 +15,9 @@ metadata: { name: assistant-login, labels: { release: monitoring } }
 spec:
   selector: { matchLabels: { app: assistant-login } }
   endpoints: [{ port: metrics, interval: 60s }]
+{{- if .Values.claude.rcLines }}
 ---
+# Only while the RC lines run: a stopped RC pod (claude.rcLines false) has no login to watch, and absent() would page.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata: { name: assistant-login, labels: { release: monitoring } }
@@ -55,4 +57,5 @@ spec:
           annotations:
             summary: "No login metrics from Naila's login sidecar"
             description: "The assistant-claude pod's login container isn't being scraped, so a dead login would go unnoticed."
+{{- end }}
 {{- end }}

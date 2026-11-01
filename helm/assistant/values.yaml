@@ -6,6 +6,10 @@ tz: Asia/Jakarta
 claude:
   enabled: false           # spike: Claude Code Remote Control session (your Max login), vault tools only
   version: 2.1.312         # @anthropic-ai/claude-code, pinned (auto-updater off)
+  # The RC lines (Remote Control sessions in the assistant-claude pod). false stops that pod (replicas 0) and drops its login
+  # alerts; its ConfigMap, Secrets, PVC (the RC transcripts) and NetworkPolicy stay: the harness pod reads the ConfigMap and
+  # needs claude.enabled. Flipping it never restarts the harness pod.
+  rcLines: true
 
 login:
   enabled: false           # re-login page + login metrics (sidecar of assistant-claude), served at naila.nopsqi.dev via cloudflared

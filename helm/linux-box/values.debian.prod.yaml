@@ -1,3 +1,6 @@
 # Bumped by nopsqi/linux-box CI inside a promotion PR, merged by hand.
 image:
   tag: sha-0b58683
+
+# Stopped 2026-11-01 to free ~0.8 GiB on the node (unused); set to 1 to start it again.
+replicas: 0

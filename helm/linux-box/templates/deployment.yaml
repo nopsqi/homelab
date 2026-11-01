@@ -5,7 +5,7 @@ metadata:
   labels:
     app: linux-box
 spec:
-  replicas: 1
+  replicas: {{ .Values.replicas }}
   strategy:
     type: Recreate
   selector:

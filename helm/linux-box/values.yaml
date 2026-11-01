@@ -1,6 +1,9 @@
 # image.repository: values.<distro>.yaml
 # image.tag: values.<distro>.prod.yaml, bumped by CI in nopsqi/linux-box
 
+# 0 stops the box (the PVC and its data stay); 1 starts it again.
+replicas: 1
+
 # Selkies web desktop (plain HTTP; cloudflared terminates TLS).
 service:
   port: 3000

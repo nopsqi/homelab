@@ -19,7 +19,12 @@ spec:
             description: "{{ "{{" }} $labels.instance {{ "}}" }} has been unreachable for 5 minutes."
 
         - alert: DeploymentReplicasZero
-          expr: kube_deployment_spec_replicas == 0
+          expr: |
+            kube_deployment_spec_replicas == 0
+            {{- range .Values.customAlerts.stoppedOnPurpose }}
+            {{- $p := splitList "/" . }}
+            unless on(namespace, deployment) kube_deployment_spec_replicas{namespace={{ index $p 0 | quote }}, deployment={{ index $p 1 | quote }}}
+            {{- end }}
           for: 5m
           labels:
             severity: warning

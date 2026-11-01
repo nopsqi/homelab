@@ -1,5 +1,12 @@
 customAlerts:
   enabled: false
+  # Deployments kept at 0 replicas on purpose (namespace/deployment); DeploymentReplicasZero ignores them.
+  # argocd-applicationset-controller: unused (App of Apps only); linux-box: stopped 2026-11-01; assistant-claude: RC retired; assistant-finance-test: only up in the harness test phase.
+  stoppedOnPurpose:
+    - argocd/argocd-applicationset-controller
+    - linux-box-debian/linux-box-deployment
+    - assistant/assistant-claude
+    - assistant/assistant-finance-test
 
 customDashboards:
   enabled: false

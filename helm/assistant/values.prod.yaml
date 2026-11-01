@@ -3,6 +3,7 @@ image:
 vault:
   # The Storage Box vault (Remotely Save over WebDAV on the devices, SMB here), since 2026-10-31.
   mode: smb
+  keepLocalCopy: false     # the local-path rollback copy (PVC assistant-vault) removed 2026-11-01, as the 1 Nov reminder asked
   subPath: My Vault
   smb:
     source: "//u682776-sub3.your-storagebox.de/u682776-sub3"   # terraform output assistant_smb: home dir obsidian/

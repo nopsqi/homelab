@@ -1,5 +1,5 @@
 image:
-  tag: sha-9a82b12
+  tag: sha-924d7f3
 vault:
   # The Storage Box vault (Remotely Save over WebDAV on the devices, SMB here), since 2026-10-31.
   mode: smb
@@ -24,15 +24,14 @@ ops:
 harness:
   enabled: true
   phase: real              # 2026-11-01 on the user's go: the real budget and the whole vault
-  discord:
-    ownerId: "702801867805294602"
-    guildId: "1181630542819643482"
-    channels:
-      naila: "1566334318752567368"
-      finance-bookkeeper: "1566334383831654520"
-      finance-advisor: "1566334353871605820"
-      ops-oncall: "1566334447111110759"
-      decisions: "1566334486054961293"
+  channels:
+    discord:
+      enabled: true
+      gateway:
+        env:
+          DISCORD_OWNER_ID: "702801867805294602"
+          DISCORD_GUILD_ID: "1181630542819643482"
+          DISCORD_CHANNELS: "naila:1566334318752567368,finance-bookkeeper:1566334383831654520,finance-advisor:1566334353871605820,ops-oncall:1566334447111110759,decisions:1566334486054961293"
 apiServer:
   cidr: 91.98.86.223/32
 sealedSecret:

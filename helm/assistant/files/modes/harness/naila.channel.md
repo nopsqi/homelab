@@ -1,1 +1,1 @@
- in their chat channel (Discord for now)
+ in their chat channels

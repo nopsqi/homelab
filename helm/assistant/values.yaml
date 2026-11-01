@@ -27,21 +27,36 @@ workers:
   - { name: finance-advisor, model: opus, direct: true, sendsTo: [naila, finance-bookkeeper] }     # plans the user approved in its chat
   - { name: ops-oncall, model: sonnet, direct: true }
 # Harness mode (packages/harness) as its own pod, assistant-harness: the core runs the workers as one-shot Claude Code runs
-# (its own Max login, done at naila.nopsqi.dev/harness), the user talks to them on Discord, and every change is a decision
-# approved with a button. Needs claude.enabled (it reads the assistant-claude ConfigMap) and the SealedSecret
-# assistant-harness-secret (DISCORD_TOKEN GATEWAY_DISCORD_SECRET CORE_TOOLS_SECRET).
+# (its own Max login, done at naila.nopsqi.dev/harness), the user talks to them through the channels below, and every change
+# is a decision the user approves in the decision pool. Needs claude.enabled (it reads the assistant-claude ConfigMap) and the
+# SealedSecret assistant-harness-secret (CORE_TOOLS_SECRET, plus each channel's secretKey and secretEnv keys).
 harness:
   enabled: false
   # test: the test budget (assistant-finance-test, finance.testServer) and the vault folder Harness-test only.
   # real: the real budget (assistant-finance) and the whole vault. Switch only on the user's explicit go.
   phase: test
-  discord:                 # ids are not secret; quoted, they're too large for a YAML number
-    ownerId: ""            # the only user whose messages and button presses count
-    guildId: ""
-    channels: {}           # naila, finance-bookkeeper, finance-advisor, ops-oncall, decisions: channel id each
-    # Webhook avatars: <avatarBase>/<speaker>.png (naila, finance-bookkeeper, finance-advisor, ops-oncall, test); "" = Discord's default.
-    # The images live in this public repo under assets/naila/avatars; Discord fetches them itself.
-    avatarBase: https://raw.githubusercontent.com/nopsqi/homelab/prod/assets/naila/avatars
+  # The channels the core talks to, by name (^[a-z][a-z0-9-]{0,31}$; the core's HARNESS_CHANNELS and GATEWAY_SECRETS list
+  # every enabled one). At least one must be enabled; anything the core would refuse fails the render.
+  channels:
+    discord:
+      enabled: false
+      label: Discord                      # how the core names the channel to the workers and in the decision pool
+      settle: approve                     # approve | reject | none: what it may do to a pending decision
+      # retainMs: <ms>                    # optional: drop its unacked posts older than this (a channel nobody polls between runs)
+      secretKey: GATEWAY_DISCORD_SECRET   # key in assistant-harness-secret: the gateway's and the core's shared secret
+      gateway:                            # absent: no container (a channel served from outside the pod, such as the tests')
+        uid: 1002                         # its own uid (group 1000), never 0, 1000 (the core, login), 1001 (docs) or another gateway's
+        uploads: true                     # uploads/<name> (2770) and the uploads mount, HARNESS_UPLOADS
+        # Plain env; "" leaves a variable out. Ids are not secret; quoted, they're too large for a YAML number.
+        # DISCORD_OWNER_ID: the only user whose messages and confirmations count. DISCORD_CHANNELS: name:id, in this order.
+        # DISCORD_AVATAR_BASE: webhook avatars, <base>/<speaker>.png (naila, finance-bookkeeper, finance-advisor, ops-oncall,
+        # test); "" = Discord's default. The images live in this public repo under assets/naila/avatars.
+        env: { DISCORD_OWNER_ID: "", DISCORD_GUILD_ID: "", DISCORD_CHANNELS: "", DISCORD_AVATAR_BASE: "https://raw.githubusercontent.com/nopsqi/homelab/prod/assets/naila/avatars" }
+        secretEnv: { DISCORD_TOKEN: DISCORD_TOKEN }   # env name: key in assistant-harness-secret
+        check:                            # env name: regex; a mismatch fails the render
+          DISCORD_OWNER_ID: "^[0-9]{17,20}$"
+          DISCORD_GUILD_ID: "^[0-9]{17,20}$"
+          DISCORD_CHANNELS: "^naila:[0-9]{17,20},finance-bookkeeper:[0-9]{17,20},finance-advisor:[0-9]{17,20},ops-oncall:[0-9]{17,20},decisions:[0-9]{17,20}$"
 ops:
   enabled: false           # on-call tool server (cluster-mcp over HTTP, read-only ServiceAccount); the `ops` subagent calls it
   # Namespaces whose pod logs ops may read. Never: assistant (Naila's terminal), sealed-secrets, argocd, kube-system.

@@ -9,14 +9,75 @@
 {{- if not .Values.claude.enabled }}{{ fail "harness.enabled needs claude.enabled: the harness pod reads the assistant-claude ConfigMap" }}{{ end }}
 {{- if not .Values.finance.enabled }}{{ fail "harness.enabled needs finance.enabled" }}{{ end }}
 {{- if and $test (not .Values.finance.testServer) }}{{ fail "harness.phase test needs finance.testServer (assistant-finance-test)" }}{{ end }}
-{{- $ids := list (dict "k" "DISCORD_OWNER_ID" "v" $h.discord.ownerId) (dict "k" "DISCORD_GUILD_ID" "v" $h.discord.guildId) }}
-{{- $chans := list }}
-{{- range $n := list "naila" "finance-bookkeeper" "finance-advisor" "ops-oncall" "decisions" }}
-{{- $id := index $h.discord.channels $n | default "" | toString }}
-{{- $ids = append $ids (dict "k" (printf "harness.discord.channels.%s" $n) "v" $id) }}
-{{- $chans = append $chans (printf "%s:%s" $n $id) }}
+{{- /* The channels (harness.channels, by name): each enabled one is an entry of HARNESS_CHANNELS and GATEWAY_SECRETS, and
+       one with a gateway is a container of its own. Everything the core would refuse at start fails the render instead. */ -}}
+{{- $chs := list }}
+{{- $specs := list }}
+{{- $entries := list }}
+{{- $keys := list }}
+{{- $uids := list 0 1000 1001 }}   {{- /* root, the core and login, docs: a shared process namespace opens /proc to the same uid */}}
+{{- range $name, $c := $h.channels }}
+{{- $at := printf "harness.channels.%s" $name }}
+{{- if and $c (not (kindIs "bool" $c.enabled)) }}{{ fail (printf "%s.enabled must be true or false" $at) }}{{ end }}
+{{- if and $c $c.enabled }}
+{{- if not (regexMatch "^[a-z][a-z0-9-]{0,31}$" $name) }}{{ fail (printf "%s: the name must match ^[a-z][a-z0-9-]{0,31}$" $at) }}{{ end }}
+{{- if has $name (list "harness" "docs" "login" "naila-tools") }}{{ fail (printf "%s: %s is already a container of the harness pod" $at $name) }}{{ end }}
+{{- if not $c.secretKey }}{{ fail (printf "%s.secretKey is missing (the channel's key in assistant-harness-secret)" $at) }}{{ end }}
+{{- if eq (toString $c.secretKey) "CORE_TOOLS_SECRET" }}{{ fail (printf "%s.secretKey may not be CORE_TOOLS_SECRET" $at) }}{{ end }}
+{{- if has (toString $c.secretKey) $keys }}{{ fail (printf "%s.secretKey %s is another channel's: each channel needs its own" $at (toString $c.secretKey)) }}{{ end }}
+{{- $keys = append $keys (toString $c.secretKey) }}
+{{- if not (has $c.settle (list "approve" "reject" "none")) }}{{ fail (printf "%s.settle must be approve, reject or none, got %q" $at (toString $c.settle)) }}{{ end }}
+{{- /* The core's HARNESS_TEST is never set in this pod, so the core refuses test+approve in either phase. */ -}}
+{{- if and (eq $name "test") (eq $c.settle "approve") }}{{ fail (printf "%s: the test channel may not approve: the pod's core is never a test instance" $at) }}{{ end }}
+{{- $label := toString ($c.label | default "") }}
+{{- /* Go's \p{C} lacks Cn (unassigned code points), unlike the core's JS /\p{C}/u: such a label passes here and the core refuses it. */ -}}
+{{- if or (not (regexMatch "^[^\\p{C}\\p{Zl}\\p{Zp}]{1,40}$" $label)) (eq (trim $label) "") }}{{ fail (printf "%s.label must be 1-40 printable characters on one line" $at) }}{{ end }}
+{{- $spec := dict "name" $name "label" $label "settle" $c.settle }}
+{{- if hasKey $c "retainMs" }}
+{{- $r := $c.retainMs }}
+{{- if not (and (or (kindIs "float64" $r) (kindIs "int64" $r) (kindIs "int" $r)) (gt (float64 $r) 0.0) (le (float64 $r) 9007199254740991.0) (eq (float64 $r) (float64 (int64 $r)))) }}{{ fail (printf "%s.retainMs must be a positive whole number of milliseconds, at most 9007199254740991" $at) }}{{ end }}
+{{- $_ := set $spec "retainMs" (int64 $r) }}
 {{- end }}
-{{- range $ids }}{{ if not (regexMatch "^[0-9]{17,20}$" (toString .v)) }}{{ fail (printf "%s must be a Discord id (quoted digits), got %q" .k (toString .v)) }}{{ end }}{{ end }}
+{{- $ch := dict "name" $name "NAME" (upper (replace "-" "_" $name)) "secretKey" (toString $c.secretKey) }}
+{{- with $c.gateway }}
+{{- if not (regexMatch "^[0-9]+$" (toString .uid)) }}{{ fail (printf "%s.gateway.uid must be a number" $at) }}{{ end }}
+{{- $uid := int .uid }}
+{{- if has $uid $uids }}{{ fail (printf "%s.gateway.uid %d is taken (root, the core, docs or another gateway)" $at $uid) }}{{ end }}
+{{- $uids = append $uids $uid }}
+{{- $names := list "CORE_URL" "GATEWAY_SECRET" "HARNESS_UPLOADS" }}
+{{- range $k, $_ := .env }}{{ if has $k $names }}{{ fail (printf "%s.gateway.env.%s is set by the chart or twice" $at $k) }}{{ end }}{{ $names = append $names $k }}{{ end }}
+{{- range $k, $v := .secretEnv }}
+{{- if has $k $names }}{{ fail (printf "%s.gateway.secretEnv.%s is set by the chart or twice" $at $k) }}{{ end }}{{ $names = append $names $k }}
+{{- if eq (toString $v) "CORE_TOOLS_SECRET" }}{{ fail (printf "%s.gateway.secretEnv.%s may not be CORE_TOOLS_SECRET" $at $k) }}{{ end }}
+{{- end }}
+{{- $env := .env | default dict }}
+{{- range $k, $re := .check }}
+{{- $v := toString (index $env $k | default "") }}
+{{- if not (regexMatch (toString $re) $v) }}{{ fail (printf "%s.gateway.env.%s must match %s, got %q" $at $k (toString $re) $v) }}{{ end }}
+{{- end }}
+{{- $_ := set $ch "gateway" (dict "uid" $uid "uploads" (.uploads | default false) "env" $env "secretEnv" (.secretEnv | default dict)) }}
+{{- end }}
+{{- $chs = append $chs $ch }}
+{{- $specs = append $specs $spec }}
+{{- $entries = append $entries (printf "%s:$(GATEWAY_%s_SECRET)" $name $ch.NAME) }}
+{{- end }}
+{{- end }}
+{{- if not $chs }}{{ fail "harness.enabled needs a channel: no channel in harness.channels has enabled: true" }}{{ end }}
+{{- /* A gateway gets no other channel's secret (it could act as that channel), nor any GATEWAY_*_SECRET key but its own. */ -}}
+{{- $allKeys := list }}
+{{- range $_, $c := $h.channels }}{{ if and $c $c.secretKey }}{{ $allKeys = append $allKeys (toString $c.secretKey) }}{{ end }}{{ end }}
+{{- range $ch := $chs }}{{ with $ch.gateway }}
+{{- range $k, $v := .secretEnv }}
+{{- if and (ne (toString $v) $ch.secretKey) (or (has (toString $v) $allKeys) (regexMatch "^GATEWAY_[A-Z0-9_]+_SECRET$" (toString $v))) }}{{ fail (printf "harness.channels.%s.gateway.secretEnv.%s may not be another channel's secret (%s)" $ch.name $k (toString $v)) }}{{ end }}
+{{- end }}
+{{- end }}{{ end }}
+{{- $gws := list }}
+{{- $up := "/home/claude/.claude/uploads" }}
+{{- $updirs := list }}
+{{- range $ch := $chs }}{{ with $ch.gateway }}
+{{- $gws = append $gws $ch.name }}
+{{- if .uploads }}{{ $updirs = append $updirs (printf "%s/%s" $up $ch.name) }}{{ end }}
+{{- end }}{{ end }}
 {{- $vaultRoot := ternary "/vault/Harness-test" "/vault" $test }}
 {{- $vaultSub := "" }}
 {{- if eq .Values.vault.mode "smb" }}{{ $vaultSub = ternary (printf "%s/Harness-test" .Values.vault.subPath) .Values.vault.subPath $test }}
@@ -25,8 +86,8 @@
 {{- $tokenKey := ternary "MCP_FINANCE_TEST_TOKEN" "MCP_FINANCE_TOKEN" $test }}
 {{- $readKey := ternary "MCP_FINANCE_TEST_READ_TOKEN" "MCP_FINANCE_READ_TOKEN" $test }}
 # Harness mode as its own pod: the core (packages/harness) runs each worker as a one-shot Claude Code run with this pod's
-# own Max login (naila.nopsqi.dev/harness), the Discord gateway carries the user's messages and the decision buttons, and
-# the core alone carries out an approved decision. The RC pod (assistant-claude) is not touched.
+# own Max login (naila.nopsqi.dev/harness), each channel's gateway (harness.channels) carries the user's messages and
+# confirmations, and the core alone carries out an approved decision. The RC pod (assistant-claude) is not touched.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -66,12 +127,13 @@ spec:
       imagePullSecrets: [{ name: ghcr-pull }]
       securityContext: { runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
       initContainers:
-        # /naila from the naila image, and the uploads folders the gateway writes into: uploads/ group-traversable (0750),
-        # discord/ setgid and group-writable (2770, group 1000), so the gateway (uid 1002, group 1000) creates its per-message
-        # folders there and they stay in group 1000, readable by the runs (uid 1000) and the docs sidecar (group 1000).
+        # /naila from the naila image, and the uploads folders the gateways write into: uploads/ group-traversable (0750),
+        # uploads/<channel>/ setgid and group-writable (2770, group 1000) for each gateway with uploads, so the gateway (its own
+        # uid, group 1000) creates its per-message folders there and they stay in group 1000, readable by the runs (uid 1000)
+        # and the docs sidecar (group 1000).
         - name: naila-tools
           image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
-          command: ["sh", "-c", "cp -a /app/. /naila/ && mkdir -p /home/claude/.claude/uploads/discord && chmod 750 /home/claude/.claude/uploads && chmod 2770 /home/claude/.claude/uploads/discord"]
+          command: ["sh", "-c", "cp -a /app/. /naila/ && mkdir -p {{ $up }}{{ range $updirs }} {{ . }}{{ end }} && chmod 750 {{ $up }}{{ with $updirs }} && chmod 2770 {{ join " " . }}{{ end }}"]
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           volumeMounts:
             - { name: naila, mountPath: /naila }
@@ -91,7 +153,7 @@ spec:
             - { name: HARNESS_PHASE, value: {{ $h.phase | quote }} }
             - { name: MAX_CONCURRENT_RUNS, value: "2" }   # each run is a claude process of a few hundred MiB
             - { name: HOST, value: 127.0.0.1 }
-            - { name: PORT, value: "3100" }              # channel API, for the discord container
+            - { name: PORT, value: "3100" }              # channel API, for the gateway containers
             - { name: CORE_TOOLS_PORT, value: "3101" }   # core tools, for the runs
             - { name: MCP_FINANCE_URL, value: http://{{ $finance }}:8080/mcp }
             - { name: VAULT_ROOT, value: {{ $vaultRoot }} }
@@ -101,7 +163,7 @@ spec:
             - { name: VAULT_EXCLUDE, value: Harness-test }   # the test phase's folder: out of the real phase's vault tools (Ruling 29)
             {{- end }}
             # The write bearer stays in the core's env; harness-start.sh puts the read-only one and the ops one into the
-            # agent files and unsets them, and the gateway secret goes on only inside GATEWAY_SECRETS.
+            # agent files and unsets them, and unsets each GATEWAY_<NAME>_SECRET: they go on only inside GATEWAY_SECRETS.
             - name: MCP_FINANCE_TOKEN
               valueFrom: { secretKeyRef: { name: assistant-claude-secret, key: {{ $tokenKey }} } }
             - name: MCP_FINANCE_READ_TOKEN
@@ -110,9 +172,12 @@ spec:
               valueFrom: { secretKeyRef: { name: assistant-claude-secret, key: MCP_OPS_TOKEN } }
             - name: CORE_TOOLS_SECRET
               valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: CORE_TOOLS_SECRET } }
-            - name: GATEWAY_DISCORD_SECRET
-              valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: GATEWAY_DISCORD_SECRET } }
-            - { name: GATEWAY_SECRETS, value: "discord:$(GATEWAY_DISCORD_SECRET)" }
+            {{- range $chs }}
+            - name: GATEWAY_{{ .NAME }}_SECRET
+              valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: {{ .secretKey | quote }} } }
+            {{- end }}
+            - { name: GATEWAY_SECRETS, value: {{ join "," $entries | quote }} }
+            - { name: HARNESS_CHANNELS, value: {{ toJson $specs | quote }} }
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           volumeMounts:
             - { name: home, mountPath: /home/claude }
@@ -125,32 +190,37 @@ spec:
               subPath: {{ . | quote }}
               {{- end }}
           resources: { requests: { cpu: 50m, memory: 256Mi }, limits: { memory: 1536Mi } }   # the core ~100Mi idle, plus up to 2 runs at once
-        # Discord gateway (packages/channels/discord): owner-only, posts the core's outbox, relays messages and buttons to
-        # the core on 127.0.0.1. Attachments go to uploads/discord/<uuid>/ (0750/0640, group 1000), nothing else of the home.
-        # Its own uid (1002), not the core's: the pod shares one process namespace (so login can restart the core), and only a
-        # different uid keeps /proc/<core pid>/{environ,root} (the write bearer, the login) closed to the Discord-facing process.
-        - name: discord
-          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
-          command: ["node", "packages/channels/discord/dist/main.js"]
+        {{- range $ch := $chs }}{{ with $ch.gateway }}
+        # Gateway of the {{ $ch.name }} channel (packages/channels/{{ $ch.name }}): posts the core's outbox and relays the user's
+        # messages and confirmations to the core on 127.0.0.1. Its own uid, not the core's: the pod shares one process namespace
+        # (so login can restart the core), and only a different uid keeps /proc/<core pid>/{environ,root} (the write bearer, the
+        # login) closed to a process facing the outside.
+        - name: {{ $ch.name }}
+          image: {{ $.Values.image.repository }}:{{ $.Values.image.tag }}
+          command: ["node", "packages/channels/{{ $ch.name }}/dist/main.js"]
           env:
             - { name: CORE_URL, value: "http://127.0.0.1:3100" }
-            - { name: HARNESS_UPLOADS, value: /home/claude/.claude/uploads/discord }
-            - { name: DISCORD_OWNER_ID, value: {{ $h.discord.ownerId | toString | quote }} }
-            - { name: DISCORD_GUILD_ID, value: {{ $h.discord.guildId | toString | quote }} }
-            - { name: DISCORD_CHANNELS, value: {{ join "," $chans | quote }} }
-            {{- with $h.discord.avatarBase }}
-            - { name: DISCORD_AVATAR_BASE, value: {{ . | quote }} }
-            {{- end }}
-            - name: DISCORD_TOKEN
-              valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: DISCORD_TOKEN } }
             - name: GATEWAY_SECRET
-              valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: GATEWAY_DISCORD_SECRET } }
-          securityContext: { runAsUser: 1002, runAsGroup: 1000, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
+              valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: {{ $ch.secretKey | quote }} } }
+            {{- if .uploads }}
+            - { name: HARNESS_UPLOADS, value: {{ $up }}/{{ $ch.name }} }   # uploads/<name>/<uuid>/ (0750/0640, group 1000)
+            {{- end }}
+            {{- range $k, $v := .env }}{{ $s := ternary "" (toString $v) (kindIs "invalid" $v) }}{{ if ne $s "" }}
+            - { name: {{ $k | quote }}, value: {{ $s | quote }} }
+            {{- end }}{{ end }}
+            {{- range $k, $v := .secretEnv }}
+            - name: {{ $k | quote }}
+              valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: {{ $v | quote }} } }
+            {{- end }}
+          securityContext: { runAsUser: {{ .uid }}, runAsGroup: 1000, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
+          {{- if .uploads }}
           # Never mount the whole home volume here: fsGroup makes the credentials group-readable (group 1000) on every pod
           # start, so keeping the login from this container rests on mounting only the uploads subPath.
           volumeMounts:
-            - { name: home, mountPath: /home/claude/.claude/uploads, subPath: .claude/uploads }
+            - { name: home, mountPath: {{ $up }}, subPath: .claude/uploads }
+          {{- end }}
           resources: { requests: { cpu: 10m, memory: 64Mi }, limits: { memory: 256Mi } }
+        {{- end }}{{ end }}
         # MarkItDown, as in the RC pod, but it sees only uploads and this phase's vault.
         - name: docs
           image: python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159
@@ -163,7 +233,7 @@ spec:
           readinessProbe: { exec: { command: ["python", "-c", "import socket; socket.create_connection(('127.0.0.1', 3002), 2)"] }, periodSeconds: 15 }
           # Its own uid, as in the RC pod: the shared process namespace leaves other containers' /proc/<pid> open to the same uid.
           securityContext: { runAsUser: 1001, runAsGroup: 1001, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
-          # Never mount the whole home volume here (see discord): only the uploads subPath keeps the login out of reach.
+          # Never mount the whole home volume here (see the gateways): only the uploads subPath keeps the login out of reach.
           volumeMounts:
             - { name: naila, mountPath: /naila, readOnly: true }
             - { name: home, mountPath: /home/claude/.claude/uploads, subPath: .claude/uploads, readOnly: true }
@@ -241,7 +311,7 @@ spec:
           labels: { severity: critical }
           annotations:
             summary: "The harness pod's Claude Code is logged out"
-            description: "The Discord workers can't answer. Log in again at https://naila.nopsqi.dev/harness"
+            description: "The workers can't answer. Log in again at https://naila.nopsqi.dev/harness"
         - alert: NailaHarnessDown
           expr: naila_remote_control_up{job="assistant-harness-login"} == 0
           for: 10m
@@ -256,14 +326,16 @@ spec:
           annotations:
             summary: "No login metrics from the harness pod's login sidecar"
             description: "The assistant-harness pod's login container isn't being scraped, so a dead login would go unnoticed."
-        # The gateway exits on a channel map outside the guild or a bad token; the generic ContainerRestarting waits for more.
-        - alert: NailaDiscordGatewayRestarting
-          expr: increase(kube_pod_container_status_restarts_total{namespace="{{ .Release.Namespace }}", container="discord"}[1h]) > 2
+        {{- with $gws }}
+        # A gateway exits on a bad token or config its service refuses; the generic ContainerRestarting waits for more.
+        - alert: NailaGatewayRestarting
+          expr: increase(kube_pod_container_status_restarts_total{namespace="{{ $.Release.Namespace }}", pod=~"assistant-harness-.*", container=~"{{ join "|" . }}"}[1h]) > 2
           for: 5m
           labels: { severity: warning }
           annotations:
-            summary: "The Discord gateway restarted {{ "{{" }} $value | humanize {{ "}}" }} times in the last hour"
-            description: "Discord messages and buttons don't reach the harness. `kubectl -n {{ .Release.Namespace }} logs deploy/assistant-harness -c discord --previous`"
+            summary: "The {{ "{{" }} $labels.container {{ "}}" }} gateway restarted {{ "{{" }} $value | humanize {{ "}}" }} times in the last hour"
+            description: "Messages and confirmations on the {{ "{{" }} $labels.container {{ "}}" }} channel don't reach the harness. `kubectl -n {{ $.Release.Namespace }} logs deploy/assistant-harness -c {{ "{{" }} $labels.container {{ "}}" }} --previous`"
+        {{- end }}
 {{- if .Values.networkPolicy.enabled }}
 ---
 # Out: DNS, the internet on 443 (Anthropic, Discord, npm for the CLI install, Cloudflare Access keys), this phase's finance

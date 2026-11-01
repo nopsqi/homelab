@@ -129,8 +129,10 @@ c.projects = Object.fromEntries(dirs.map((d) => [d, { hasTrustDialogAccepted: tr
 fs.writeFileSync(f, JSON.stringify(c, null, 2))' "$HOME/.claude.json" "${dirs[@]}"
 cp "$HOME/.claude.json" "$C/.claude.json"
 
-# The core reads only its own env; the workers' bearers live in the agent files now, and the gateway secret is in GATEWAY_SECRETS.
-unset MCP_FINANCE_READ_TOKEN MCP_OPS_TOKEN GATEWAY_DISCORD_SECRET
+# The core reads only its own env; the workers' bearers live in the agent files now, and each channel's secret is in
+# GATEWAY_SECRETS (which the core reads, so the pattern leaves it set).
+unset MCP_FINANCE_READ_TOKEN MCP_OPS_TOKEN
+for v in $(compgen -v | grep -E '^GATEWAY_[A-Z0-9_]+_SECRET$'); do unset "$v"; done
 export CLAUDE_CONFIG_DIR=$C CLAUDE_BIN=$HOME/.npm-global/bin/claude
 cd "$HARNESS_HOME"
 exec node "$MAIN"

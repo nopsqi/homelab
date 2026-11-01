@@ -38,6 +38,16 @@ ingress:
         teamName: nopsqi
         audTag:
           - bc70a697385242a690776edb9ad90496cae083ef20d199dfc91c69590b7acd27
+  # The harness pod's login page, under /harness of the same host and Access app; before the host's own rule.
+  - hostname: naila.nopsqi.dev
+    path: ^/harness(/|$)
+    service: http://assistant-harness-login.assistant.svc.cluster.local:8080
+    originRequest:
+      access:
+        required: true
+        teamName: nopsqi
+        audTag:
+          - 66344fd49f2e24642e7ed4cb68a0515fe1d92b610e8acaaef328f925c1603bdc
   # Naila re-login page: same fail-closed Access enforcement; the page also verifies the JWT itself.
   - hostname: naila.nopsqi.dev
     service: http://assistant-login.assistant.svc.cluster.local:8080

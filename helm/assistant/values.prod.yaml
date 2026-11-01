@@ -10,6 +10,7 @@ vault:
     secretNamespace: assistant
 claude:
   enabled: true
+  rcLines: false           # RC mode retired 2026-11-01 (harness mode took over); config, secrets and volume stay
 login:
   enabled: true
   accessAud: 66344fd49f2e24642e7ed4cb68a0515fe1d92b610e8acaaef328f925c1603bdc   # the naila.nopsqi.dev Access app
@@ -21,7 +22,7 @@ ops:
   enabled: true
 harness:
   enabled: true
-  phase: test
+  phase: real              # 2026-11-01 on the user's go: the real budget and the whole vault
   discord:
     ownerId: "702801867805294602"
     guildId: "1181630542819643482"

@@ -22,15 +22,16 @@ trap 'rm -rf "$tmp"' EXIT
 
 git archive "$ref" helm/assistant | tar -x -C "$tmp"
 # harness off: a ref that already has the harness pod compares like one that predates it
-helm template "$tmp/helm/assistant" -f "$tmp/helm/assistant/values.yaml" -f "$tmp/helm/assistant/values.prod.yaml" --set harness.enabled=false > "$tmp/old.yaml"
-helm template helm/assistant -f helm/assistant/values.yaml -f helm/assistant/values.prod.yaml > "$tmp/new.yaml"
+helm template "$tmp/helm/assistant" -f "$tmp/helm/assistant/values.yaml" -f "$tmp/helm/assistant/values.prod.yaml" --set harness.phase=test --set claude.rcLines=true --set harness.enabled=false > "$tmp/old.yaml"
+helm template helm/assistant -f helm/assistant/values.yaml -f helm/assistant/values.prod.yaml --set harness.phase=test --set claude.rcLines=true > "$tmp/new.yaml"
 # The checksum that restarts the RC lines: unchanged by a harness-only edit, changed by an RC mode edit.
 cp -a helm/assistant "$tmp/h" && printf '\nharness-only edit\n' >> "$tmp/h/files/modes/harness/naila.md"
-helm template "$tmp/h" -f "$tmp/h/values.yaml" -f "$tmp/h/values.prod.yaml" > "$tmp/harness-edit.yaml"
+helm template "$tmp/h" -f "$tmp/h/values.yaml" -f "$tmp/h/values.prod.yaml" --set harness.phase=test --set claude.rcLines=true > "$tmp/harness-edit.yaml"
 cp -a helm/assistant "$tmp/r" && printf '\nrc edit\n' >> "$tmp/r/files/modes/rc/naila.md"
-helm template "$tmp/r" -f "$tmp/r/values.yaml" -f "$tmp/r/values.prod.yaml" > "$tmp/rc-edit.yaml"
-# The harness pod: off, test phase (values.prod.yaml), real phase, staging values.
-P=(-f helm/assistant/values.yaml -f helm/assistant/values.prod.yaml)
+helm template "$tmp/r" -f "$tmp/r/values.yaml" -f "$tmp/r/values.prod.yaml" --set harness.phase=test --set claude.rcLines=true > "$tmp/rc-edit.yaml"
+# The harness pod: off, test phase, real phase, staging values. Every render from values.prod.yaml pins the test phase with
+# the RC lines on, whatever prod runs now (real since 2026-11-01); the real phase and rcLines=false are set where checked.
+P=(-f helm/assistant/values.yaml -f helm/assistant/values.prod.yaml --set harness.phase=test --set claude.rcLines=true)
 helm template helm/assistant "${P[@]}" --set harness.enabled=false > "$tmp/off.yaml"
 helm template helm/assistant "${P[@]}" --set harness.phase=real > "$tmp/real.yaml"
 helm template helm/assistant "${P[@]}" --set claude.rcLines=false > "$tmp/test-rcoff.yaml"
@@ -41,7 +42,7 @@ helm template helm/cloudflared -f helm/cloudflared/values.yaml > "$tmp/cloudflar
 cp -a helm/assistant "$tmp/s" && sed -i 's/"mcp__claude_ai_Gmail"/"mcp__claude_ai_GmailX"/' "$tmp/s/templates/claude.yaml"
 cp -a helm/assistant "$tmp/d" && sed -i 's/^    {{ .name }} {{ .model }}$/    {{ .name }}  {{ .model }}/' "$tmp/d/templates/claude.yaml"
 cp -a helm/assistant "$tmp/n" && sed -i 's/made for this\./made for this, really./' "$tmp/n/templates/claude.yaml"
-for v in s d n; do helm template "$tmp/$v" -f "$tmp/$v/values.yaml" -f "$tmp/$v/values.prod.yaml" > "$tmp/$v.yaml"; done
+for v in s d n; do helm template "$tmp/$v" -f "$tmp/$v/values.yaml" -f "$tmp/$v/values.prod.yaml" --set harness.phase=test --set claude.rcLines=true > "$tmp/$v.yaml"; done
 
 python3 - "$tmp/old.yaml" "$tmp/new.yaml" "$tmp/harness-edit.yaml" "$tmp/rc-edit.yaml" <<'PY'
 import sys, yaml

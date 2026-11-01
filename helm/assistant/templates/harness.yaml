@@ -14,22 +14,28 @@
 {{- $chs := list }}
 {{- $specs := list }}
 {{- $entries := list }}
+{{- $keys := list }}
 {{- $uids := list 0 1000 1001 }}   {{- /* root, the core and login, docs: a shared process namespace opens /proc to the same uid */}}
 {{- range $name, $c := $h.channels }}
-{{- if and $c $c.enabled }}
 {{- $at := printf "harness.channels.%s" $name }}
+{{- if and $c (not (kindIs "bool" $c.enabled)) }}{{ fail (printf "%s.enabled must be true or false" $at) }}{{ end }}
+{{- if and $c $c.enabled }}
 {{- if not (regexMatch "^[a-z][a-z0-9-]{0,31}$" $name) }}{{ fail (printf "%s: the name must match ^[a-z][a-z0-9-]{0,31}$" $at) }}{{ end }}
 {{- if has $name (list "harness" "docs" "login" "naila-tools") }}{{ fail (printf "%s: %s is already a container of the harness pod" $at $name) }}{{ end }}
 {{- if not $c.secretKey }}{{ fail (printf "%s.secretKey is missing (the channel's key in assistant-harness-secret)" $at) }}{{ end }}
 {{- if eq (toString $c.secretKey) "CORE_TOOLS_SECRET" }}{{ fail (printf "%s.secretKey may not be CORE_TOOLS_SECRET" $at) }}{{ end }}
+{{- if has (toString $c.secretKey) $keys }}{{ fail (printf "%s.secretKey %s is another channel's: each channel needs its own" $at (toString $c.secretKey)) }}{{ end }}
+{{- $keys = append $keys (toString $c.secretKey) }}
 {{- if not (has $c.settle (list "approve" "reject" "none")) }}{{ fail (printf "%s.settle must be approve, reject or none, got %q" $at (toString $c.settle)) }}{{ end }}
-{{- if and (eq $name "test") (eq $c.settle "approve") (not $test) }}{{ fail (printf "%s: the test channel may not approve in the real phase" $at) }}{{ end }}
+{{- /* The core's HARNESS_TEST is never set in this pod, so the core refuses test+approve in either phase. */ -}}
+{{- if and (eq $name "test") (eq $c.settle "approve") }}{{ fail (printf "%s: the test channel may not approve: the pod's core is never a test instance" $at) }}{{ end }}
 {{- $label := toString ($c.label | default "") }}
+{{- /* Go's \p{C} lacks Cn (unassigned code points), unlike the core's JS /\p{C}/u: such a label passes here and the core refuses it. */ -}}
 {{- if or (not (regexMatch "^[^\\p{C}\\p{Zl}\\p{Zp}]{1,40}$" $label)) (eq (trim $label) "") }}{{ fail (printf "%s.label must be 1-40 printable characters on one line" $at) }}{{ end }}
 {{- $spec := dict "name" $name "label" $label "settle" $c.settle }}
 {{- if hasKey $c "retainMs" }}
 {{- $r := $c.retainMs }}
-{{- if not (and (or (kindIs "float64" $r) (kindIs "int64" $r) (kindIs "int" $r)) (gt (float64 $r) 0.0) (eq (float64 $r) (float64 (int64 $r)))) }}{{ fail (printf "%s.retainMs must be a positive whole number of milliseconds" $at) }}{{ end }}
+{{- if not (and (or (kindIs "float64" $r) (kindIs "int64" $r) (kindIs "int" $r)) (gt (float64 $r) 0.0) (le (float64 $r) 9007199254740991.0) (eq (float64 $r) (float64 (int64 $r)))) }}{{ fail (printf "%s.retainMs must be a positive whole number of milliseconds, at most 9007199254740991" $at) }}{{ end }}
 {{- $_ := set $spec "retainMs" (int64 $r) }}
 {{- end }}
 {{- $ch := dict "name" $name "NAME" (upper (replace "-" "_" $name)) "secretKey" (toString $c.secretKey) }}
@@ -57,6 +63,14 @@
 {{- end }}
 {{- end }}
 {{- if not $chs }}{{ fail "harness.enabled needs a channel: no channel in harness.channels has enabled: true" }}{{ end }}
+{{- /* A gateway gets no other channel's secret (it could act as that channel), nor any GATEWAY_*_SECRET key but its own. */ -}}
+{{- $allKeys := list }}
+{{- range $_, $c := $h.channels }}{{ if and $c $c.secretKey }}{{ $allKeys = append $allKeys (toString $c.secretKey) }}{{ end }}{{ end }}
+{{- range $ch := $chs }}{{ with $ch.gateway }}
+{{- range $k, $v := .secretEnv }}
+{{- if and (ne (toString $v) $ch.secretKey) (or (has (toString $v) $allKeys) (regexMatch "^GATEWAY_[A-Z0-9_]+_SECRET$" (toString $v))) }}{{ fail (printf "harness.channels.%s.gateway.secretEnv.%s may not be another channel's secret (%s)" $ch.name $k (toString $v)) }}{{ end }}
+{{- end }}
+{{- end }}{{ end }}
 {{- $gws := list }}
 {{- $up := "/home/claude/.claude/uploads" }}
 {{- $updirs := list }}
@@ -160,7 +174,7 @@ spec:
               valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: CORE_TOOLS_SECRET } }
             {{- range $chs }}
             - name: GATEWAY_{{ .NAME }}_SECRET
-              valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: {{ .secretKey }} } }
+              valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: {{ .secretKey | quote }} } }
             {{- end }}
             - { name: GATEWAY_SECRETS, value: {{ join "," $entries | quote }} }
             - { name: HARNESS_CHANNELS, value: {{ toJson $specs | quote }} }
@@ -187,16 +201,16 @@ spec:
           env:
             - { name: CORE_URL, value: "http://127.0.0.1:3100" }
             - name: GATEWAY_SECRET
-              valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: {{ $ch.secretKey }} } }
+              valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: {{ $ch.secretKey | quote }} } }
             {{- if .uploads }}
             - { name: HARNESS_UPLOADS, value: {{ $up }}/{{ $ch.name }} }   # uploads/<name>/<uuid>/ (0750/0640, group 1000)
             {{- end }}
-            {{- range $k, $v := .env }}{{ if $v }}
-            - { name: {{ $k }}, value: {{ toString $v | quote }} }
+            {{- range $k, $v := .env }}{{ $s := ternary "" (toString $v) (kindIs "invalid" $v) }}{{ if ne $s "" }}
+            - { name: {{ $k | quote }}, value: {{ $s | quote }} }
             {{- end }}{{ end }}
             {{- range $k, $v := .secretEnv }}
-            - name: {{ $k }}
-              valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: {{ $v }} } }
+            - name: {{ $k | quote }}
+              valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: {{ $v | quote }} } }
             {{- end }}
           securityContext: { runAsUser: {{ .uid }}, runAsGroup: 1000, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
           {{- if .uploads }}

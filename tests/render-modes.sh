@@ -376,6 +376,13 @@ for label, r in (("test", test), ("real", real), ("two channels", two)):   # $(V
 
 want = {"label": "Discord", "name": "discord", "settle": "approve"}
 for label, r in (("test", test), ("real", real), ("two channels", two)):
+    h = ctr(r, "harness")
+    listed = {c.get("name") for c in (channels(h) or [])}
+    secrets = {e.split(":", 1)[0] for e in entries(h) if e}
+    if listed != secrets: bad.append(f"channel loop: HARNESS_CHANNELS names {sorted(listed)}, GATEWAY_SECRETS names {sorted(secrets)} ({label})")
+    for nm in listed | secrets:
+        v = "GATEWAY_" + str(nm).upper().replace("-", "_") + "_SECRET"
+        if not key(h, v): bad.append(f"channel loop: the core has no {v} from a secret ({label})")
     if want not in (channels(ctr(r, "harness")) or []): bad.append(f"HARNESS_CHANNELS contains {compact(want)}: it is {val(ctr(r, 'harness'), 'HARNESS_CHANNELS')!r} ({label})")
 
 tag = "a second channel gets its own container, secret env and GATEWAY_SECRETS entry and no Discord env"
@@ -399,23 +406,35 @@ tw = {"label": "Telegram", "name": "telegram", "settle": "reject"}
 if tw not in (channels(th) or []): bad.append(f"{tag}: HARNESS_CHANNELS lacks {compact(tw)}: {val(th, 'HARNESS_CHANNELS')!r}")
 if ctr(two, "discord") != ctr(test, "discord"): bad.append(f"{tag}: the discord container changes when telegram is added")
 
-tag = "a missing secretKey, an unknown settle, a failing check and test with approve in the real phase each fail the render"
+tag = "a missing secretKey, an unknown settle, a failing check and test with approve in the real phase each fail the render"   # also: shared or borrowed gateway secrets
 P = ["helm", "template", "helm/assistant", "-f", "helm/assistant/values.yaml", "-f", "helm/assistant/values.prod.yaml", "--set", "claude.rcLines=true"]
 def render(*a): return subprocess.run(P + list(a), capture_output=True, text=True)
 T = lambda settle: ["--set-json", 'harness.channels.test={"enabled":true,"label":"test","settle":"%s","secretKey":"GATEWAY_TEST_SECRET"}' % settle]
 for what, args, msg in (("a missing secretKey", ["--set", "harness.channels.discord.secretKey=null"], "harness.channels.discord.secretKey"),
                         ("an unknown settle", ["--set", "harness.channels.discord.settle=maybe"], "harness.channels.discord.settle"),
                         ("a failing check", ["--set", "harness.channels.discord.gateway.env.DISCORD_GUILD_ID=123"], "DISCORD_GUILD_ID"),
-                        ("test with approve in the real phase", ["--set", "harness.phase=real", *T("approve")], "may not approve"),
+                        ("test with approve in the real phase", ["--set", "harness.phase=real", *T("approve")], "the test channel may not approve: the pod's core is never a test instance"),
+                        ("test with approve in the test phase", ["--set", "harness.phase=test", *T("approve")], "the test channel may not approve: the pod's core is never a test instance"),
+                        ("a non-bool enabled", ["--set-json", 'harness.channels.tg={"enabled":"yes","label":"x","settle":"none","secretKey":"K"}'], "harness.channels.tg.enabled"),
+                        ("retainMs above 2^53-1", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"K","retainMs":9007199254740992}'], "harness.channels.tg.retainMs"),
                         ("no channel enabled", ["--set", "harness.channels.discord.enabled=false"], "no channel"),
-                        ("a bad name", ["--set-json", 'harness.channels.Ops_x={"enabled":true,"label":"x","settle":"none","secretKey":"K"}'], "Ops_x")):
+                        ("a bad name", ["--set-json", 'harness.channels.Ops_x={"enabled":true,"label":"x","settle":"none","secretKey":"K"}'], "Ops_x"),
+                        ("two channels sharing a secretKey", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_DISCORD_SECRET"}'], "harness.channels.tg.secretKey"),
+                        ("a gateway handed another channel's secretKey", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"GATEWAY_DISCORD_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X"),
+                        ("a gateway handed a GATEWAY_*_SECRET key not its own", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"GATEWAY_OTHER_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X"),
+                        ("a gateway handed CORE_TOOLS_SECRET", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"CORE_TOOLS_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X")):
     p = render("--set", "harness.phase=test", *args)
     if p.returncode == 0: bad.append(f"{tag}: {what} renders")
     elif msg not in p.stderr: bad.append(f"{tag}: {what} fails for another reason: {p.stderr.strip()[-300:]}")
-for what, args in (("test with reject in the real phase", ["--set", "harness.phase=real", *T("reject")]),
-                   ("test with approve in the test phase", ["--set", "harness.phase=test", *T("approve")])):
+for what, args in (("a gateway handed its own channel's secretKey", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"GATEWAY_TG_SECRET"}}}']),
+                   ("retainMs at 2^53-1", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"K","retainMs":9007199254740991}']),
+                   ("test with reject in the real phase", ["--set", "harness.phase=real", *T("reject")])):
     p = render(*args)
     if p.returncode != 0: bad.append(f"{tag}: {what} does not render: {p.stderr.strip()[-300:]}")
+
+p = render("--set", "harness.phase=test", "--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"K","gateway":{"uid":1005,"env":{"ZERO":0,"OFF":false,"EMPTY":""}}}')
+z = ctr({(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(p.stdout) if d}, "tg") if p.returncode == 0 else None
+if not z or (val(z, "ZERO"), val(z, "OFF"), "EMPTY" in envmap(z)) != ("0", "false", False): bad.append(f"gateway env drops only values that render as \"\": {sorted(envmap(z)) if z else p.stderr.strip()[-200:]}")
 
 tag = "one NailaGatewayRestarting rule covers every gateway container; no alert text names Discord"
 for label, r, gws in (("prod", test, {"discord"}), ("two channels", two, {"discord", "telegram"})):

@@ -57,8 +57,9 @@ spec:
   template:
     metadata:
       labels: { app: assistant-harness }
-      # What the core and its runs are built from at start. Not the RC-only mode files: an RC edit doesn't restart the harness.
-      annotations: { checksum/config: {{ print (.Files.Get "files/CLAUDE.md") (include "assistant.agentFiles" .) (include "assistant.harnessModeFiles" .) (toJson .Values.workers) (.Files.Get "files/harness-settings.json") (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/harness-start.sh") (toJson $h) .Values.claude.version .Values.finance.testBudget | sha256sum | trunc 12 }} }
+      # What the core and its runs are built from at start, including what harness-start.sh takes from the RC ConfigMap
+      # (settings.json, direct-lines, finance-test-note). Not the RC-only mode files: an RC edit doesn't restart the harness.
+      annotations: { checksum/config: {{ print (.Files.Get "files/CLAUDE.md") (include "assistant.agentFiles" .) (include "assistant.harnessModeFiles" .) (toJson .Values.workers) (.Files.Get "files/harness-settings.json") (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/harness-start.sh") (include "assistant.settingsJson" .) (include "assistant.directLines" .) (include "assistant.testCopyNote" .) (toJson $h) .Values.claude.version .Values.finance.testBudget | sha256sum | trunc 12 }} }
     spec:
       automountServiceAccountToken: false
       shareProcessNamespace: true   # the login sidecar sees the core (status) and restarts it after a login; pause reaps exited runs
@@ -139,6 +140,8 @@ spec:
             - name: GATEWAY_SECRET
               valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: GATEWAY_DISCORD_SECRET } }
           securityContext: { runAsUser: 1002, runAsGroup: 1000, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
+          # Never mount the whole home volume here: fsGroup makes the credentials group-readable (group 1000) on every pod
+          # start, so keeping the login from this container rests on mounting only the uploads subPath.
           volumeMounts:
             - { name: home, mountPath: /home/claude/.claude/uploads, subPath: .claude/uploads }
           resources: { requests: { cpu: 10m, memory: 64Mi }, limits: { memory: 256Mi } }
@@ -154,6 +157,7 @@ spec:
           readinessProbe: { exec: { command: ["python", "-c", "import socket; socket.create_connection(('127.0.0.1', 3002), 2)"] }, periodSeconds: 15 }
           # Its own uid, as in the RC pod: the shared process namespace leaves other containers' /proc/<pid> open to the same uid.
           securityContext: { runAsUser: 1001, runAsGroup: 1001, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
+          # Never mount the whole home volume here (see discord): only the uploads subPath keeps the login out of reach.
           volumeMounts:
             - { name: naila, mountPath: /naila, readOnly: true }
             - { name: home, mountPath: /home/claude/.claude/uploads, subPath: .claude/uploads, readOnly: true }
@@ -215,7 +219,9 @@ spec:
   endpoints: [{ port: metrics, interval: 60s }]
 ---
 # The harness pod's own login alerts, selected by job (the scrape target's `pod` label is the Kubernetes pod name, so the
-# sidecar's pod="harness" arrives as exported_pod). naila_remote_control_up{session="harness"} is the core process.
+# sidecar's pod="harness" arrives as exported_pod). In this job, naila_remote_control_up is the core process (the
+# sidecar finds it by RESTART_MATCH). No token-expiry rule: no long-running claude process renews the token in this pod,
+# only the runs do, so an idle pod's token is expired as a matter of course; NailaHarnessLoggedOut covers a dead login.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata: { name: assistant-harness-login, labels: { release: monitoring } }
@@ -230,20 +236,13 @@ spec:
           annotations:
             summary: "The harness pod's Claude Code is logged out"
             description: "The Discord workers can't answer. Log in again at https://naila.nopsqi.dev/harness"
-        - alert: NailaHarnessTokenNotRenewed
-          expr: time() - naila_claude_token_expiry_timestamp_seconds{job="assistant-harness-login"} > 1800
-          for: 10m
-          labels: { severity: critical }
-          annotations:
-            summary: "The harness pod's Claude token expired {{ "{{" }} $value | humanizeDuration {{ "}}" }} ago and was not renewed"
-            description: "The automatic renewal is failing. Log in again at https://naila.nopsqi.dev/harness"
         - alert: NailaHarnessDown
           expr: naila_remote_control_up{job="assistant-harness-login"} == 0
           for: 10m
           labels: { severity: warning }
           annotations:
             summary: "The harness core is not running"
-            description: "Not logged in yet, or crash-looping: check https://naila.nopsqi.dev/harness and `kubectl -n {{ .Release.Namespace }} logs deploy/assistant-harness -c harness`."
+            description: "The login sidecar of the harness pod finds no harness core process (not logged in yet, or crash-looping): check https://naila.nopsqi.dev/harness and `kubectl -n {{ .Release.Namespace }} logs deploy/assistant-harness -c harness`."
         - alert: NailaHarnessLoginMetricsMissing
           expr: absent(naila_claude_logged_in{job="assistant-harness-login"})
           for: 15m
@@ -277,7 +276,8 @@ spec:
   egress:
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } } }]
       ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
-    - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16] } }]
+    # Not the tailnet (100.64.0.0/10, CGNAT) or link-local (169.254.0.0/16, cloud metadata) either.
+    - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16] } }]
       ports: [{ protocol: TCP, port: 443 }]
     - to: [{ podSelector: { matchLabels: { app: {{ $finance }} } } }, { podSelector: { matchLabels: { app: assistant-ops } } }]
       ports: [{ protocol: TCP, port: 8080 }]

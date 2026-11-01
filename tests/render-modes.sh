@@ -18,7 +18,8 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 git archive "$ref" helm/assistant | tar -x -C "$tmp"
-helm template "$tmp/helm/assistant" -f "$tmp/helm/assistant/values.yaml" -f "$tmp/helm/assistant/values.prod.yaml" > "$tmp/old.yaml"
+# harness off: a ref that already has the harness pod compares like one that predates it
+helm template "$tmp/helm/assistant" -f "$tmp/helm/assistant/values.yaml" -f "$tmp/helm/assistant/values.prod.yaml" --set harness.enabled=false > "$tmp/old.yaml"
 helm template helm/assistant -f helm/assistant/values.yaml -f helm/assistant/values.prod.yaml > "$tmp/new.yaml"
 # The checksum that restarts the RC lines: unchanged by a harness-only edit, changed by an RC mode edit.
 cp -a helm/assistant "$tmp/h" && printf '\nharness-only edit\n' >> "$tmp/h/files/modes/harness/naila.md"
@@ -31,6 +32,11 @@ helm template helm/assistant "${P[@]}" --set harness.enabled=false > "$tmp/off.y
 helm template helm/assistant "${P[@]}" --set harness.phase=real > "$tmp/real.yaml"
 helm template helm/assistant -f helm/assistant/values.yaml -f helm/assistant/values.staging.yaml > "$tmp/staging.yaml"
 helm template helm/cloudflared -f helm/cloudflared/values.yaml > "$tmp/cloudflared.yaml"
+# The harness checksum follows what harness-start.sh takes from the RC ConfigMap: settings.json, direct-lines, finance-test-note.
+cp -a helm/assistant "$tmp/s" && sed -i 's/"mcp__claude_ai_Gmail"/"mcp__claude_ai_GmailX"/' "$tmp/s/templates/claude.yaml"
+cp -a helm/assistant "$tmp/d" && sed -i 's/^    {{ .name }} {{ .model }}$/    {{ .name }}  {{ .model }}/' "$tmp/d/templates/claude.yaml"
+cp -a helm/assistant "$tmp/n" && sed -i 's/made for this\./made for this, really./' "$tmp/n/templates/claude.yaml"
+for v in s d n; do helm template "$tmp/$v" -f "$tmp/$v/values.yaml" -f "$tmp/$v/values.prod.yaml" > "$tmp/$v.yaml"; done
 
 python3 - "$tmp/old.yaml" "$tmp/new.yaml" "$tmp/harness-edit.yaml" "$tmp/rc-edit.yaml" <<'PY'
 import sys, yaml
@@ -101,7 +107,7 @@ if bad:
 print("RC render identical; harness keys clean")
 PY
 
-python3 - "$tmp/old.yaml" "$tmp/off.yaml" "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/staging.yaml" "$tmp/cloudflared.yaml" <<'PY'
+python3 - "$tmp/old.yaml" "$tmp/off.yaml" "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/staging.yaml" "$tmp/cloudflared.yaml" "$tmp/s.yaml" "$tmp/d.yaml" "$tmp/n.yaml" <<'PY'
 import sys, yaml, re
 def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
 old, off, test, real, staging = (load(p) for p in sys.argv[1:6])
@@ -200,20 +206,35 @@ def strip(d):
     if d["kind"] == "Deployment" and d["metadata"]["name"] == "assistant-claude": d["spec"]["template"]["metadata"]["annotations"].pop("checksum/config", None)
     return d
 for k in sorted(set(old) | set(off)):
-    if k in (("ConfigMap", "assistant-claude"), ("PrometheusRule", "assistant-login")): continue
+    if k in (("ConfigMap", "assistant-claude"), ("PrometheusRule", "assistant-login")) or k[1].startswith("assistant-harness"): continue   # a ref with the harness on
     if k not in old or k not in off or strip(old[k]) != strip(off[k]): bad.append(f"RC render identical: {k[0]}/{k[1]} differs from the ref render with the harness off")
 changes = {("Deployment", "assistant-finance-test"), ("NetworkPolicy", "assistant-finance"), ("NetworkPolicy", "assistant-finance-test"), ("NetworkPolicy", "assistant-ops")}
 for label, r in (("test", test), ("real", real)):
     for k in off:
         if k not in changes and off[k] != r.get(k): bad.append(f"RC render identical: {k[0]}/{k[1]} changes when the harness is on ({label})")
 
+# the RC ConfigMap keys harness-start.sh reads are unchanged from the ref, and the harness checksum follows each of them
+for k in ("settings.json", "direct-lines", "finance-test-note"):
+    if old[("ConfigMap", "assistant-claude")]["data"].get(k) != off[("ConfigMap", "assistant-claude")]["data"].get(k): bad.append(f"RC render identical: ConfigMap key {k} differs from the ref render")
+hsum = lambda r: r[H]["spec"]["template"]["metadata"]["annotations"]["checksum/config"] if H in r else None
+csum = lambda r: r[("Deployment", "assistant-claude")]["spec"]["template"]["metadata"]["annotations"]["checksum/config"]
+for path, what in zip(sys.argv[7:10], ("settings.json", "direct-lines", "finance-test-note")):
+    e = load(path)
+    if e[("ConfigMap", "assistant-claude")]["data"].get(what) == test[("ConfigMap", "assistant-claude")]["data"].get(what): bad.append(f"checksum test: the {what} edit did not change the key")
+    if hsum(e) == hsum(test): bad.append(f"the harness checksum ignores a {what} edit (the core would keep the old config)")
+# the harness pod's 443 egress skips private, tailnet (CGNAT) and link-local ranges
+np = test.get(("NetworkPolicy", "assistant-harness"))
+exc = {x for rule in (np or {"spec": {}})["spec"].get("egress", []) for t in rule.get("to", []) for x in t.get("ipBlock", {}).get("except", [])}
+for c in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "169.254.0.0/16"):
+    if c not in exc: bad.append(f"harness 443 egress does not exclude {c}")
 # login alerts per pod
 def rules(r, n): return {x["alert"]: x["expr"] for g in (r.get(("PrometheusRule", n)) or {"spec": {"groups": []}})["spec"]["groups"] for x in g["rules"]}
 rc, hr = rules(test, "assistant-login"), rules(test, "assistant-harness-login")
 for a, e in rc.items():
     if 'job="assistant-login"' not in e: bad.append(f"login alerts per pod: RC alert {a} is not scoped to job=\"assistant-login\": {e}")
 if not any(e.startswith("absent(") for e in rc.values()): bad.append("login alerts per pod: no absent() rule for the RC login metrics")
-for want in ("naila_claude_logged_in", "naila_remote_control_up", "naila_claude_token_expiry_timestamp_seconds", "absent("):
+if any("token_expiry" in e for e in hr.values()): bad.append("login alerts per pod: the harness pod has a token-expiry rule (nothing long-running renews its token: Ruling 16)")
+for want in ("naila_claude_logged_in", "naila_remote_control_up", "absent("):
     if not any(want in e and 'job="assistant-harness-login"' in e for e in hr.values()): bad.append(f"login alerts per pod: no harness rule on {want}")
 if not any('container="discord"' in e and "restarts" in e for e in hr.values()): bad.append("no alert when the discord container restarts repeatedly")
 

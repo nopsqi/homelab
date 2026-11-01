@@ -224,8 +224,21 @@ for ph, r in (("test", test), ("real", real)):
     denied = "Read(//vault/Harness-test/**)" in s["permissions"]["deny"]
     if ph == "real" and not denied: bad.append("real phase: the runs' settings do not deny Read(//vault/Harness-test/**)")
     if ph == "test" and denied: bad.append("test phase: the runs' settings deny Read(//vault/Harness-test/**), their own vault")
+    hook = " ".join(h["command"] for e in s.get("hooks", {}).get("PreToolUse", []) if "docs" in e.get("matcher", "") for h in e["hooks"])
+    if ph == "real" and "--exclude /vault/Harness-test" not in hook: bad.append(f"real phase: the docs hook does not exclude /vault/Harness-test: {hook}")
+    if ph == "test" and "--exclude" in hook: bad.append(f"test phase: the docs hook excludes a folder: {hook}")
     want = "Harness-test" if ph == "real" else None
     if val(ctr(r, "harness"), "VAULT_EXCLUDE") != want: bad.append(f"{ph} phase: harness VAULT_EXCLUDE is {val(ctr(r, 'harness'), 'VAULT_EXCLUDE')!r}, want {want!r}")
+chk = re.search(r'^if \[ -n "\$\{VAULT_EXCLUDE:-\}" \] && ! grep -qF .*$', start, re.M)
+if not chk: bad.append("harness-start.sh: no check that the vault server honours VAULT_EXCLUDE")
+else:
+    d = tempfile.mkdtemp(); srv = os.path.join(d, "server.js")
+    def check(body, exclude):
+        open(srv, "w").write(body)
+        return subprocess.run(["bash", "-c", 'die() { echo "$*" >&2; exit 2; }; VAULT_SERVER=$1; VAULT_EXCLUDE=$2; ' + chk.group(0), "x", srv, exclude], capture_output=True, text=True).returncode
+    if check("old image", "Harness-test") == 0: bad.append("harness-start.sh: starts with VAULT_EXCLUDE set although the vault server lacks support")
+    if check("console.error(`vault-mcp: VAULT_EXCLUDE supported; leaving out ${x}`)", "Harness-test") != 0: bad.append("harness-start.sh: refuses a vault server that supports VAULT_EXCLUDE")
+    if check("old image", "") != 0: bad.append("harness-start.sh: the test phase (no VAULT_EXCLUDE) needs the support marker")
 if not (re.search(r'^\[ -z "\$\{VAULT_EXCLUDE:-\}" \] \|\| vault_env\+=\(-e VAULT_EXCLUDE="\$VAULT_EXCLUDE"\)', start, re.M) and re.search(r'^claude mcp add vault [^\n]*"\$\{vault_env\[@\]\}"', start, re.M)): bad.append("harness-start.sh: the runs' vault server does not get VAULT_EXCLUDE")
 
 if not re.search(r"^unset .*MCP_FINANCE_READ_TOKEN", start, re.M) or not re.search(r"^unset .*GATEWAY_DISCORD_SECRET", start, re.M):

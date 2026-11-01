@@ -6,6 +6,9 @@
 // and anything else is the sidecar's to refuse. It decides nothing, except with --only ROOT[:ROOT…] (test runs): then it
 // denies every path that isn't, after resolving symlinks and `..`, a file with one link under one of the roots. That mode fails closed:
 // anything unreadable or unexpected is a deny (and the hook command adds `|| exit 2`, so a crash blocks too).
+// --exclude DIR[,DIR…] (the real phase: /vault/Harness-test) denies every path that is, after resolving symlinks and `..`,
+// under one of those dirs, compared case-insensitively (the vault may be a case-insensitive share). It fails closed too: an
+// empty or relative entry, or a path that can't be resolved, is a deny.
 import { chmodSync, realpathSync, statSync } from 'node:fs'
 import { dirname } from 'node:path'
 
@@ -16,6 +19,21 @@ const deny = (why) => { console.log(JSON.stringify({ hookSpecificOutput: { hookE
 
 let input = ''
 for await (const chunk of process.stdin) input += chunk
+const ex = process.argv.indexOf('--exclude')
+if (ex >= 0) {
+  let ok = false
+  try {
+    const dirs = (process.argv[ex + 1] ?? '').split(',')
+    const p = JSON.parse(input).tool_input?.path
+    if (dirs.every((d) => d.startsWith('/')) && typeof p === 'string' && p.startsWith('/')) {
+      const real = realpathSync(p).toLowerCase()
+      // an excluded dir that doesn't exist still counts by its own name; one that does, by its real path as well
+      const roots = dirs.flatMap((d) => { const r = [d.replace(/\/+$/, '')]; try { r.push(realpathSync(d)) } catch {} return r.map((x) => x.toLowerCase()) })
+      ok = !roots.some((r) => real === r || real.startsWith(r + '/'))
+    }
+  } catch { ok = false }
+  if (!ok) deny(`Documents in ${process.argv[ex + 1] ?? '(none)'} can't be converted here.`)
+}
 if (only) {
   let ok = false
   try {

@@ -135,6 +135,9 @@ spec:
             - { name: DISCORD_OWNER_ID, value: {{ $h.discord.ownerId | toString | quote }} }
             - { name: DISCORD_GUILD_ID, value: {{ $h.discord.guildId | toString | quote }} }
             - { name: DISCORD_CHANNELS, value: {{ join "," $chans | quote }} }
+            {{- with $h.discord.avatarBase }}
+            - { name: DISCORD_AVATAR_BASE, value: {{ . | quote }} }
+            {{- end }}
             - name: DISCORD_TOKEN
               valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: DISCORD_TOKEN } }
             - name: GATEWAY_SECRET

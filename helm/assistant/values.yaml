@@ -22,6 +22,19 @@ workers:
   - { name: finance-bookkeeper, model: haiku, direct: true, sendsTo: [naila, finance-advisor] }   # replies to the advisor's plans
   - { name: finance-advisor, model: opus, direct: true, sendsTo: [naila, finance-bookkeeper] }     # plans the user approved in its chat
   - { name: ops-oncall, model: sonnet, direct: true }
+# Harness mode (packages/harness) as its own pod, assistant-harness: the core runs the workers as one-shot Claude Code runs
+# (its own Max login, done at naila.nopsqi.dev/harness), the user talks to them on Discord, and every change is a decision
+# approved with a button. Needs claude.enabled (it reads the assistant-claude ConfigMap) and the SealedSecret
+# assistant-harness-secret (DISCORD_TOKEN GATEWAY_DISCORD_SECRET CORE_TOOLS_SECRET).
+harness:
+  enabled: false
+  # test: the test budget (assistant-finance-test, finance.testServer) and the vault folder Harness-test only.
+  # real: the real budget (assistant-finance) and the whole vault. Switch only on the user's explicit go.
+  phase: test
+  discord:                 # ids are not secret; quoted, they're too large for a YAML number
+    ownerId: ""            # the only user whose messages and button presses count
+    guildId: ""
+    channels: {}           # naila, finance-bookkeeper, finance-advisor, ops-oncall, decisions: channel id each
 ops:
   enabled: false           # on-call tool server (cluster-mcp over HTTP, read-only ServiceAccount); the `ops` subagent calls it
   # Namespaces whose pod logs ops may read. Never: assistant (Naila's terminal), sealed-secrets, argocd, kube-system.
@@ -54,4 +67,5 @@ sealedSecret:
   finance: {}              # ACTUAL_URL ACTUAL_PASSWORD ACTUAL_SYNC_ID MCP_SECRET MCP_READ_SECRET (the advisor's read-only bearer)
   financeTest: {}          # the same keys for assistant-finance-test: ACTUAL_SYNC_ID of the test copy, its own MCP_SECRET
   ops: {}                  # MCP_SECRET
+  harness: {}              # DISCORD_TOKEN GATEWAY_DISCORD_SECRET CORE_TOOLS_SECRET (assistant-harness-secret; harness.enabled)
   claude: {}               # MCP_FINANCE_TOKEN MCP_FINANCE_READ_TOKEN MCP_FINANCE_TEST_TOKEN MCP_FINANCE_TEST_READ_TOKEN MCP_OPS_TOKEN (same values as the tool servers' MCP_SECRET)

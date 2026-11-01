@@ -5,6 +5,11 @@
 #  - no harness-*.md key contains SendMessage, ListAgents, naila-c4 or phone, nor the finance write bearer;
 #  - harness-settings.json denies the write tools, SendMessage, ListAgents and Agent, and allows the core tools;
 #  - the RC checksum ignores a harness-only mode edit and follows an RC one.
+# Then the assistant-harness pod (harness.enabled, harness.phase):
+#  - it renders only when enabled, and enabling it leaves the RC objects as they were;
+#  - test phase points at assistant-finance-test and /vault/Harness-test, real phase at assistant-finance and /vault;
+#  - the finance write bearer reaches only the core's env (the harness container's MCP_FINANCE_TOKEN), never another container;
+#  - login alerts are per pod, and cloudflared routes naila.nopsqi.dev/harness to the harness login page.
 set -euo pipefail
 ref="${1:-origin/master}"
 root="$(git rev-parse --show-toplevel)"
@@ -20,6 +25,12 @@ cp -a helm/assistant "$tmp/h" && printf '\nharness-only edit\n' >> "$tmp/h/files
 helm template "$tmp/h" -f "$tmp/h/values.yaml" -f "$tmp/h/values.prod.yaml" > "$tmp/harness-edit.yaml"
 cp -a helm/assistant "$tmp/r" && printf '\nrc edit\n' >> "$tmp/r/files/modes/rc/naila.md"
 helm template "$tmp/r" -f "$tmp/r/values.yaml" -f "$tmp/r/values.prod.yaml" > "$tmp/rc-edit.yaml"
+# The harness pod: off, test phase (values.prod.yaml), real phase, staging values.
+P=(-f helm/assistant/values.yaml -f helm/assistant/values.prod.yaml)
+helm template helm/assistant "${P[@]}" --set harness.enabled=false > "$tmp/off.yaml"
+helm template helm/assistant "${P[@]}" --set harness.phase=real > "$tmp/real.yaml"
+helm template helm/assistant -f helm/assistant/values.yaml -f helm/assistant/values.staging.yaml > "$tmp/staging.yaml"
+helm template helm/cloudflared -f helm/cloudflared/values.yaml > "$tmp/cloudflared.yaml"
 
 python3 - "$tmp/old.yaml" "$tmp/new.yaml" "$tmp/harness-edit.yaml" "$tmp/rc-edit.yaml" <<'PY'
 import sys, yaml
@@ -88,4 +99,122 @@ if bad:
     print("FAIL:\n  " + "\n  ".join(bad))
     sys.exit(1)
 print("RC render identical; harness keys clean")
+PY
+
+python3 - "$tmp/old.yaml" "$tmp/off.yaml" "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/staging.yaml" "$tmp/cloudflared.yaml" <<'PY'
+import sys, yaml, re
+def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
+old, off, test, real, staging = (load(p) for p in sys.argv[1:6])
+bad = []
+H = ("Deployment", "assistant-harness")
+
+# harness pod renders only when enabled
+for kind, name in [H, ("PersistentVolumeClaim", "assistant-harness-home"), ("Service", "assistant-harness-login"), ("NetworkPolicy", "assistant-harness"),
+                   ("ServiceMonitor", "assistant-harness-login"), ("PrometheusRule", "assistant-harness-login"), ("ConfigMap", "assistant-harness")]:
+    if (kind, name) not in test: bad.append(f"harness pod renders only when enabled: {kind}/{name} missing with harness.enabled")
+for label, r in (("harness.enabled=false", off), ("staging values", staging)):
+    for k in r:
+        if k[1].startswith("assistant-harness"): bad.append(f"harness pod renders only when enabled: {k[0]}/{k[1]} renders with {label}")
+
+def pod(r): return r[H]["spec"]["template"]["spec"] if H in r else {"containers": [], "initContainers": [], "volumes": []}
+def ctr(r, n): return next((c for c in pod(r)["containers"] if c["name"] == n), {"env": [], "volumeMounts": []})
+def env(c): return {e["name"]: e for e in c.get("env", [])}
+def val(c, k): return env(c).get(k, {}).get("value")
+def key(c, k): return ((env(c).get(k, {}).get("valueFrom") or {}).get("secretKeyRef") or {}).get("key")
+def allenv(r): return [(c["name"], e) for c in pod(r)["containers"] + pod(r).get("initContainers", []) for e in c.get("env", [])]
+def admits(np, app): return any(f.get("podSelector", {}).get("matchLabels", {}).get("app") == app for rule in np["spec"].get("ingress", []) for f in rule.get("from", []))
+def egress_apps(np): return {f["podSelector"]["matchLabels"]["app"] for rule in np["spec"].get("egress", []) for f in rule.get("to", []) if "podSelector" in f}
+
+phases = {"test": dict(r=test, url="http://assistant-finance-test:8080/mcp", root="/vault/Harness-test", notes="/vault/Harness-test/Finance",
+                       view="/vault/Harness-test/Naila/Decisions.md", write="MCP_FINANCE_TEST_TOKEN", read="MCP_FINANCE_TEST_READ_TOKEN",
+                       server="assistant-finance-test", other="assistant-finance"),
+          "real": dict(r=real, url="http://assistant-finance:8080/mcp", root="/vault", notes="/vault/Finance",
+                       view="/vault/Naila/Decisions.md", write="MCP_FINANCE_TOKEN", read="MCP_FINANCE_READ_TOKEN",
+                       server="assistant-finance", other="assistant-finance-test")}
+for ph, x in phases.items():
+    r, h = x["r"], ctr(x["r"], "harness")
+    tag = f"{ph} phase points at {x['server']} and {x['root']}"
+    for k, want in (("HARNESS_PHASE", ph), ("MCP_FINANCE_URL", x["url"]), ("VAULT_ROOT", x["root"]), ("FINANCE_NOTES_ROOT", x["notes"]),
+                    ("VIEW_FILE", x["view"]), ("HARNESS_HOME", "/home/claude/.claude/harness"), ("MAX_CONCURRENT_RUNS", "2")):
+        if val(h, k) != want: bad.append(f"{tag}: harness {k} is {val(h, k)!r}, want {want!r}")
+    if key(h, "MCP_FINANCE_TOKEN") != x["write"]: bad.append(f"{tag}: core MCP_FINANCE_TOKEN comes from {key(h, 'MCP_FINANCE_TOKEN')!r}, want {x['write']!r}")
+    if key(h, "MCP_FINANCE_READ_TOKEN") != x["read"]: bad.append(f"{tag}: MCP_FINANCE_READ_TOKEN comes from {key(h, 'MCP_FINANCE_READ_TOKEN')!r}, want {x['read']!r}")
+    if val(ctr(r, "docs"), "DOCS_ROOTS") != f"/home/claude/.claude/uploads:{x['root']}": bad.append(f"{tag}: docs DOCS_ROOTS is {val(ctr(r, 'docs'), 'DOCS_ROOTS')!r}")
+    for c in pod(r)["containers"]:
+        for m in c.get("volumeMounts", []):
+            if m["name"] == "vault" and (m["mountPath"] != x["root"] or (ph == "test" and not m.get("subPath", "").endswith("Harness-test"))):
+                bad.append(f"{tag}: {c['name']} mounts the vault at {m['mountPath']} (subPath {m.get('subPath')!r})")
+    other_keys = {"test": {"MCP_FINANCE_TOKEN", "MCP_FINANCE_READ_TOKEN"}, "real": {"MCP_FINANCE_TEST_TOKEN", "MCP_FINANCE_TEST_READ_TOKEN"}}[ph]
+    for cn, e in allenv(r):
+        if ph == "test" and "assistant-finance:" in str(e.get("value", "")): bad.append(f"{tag}: {cn} env {e['name']} names assistant-finance:")
+        k = ((e.get("valueFrom") or {}).get("secretKeyRef") or {}).get("key")
+        if k in other_keys: bad.append(f"{tag}: {cn} env {e['name']} holds {k}, the other phase's bearer")
+    np = r.get(("NetworkPolicy", "assistant-harness"))
+    if np:
+        if egress_apps(np) != {x["server"], "assistant-ops"}: bad.append(f"{tag}: harness egress reaches {sorted(egress_apps(np))}")
+        for s in (x["server"], "assistant-ops"):
+            if not admits(r[("NetworkPolicy", s)], "assistant-harness"): bad.append(f"{tag}: NetworkPolicy {s} does not admit assistant-harness")
+        if admits(r[("NetworkPolicy", x["other"])], "assistant-harness"): bad.append(f"{tag}: NetworkPolicy {x['other']} admits assistant-harness")
+    reps = r[("Deployment", "assistant-finance-test")]["spec"].get("replicas")
+    if reps != (1 if ph == "test" else None): bad.append(f"{tag}: assistant-finance-test replicas {reps!r}")
+
+    # the harness pod never holds a worker write bearer outside the core env
+    tag = f"the harness pod never holds a worker write bearer outside the core env ({ph})"
+    for c in pod(r)["containers"] + pod(r).get("initContainers", []):
+        if c.get("envFrom"): bad.append(f"{tag}: {c['name']} has envFrom")
+        for e in c.get("env", []):
+            ref = (e.get("valueFrom") or {}).get("secretKeyRef") or {}
+            k, sec = ref.get("key", ""), ref.get("name")
+            if not ref: continue
+            if c["name"] != "harness" and (k.startswith("MCP_") or k == "CORE_TOOLS_SECRET"): bad.append(f"{tag}: {c['name']} env {e['name']} holds {k}")
+            if c["name"] == "harness" and k == x["write"] and e["name"] != "MCP_FINANCE_TOKEN": bad.append(f"{tag}: the write bearer also as {e['name']}")
+    if val(h, "GATEWAY_SECRETS") != "discord:$(GATEWAY_DISCORD_SECRET)": bad.append(f"{tag}: GATEWAY_SECRETS is {val(h, 'GATEWAY_SECRETS')!r}")
+    if key(ctr(r, "discord"), "GATEWAY_SECRET") != "GATEWAY_DISCORD_SECRET": bad.append(f"{tag}: discord GATEWAY_SECRET from {key(ctr(r, 'discord'), 'GATEWAY_SECRET')!r}")
+    lg = ctr(r, "login")
+    for k, want in (("BASE_PATH", "/harness"), ("POD_ROLE", "harness"), ("RESTART_MATCH", "harness/dist/main.js")):
+        if val(lg, k) != want: bad.append(f"login sidecar {k} is {val(lg, k)!r}, want {want!r} ({ph})")
+    req = 0
+    for c in pod(r)["containers"]:
+        m = c.get("resources", {}).get("requests", {}).get("memory", "0Mi"); req += int(m.rstrip("Mi"))
+    if not pod(r)["containers"] or req > 512: bad.append(f"harness pod memory requests {req}Mi (want <= 512Mi) ({ph})")
+    if h.get("resources", {}).get("limits", {}).get("memory") != "1536Mi": bad.append(f"harness container memory limit {h.get('resources', {}).get('limits', {}).get('memory')!r} ({ph})")
+start = (test.get(("ConfigMap", "assistant-harness")) or {}).get("data", {}).get("harness-start.sh", "")
+if not re.search(r"^unset .*MCP_FINANCE_READ_TOKEN", start, re.M) or not re.search(r"^unset .*GATEWAY_DISCORD_SECRET", start, re.M):
+    bad.append("the harness pod never holds a worker write bearer outside the core env: harness-start.sh does not unset the read bearer and the gateway secret before the core starts")
+
+# RC render identical: with the harness off, everything equals the ref render, except the RC ConfigMap (its RC keys are checked
+# above) and checksum, and the RC login alerts (scoped per pod); enabling the harness changes only the finance/ops policies and finance-test's replicas.
+def strip(d):
+    d = yaml.safe_load(yaml.safe_dump(d))
+    if d["kind"] == "Deployment" and d["metadata"]["name"] == "assistant-claude": d["spec"]["template"]["metadata"]["annotations"].pop("checksum/config", None)
+    return d
+for k in sorted(set(old) | set(off)):
+    if k in (("ConfigMap", "assistant-claude"), ("PrometheusRule", "assistant-login")): continue
+    if k not in old or k not in off or strip(old[k]) != strip(off[k]): bad.append(f"RC render identical: {k[0]}/{k[1]} differs from the ref render with the harness off")
+changes = {("Deployment", "assistant-finance-test"), ("NetworkPolicy", "assistant-finance"), ("NetworkPolicy", "assistant-finance-test"), ("NetworkPolicy", "assistant-ops")}
+for label, r in (("test", test), ("real", real)):
+    for k in off:
+        if k not in changes and off[k] != r.get(k): bad.append(f"RC render identical: {k[0]}/{k[1]} changes when the harness is on ({label})")
+
+# login alerts per pod
+def rules(r, n): return {x["alert"]: x["expr"] for g in (r.get(("PrometheusRule", n)) or {"spec": {"groups": []}})["spec"]["groups"] for x in g["rules"]}
+rc, hr = rules(test, "assistant-login"), rules(test, "assistant-harness-login")
+for a, e in rc.items():
+    if 'job="assistant-login"' not in e: bad.append(f"login alerts per pod: RC alert {a} is not scoped to job=\"assistant-login\": {e}")
+if not any(e.startswith("absent(") for e in rc.values()): bad.append("login alerts per pod: no absent() rule for the RC login metrics")
+for want in ("naila_claude_logged_in", "naila_remote_control_up", "naila_claude_token_expiry_timestamp_seconds", "absent("):
+    if not any(want in e and 'job="assistant-harness-login"' in e for e in hr.values()): bad.append(f"login alerts per pod: no harness rule on {want}")
+if not any('container="discord"' in e and "restarts" in e for e in hr.values()): bad.append("no alert when the discord container restarts repeatedly")
+
+# cloudflared: /harness on naila.nopsqi.dev goes to the harness login page, before the host's catch-all rule
+cf = next(d for d in yaml.safe_load_all(open(sys.argv[6])) if d and d["kind"] == "ConfigMap")
+ing = yaml.safe_load(next(iter(cf["data"].values())))["ingress"]
+naila = [(i, x) for i, x in enumerate(ing) if x.get("hostname") == "naila.nopsqi.dev"]
+hp = [(i, x) for i, x in naila if "harness" in x.get("path", "")]
+if not hp or hp[0][1]["service"] != "http://assistant-harness-login.assistant.svc.cluster.local:8080" or not hp[0][1].get("originRequest", {}).get("access", {}).get("required"):
+    bad.append("cloudflared: no Access-enforced naila.nopsqi.dev /harness rule to assistant-harness-login")
+elif min(i for i, x in naila if "path" not in x) < hp[0][0]: bad.append("cloudflared: the /harness rule comes after the naila.nopsqi.dev catch-all")
+if bad:
+    print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
+print("harness pod: renders only when enabled; phases wired; write bearer only in the core env; RC render identical")
 PY

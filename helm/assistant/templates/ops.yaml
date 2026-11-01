@@ -98,7 +98,7 @@ spec:
   ports: [{ port: 8080, targetPort: 8080, protocol: TCP }]
 {{- if .Values.networkPolicy.enabled }}
 ---
-# In: only the Claude pod. Out: DNS, the API server (kube-router sees the post-DNAT node:6443) and Prometheus.
+# In: only the Claude pod (and the harness pod). Out: DNS, the API server (kube-router sees the post-DNAT node:6443) and Prometheus.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: { name: assistant-ops }
@@ -106,7 +106,11 @@ spec:
   podSelector: { matchLabels: { app: assistant-ops } }
   policyTypes: [Ingress, Egress]
   ingress:
+    {{- if .Values.harness.enabled }}
+    - from: [{ podSelector: { matchLabels: { app: assistant-claude } } }, { podSelector: { matchLabels: { app: assistant-harness } } }]
+    {{- else }}
     - from: [{ podSelector: { matchLabels: { app: assistant-claude } } }]
+    {{- end }}
       ports: [{ protocol: TCP, port: 8080 }]
   egress:
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } } }]

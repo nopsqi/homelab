@@ -19,6 +19,18 @@ finance:
   testServer: true         # assistant-finance-test, always on the test copy (d0fc74ab…)
 ops:
   enabled: true
+harness:
+  enabled: true
+  phase: test
+  discord:
+    ownerId: "702801867805294602"
+    guildId: "1181630542819643482"
+    channels:
+      naila: "1566334318752567368"
+      finance-bookkeeper: "1566334383831654520"
+      finance-advisor: "1566334353871605820"
+      ops-oncall: "1566334447111110759"
+      decisions: "1566334486054961293"
 apiServer:
   cidr: 91.98.86.223/32
 sealedSecret:

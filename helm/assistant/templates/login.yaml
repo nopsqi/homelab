@@ -21,10 +21,13 @@ kind: PrometheusRule
 metadata: { name: assistant-login, labels: { release: monitoring } }
 spec:
   groups:
+    # Scoped to this pod's scrape job: the harness pod's login sidecar (assistant-harness-login) has its own rules, and its
+    # series must neither fire these nor stand in for a missing RC series in absent(). Not by the sidecar's pod="rc" label:
+    # the scrape target's own `pod` label (the Kubernetes pod name) wins, the sidecar's arrives as exported_pod.
     - name: naila-login
       rules:
         - alert: NailaLoggedOut
-          expr: naila_claude_logged_in == 0
+          expr: naila_claude_logged_in{job="assistant-login"} == 0
           for: 10m
           labels: { severity: critical }
           annotations:
@@ -32,21 +35,21 @@ spec:
             description: "Naila and her direct lines can't work. Log in again at https://naila.nopsqi.dev"
         # Claude Code renews the access token with its refresh token; an expiry well in the past means renewal is failing.
         - alert: NailaTokenNotRenewed
-          expr: time() - naila_claude_token_expiry_timestamp_seconds > 1800
+          expr: time() - naila_claude_token_expiry_timestamp_seconds{job="assistant-login"} > 1800
           for: 10m
           labels: { severity: critical }
           annotations:
             summary: "Naila's Claude token expired {{ "{{" }} $value | humanizeDuration {{ "}}" }} ago and was not renewed"
             description: "The automatic renewal is failing. Log in again at https://naila.nopsqi.dev"
         - alert: NailaRemoteControlDown
-          expr: naila_remote_control_up == 0
+          expr: naila_remote_control_up{job="assistant-login"} == 0
           for: 10m
           labels: { severity: warning }
           annotations:
             summary: "Naila's {{ "{{" }} $labels.session {{ "}}" }} Remote Control session is not running"
             description: "Check https://naila.nopsqi.dev and the assistant-claude pod."
         - alert: NailaLoginMetricsMissing
-          expr: absent(naila_claude_logged_in)
+          expr: absent(naila_claude_logged_in{job="assistant-login"})
           for: 15m
           labels: { severity: warning }
           annotations:

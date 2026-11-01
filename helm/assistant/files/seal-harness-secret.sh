@@ -4,15 +4,59 @@
 # The Discord bot token is read silently; the two internal secrets are generated. Nothing secret is echoed,
 # put on argv or written to disk unencrypted. Sealed for secret assistant-harness-secret in namespace assistant
 # (strict scope, the same as the other sealedSecret values).
+#
+# --add KEY: seal one new random secret (openssl rand -hex 32, handed to kubeseal on stdin) as sealedSecret.harness.KEY and
+# change nothing else: the other encrypted values stay byte for byte as they are. Echoes nothing secret. Refuses a KEY that
+# already exists (remove it from values.prod.yaml first to rotate it). Example:
+#   KUBECONFIG=~/.kube/config bash helm/assistant/files/seal-harness-secret.sh --add GATEWAY_TEST_SECRET
 set -euo pipefail
 values=helm/assistant/values.prod.yaml
 ns=assistant; name=assistant-harness-secret
 ctl=(--controller-name sealed-secrets --controller-namespace sealed-secrets)
 
 [ -f "$values" ] || { echo "run from the homelab repo root ($values not found)" >&2; exit 1; }
+add_key=
+if [ "${1:-}" = "--add" ]; then
+  [ $# -eq 2 ] && [[ $2 =~ ^[A-Z][A-Z0-9_]{0,63}$ ]] || { echo "usage: $0 --add KEY   (KEY: upper-case letters, digits, underscores)" >&2; exit 1; }
+  add_key=$2
+elif [ $# -ne 0 ]; then
+  echo "usage: $0 [--add KEY]" >&2; exit 1
+fi
 for c in kubeseal openssl python3 kubectl; do command -v "$c" >/dev/null || { echo "missing: $c" >&2; exit 1; }; done
 kubectl get ns "$ns" >/dev/null 2>&1 || { echo "cluster not reachable (check KUBECONFIG)" >&2; exit 1; }
 cert=$(kubeseal "${ctl[@]}" --fetch-cert 2>/dev/null) && [ -n "$cert" ] || { echo "cannot fetch the sealed-secrets certificate" >&2; exit 1; }
+
+seal() { printf '%s' "${!1}" | kubeseal --raw --namespace "$ns" --name "$name" --scope strict --cert <(printf '%s\n' "$cert"); }
+
+if [ -n "$add_key" ]; then
+  if grep -qE "^    ${add_key}:" "$values"; then echo "$add_key is already in $values (remove it first to rotate)" >&2; exit 1; fi
+  NEW_SECRET=$(openssl rand -hex 32)
+  enc=$(seal NEW_SECRET)
+  unset NEW_SECRET cert
+  [ -n "$enc" ] || { echo "sealing failed" >&2; exit 1; }
+  ENC=$enc ADD_KEY=$add_key python3 - "$values" <<'PY'
+import os, sys, re
+p = sys.argv[1]
+lines = open(p, newline="").read().split("\n")
+start = next((i for i, l in enumerate(lines) if l.startswith("sealedSecret:")), None)
+if start is None:
+    sys.exit("no sealedSecret: block in " + p)
+end = len(lines)
+for i in range(start + 1, len(lines)):
+    if lines[i] and not lines[i][0].isspace() and not lines[i].startswith("#"):
+        end = i; break
+h = next((i for i in range(start + 1, end) if re.match(r"  harness:", lines[i])), None)
+if h is None:
+    sys.exit("no sealedSecret.harness block in " + p + " (run without --add first)")
+j = h + 1
+while j < end and lines[j].startswith("    "):
+    j += 1
+lines.insert(j, "    " + os.environ["ADD_KEY"] + ": " + os.environ["ENC"])
+open(p, "w", newline="").write("\n".join(lines))
+PY
+  echo "added sealedSecret.harness.$add_key to $values"
+  exit 0
+fi
 
 if [ -t 0 ]; then
   read -rs -p "Discord bot token: " DISCORD_TOKEN >&2 || true; echo >&2
@@ -25,7 +69,6 @@ GATEWAY_DISCORD_SECRET=$(openssl rand -hex 32)
 CORE_TOOLS_SECRET=$(openssl rand -hex 32)
 [ "$GATEWAY_DISCORD_SECRET" != "$CORE_TOOLS_SECRET" ] || { echo "generated secrets are equal" >&2; exit 1; }
 
-seal() { printf '%s' "${!1}" | kubeseal --raw --namespace "$ns" --name "$name" --scope strict --cert <(printf '%s\n' "$cert"); }
 enc_discord=$(seal DISCORD_TOKEN)
 enc_gateway=$(seal GATEWAY_DISCORD_SECRET)
 enc_core=$(seal CORE_TOOLS_SECRET)

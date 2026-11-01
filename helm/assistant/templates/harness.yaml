@@ -1,0 +1,285 @@
+{{- /* Harness mode files only: the harness pod's checksum follows them, the RC one doesn't. */ -}}
+{{- define "assistant.harnessModeFiles" -}}
+{{- range $p, $_ := .Files.Glob "files/modes/harness/**" }}{{ $.Files.Get $p }}{{ end }}
+{{- end }}
+{{- if .Values.harness.enabled }}
+{{- $h := .Values.harness }}
+{{- $test := eq $h.phase "test" }}
+{{- if not (has $h.phase (list "test" "real")) }}{{ fail (printf "harness.phase must be test or real, got %q" $h.phase) }}{{ end }}
+{{- if not .Values.claude.enabled }}{{ fail "harness.enabled needs claude.enabled: the harness pod reads the assistant-claude ConfigMap" }}{{ end }}
+{{- if not .Values.finance.enabled }}{{ fail "harness.enabled needs finance.enabled" }}{{ end }}
+{{- if and $test (not .Values.finance.testServer) }}{{ fail "harness.phase test needs finance.testServer (assistant-finance-test)" }}{{ end }}
+{{- $ids := list (dict "k" "DISCORD_OWNER_ID" "v" $h.discord.ownerId) (dict "k" "DISCORD_GUILD_ID" "v" $h.discord.guildId) }}
+{{- $chans := list }}
+{{- range $n := list "naila" "finance-bookkeeper" "finance-advisor" "ops-oncall" "decisions" }}
+{{- $id := index $h.discord.channels $n | default "" | toString }}
+{{- $ids = append $ids (dict "k" (printf "harness.discord.channels.%s" $n) "v" $id) }}
+{{- $chans = append $chans (printf "%s:%s" $n $id) }}
+{{- end }}
+{{- range $ids }}{{ if not (regexMatch "^[0-9]{17,20}$" (toString .v)) }}{{ fail (printf "%s must be a Discord id (quoted digits), got %q" .k (toString .v)) }}{{ end }}{{ end }}
+{{- $vaultRoot := ternary "/vault/Harness-test" "/vault" $test }}
+{{- $vaultSub := "" }}
+{{- if eq .Values.vault.mode "smb" }}{{ $vaultSub = ternary (printf "%s/Harness-test" .Values.vault.subPath) .Values.vault.subPath $test }}
+{{- else if $test }}{{ $vaultSub = "Harness-test" }}{{ end }}
+{{- $finance := ternary "assistant-finance-test" "assistant-finance" $test }}
+{{- $tokenKey := ternary "MCP_FINANCE_TEST_TOKEN" "MCP_FINANCE_TOKEN" $test }}
+{{- $readKey := ternary "MCP_FINANCE_TEST_READ_TOKEN" "MCP_FINANCE_READ_TOKEN" $test }}
+# Harness mode as its own pod: the core (packages/harness) runs each worker as a one-shot Claude Code run with this pod's
+# own Max login (naila.nopsqi.dev/harness), the Discord gateway carries the user's messages and the decision buttons, and
+# the core alone carries out an approved decision. The RC pod (assistant-claude) is not touched.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: assistant-harness
+data:
+  harness-start.sh: |
+{{ .Files.Get "files/harness-start.sh" | indent 4 }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: assistant-harness-home
+  annotations: { argocd.argoproj.io/sync-options: Delete=false }
+spec:
+  storageClassName: local-path
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 2Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: assistant-harness
+  labels: { app: assistant-harness }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }   # one core, one harness.db, one home volume
+  selector: { matchLabels: { app: assistant-harness } }
+  template:
+    metadata:
+      labels: { app: assistant-harness }
+      # What the core and its runs are built from at start, including what harness-start.sh takes from the RC ConfigMap
+      # (settings.json, direct-lines, finance-test-note). Not the RC-only mode files: an RC edit doesn't restart the harness.
+      annotations: { checksum/config: {{ print (.Files.Get "files/CLAUDE.md") (include "assistant.agentFiles" .) (include "assistant.harnessModeFiles" .) (toJson .Values.workers) (.Files.Get "files/harness-settings.json") (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/harness-start.sh") (include "assistant.settingsJson" .) (include "assistant.directLines" .) (include "assistant.testCopyNote" .) (toJson $h) .Values.claude.version .Values.finance.testBudget | sha256sum | trunc 12 }} }
+    spec:
+      automountServiceAccountToken: false
+      shareProcessNamespace: true   # the login sidecar sees the core (status) and restarts it after a login; pause reaps exited runs
+      imagePullSecrets: [{ name: ghcr-pull }]
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
+      initContainers:
+        # /naila from the naila image, and the uploads folders the gateway writes into: uploads/ group-traversable (0750),
+        # discord/ setgid and group-writable (2770, group 1000), so the gateway (uid 1002, group 1000) creates its per-message
+        # folders there and they stay in group 1000, readable by the runs (uid 1000) and the docs sidecar (group 1000).
+        - name: naila-tools
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          command: ["sh", "-c", "cp -a /app/. /naila/ && mkdir -p /home/claude/.claude/uploads/discord && chmod 750 /home/claude/.claude/uploads && chmod 2770 /home/claude/.claude/uploads/discord"]
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          volumeMounts:
+            - { name: naila, mountPath: /naila }
+            - { name: home, mountPath: /home/claude }
+          resources: { requests: { cpu: 10m, memory: 32Mi }, limits: { memory: 256Mi } }
+      containers:
+        - name: harness
+          image: node:24-bookworm@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413
+          command: ["bash", "/config/harness-start.sh"]
+          env:
+            - { name: HOME, value: /home/claude }
+            - { name: CLAUDE_VERSION, value: {{ .Values.claude.version | quote }} }   # the same pinned CLI as the RC pod
+            - { name: DISABLE_AUTOUPDATER, value: "1" }
+            - { name: CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH, value: "1" }
+            - { name: TZ, value: {{ .Values.tz | quote }} }
+            - { name: HARNESS_HOME, value: /home/claude/.claude/harness }
+            - { name: HARNESS_PHASE, value: {{ $h.phase | quote }} }
+            - { name: MAX_CONCURRENT_RUNS, value: "2" }   # each run is a claude process of a few hundred MiB
+            - { name: HOST, value: 127.0.0.1 }
+            - { name: PORT, value: "3100" }              # channel API, for the discord container
+            - { name: CORE_TOOLS_PORT, value: "3101" }   # core tools, for the runs
+            - { name: MCP_FINANCE_URL, value: http://{{ $finance }}:8080/mcp }
+            - { name: VAULT_ROOT, value: {{ $vaultRoot }} }
+            - { name: FINANCE_NOTES_ROOT, value: {{ $vaultRoot }}/Finance }
+            - { name: VIEW_FILE, value: {{ $vaultRoot }}/Naila/Decisions.md }
+            # The write bearer stays in the core's env; harness-start.sh puts the read-only one and the ops one into the
+            # agent files and unsets them, and the gateway secret goes on only inside GATEWAY_SECRETS.
+            - name: MCP_FINANCE_TOKEN
+              valueFrom: { secretKeyRef: { name: assistant-claude-secret, key: {{ $tokenKey }} } }
+            - name: MCP_FINANCE_READ_TOKEN
+              valueFrom: { secretKeyRef: { name: assistant-claude-secret, key: {{ $readKey }} } }
+            - name: MCP_OPS_TOKEN
+              valueFrom: { secretKeyRef: { name: assistant-claude-secret, key: MCP_OPS_TOKEN } }
+            - name: CORE_TOOLS_SECRET
+              valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: CORE_TOOLS_SECRET } }
+            - name: GATEWAY_DISCORD_SECRET
+              valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: GATEWAY_DISCORD_SECRET } }
+            - { name: GATEWAY_SECRETS, value: "discord:$(GATEWAY_DISCORD_SECRET)" }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          volumeMounts:
+            - { name: home, mountPath: /home/claude }
+            - { name: config, mountPath: /config, readOnly: true }
+            - { name: handbooks, mountPath: /handbooks, readOnly: true }
+            - { name: naila, mountPath: /naila, readOnly: true }
+            - name: vault
+              mountPath: {{ $vaultRoot }}
+              {{- with $vaultSub }}
+              subPath: {{ . | quote }}
+              {{- end }}
+          resources: { requests: { cpu: 50m, memory: 256Mi }, limits: { memory: 1536Mi } }   # the core ~100Mi idle, plus up to 2 runs at once
+        # Discord gateway (packages/channels/discord): owner-only, posts the core's outbox, relays messages and buttons to
+        # the core on 127.0.0.1. Attachments go to uploads/discord/<uuid>/ (0750/0640, group 1000), nothing else of the home.
+        # Its own uid (1002), not the core's: the pod shares one process namespace (so login can restart the core), and only a
+        # different uid keeps /proc/<core pid>/{environ,root} (the write bearer, the login) closed to the Discord-facing process.
+        - name: discord
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          command: ["node", "packages/channels/discord/dist/main.js"]
+          env:
+            - { name: CORE_URL, value: "http://127.0.0.1:3100" }
+            - { name: HARNESS_UPLOADS, value: /home/claude/.claude/uploads/discord }
+            - { name: DISCORD_OWNER_ID, value: {{ $h.discord.ownerId | toString | quote }} }
+            - { name: DISCORD_GUILD_ID, value: {{ $h.discord.guildId | toString | quote }} }
+            - { name: DISCORD_CHANNELS, value: {{ join "," $chans | quote }} }
+            - name: DISCORD_TOKEN
+              valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: DISCORD_TOKEN } }
+            - name: GATEWAY_SECRET
+              valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: GATEWAY_DISCORD_SECRET } }
+          securityContext: { runAsUser: 1002, runAsGroup: 1000, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
+          # Never mount the whole home volume here: fsGroup makes the credentials group-readable (group 1000) on every pod
+          # start, so keeping the login from this container rests on mounting only the uploads subPath.
+          volumeMounts:
+            - { name: home, mountPath: /home/claude/.claude/uploads, subPath: .claude/uploads }
+          resources: { requests: { cpu: 10m, memory: 64Mi }, limits: { memory: 256Mi } }
+        # MarkItDown, as in the RC pod, but it sees only uploads and this phase's vault.
+        - name: docs
+          image: python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159
+          command: ["sh", "-c", "python -m venv /venv && /venv/bin/pip install -q --no-cache-dir -r /naila/packages/docs-mcp/requirements.txt && cd /naila/packages/docs-mcp && exec /venv/bin/python server.py"]
+          env:
+            - { name: HOME, value: /tmp }
+            - { name: DOCS_ROOTS, value: "/home/claude/.claude/uploads:{{ $vaultRoot }}" }
+            - { name: DOCS_PORT, value: "3002" }
+            - { name: PIP_DISABLE_PIP_VERSION_CHECK, value: "1" }
+          readinessProbe: { exec: { command: ["python", "-c", "import socket; socket.create_connection(('127.0.0.1', 3002), 2)"] }, periodSeconds: 15 }
+          # Its own uid, as in the RC pod: the shared process namespace leaves other containers' /proc/<pid> open to the same uid.
+          securityContext: { runAsUser: 1001, runAsGroup: 1001, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
+          # Never mount the whole home volume here (see discord): only the uploads subPath keeps the login out of reach.
+          volumeMounts:
+            - { name: naila, mountPath: /naila, readOnly: true }
+            - { name: home, mountPath: /home/claude/.claude/uploads, subPath: .claude/uploads, readOnly: true }
+            - name: vault
+              mountPath: {{ $vaultRoot }}
+              readOnly: true
+              {{- with $vaultSub }}
+              subPath: {{ . | quote }}
+              {{- end }}
+            - { name: docs-venv, mountPath: /venv }
+            - { name: docs-tmp, mountPath: /tmp }
+          resources: { requests: { cpu: 10m, memory: 128Mi }, limits: { memory: 768Mi } }
+        # Login page for this pod's Claude login (naila.nopsqi.dev/harness, behind Cloudflare Access) and its metrics,
+        # labelled pod="harness". After a login it restarts the core (RESTART_MATCH) through the shared process namespace.
+        - name: login
+          image: node:24-bookworm@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413
+          command: ["node", "/naila/packages/login-web/dist/server.js"]
+          env:
+            - { name: HOME, value: /home/claude }
+            - { name: BASE_PATH, value: /harness }
+            - { name: POD_ROLE, value: harness }
+            - { name: RESTART_MATCH, value: harness/dist/main.js }
+            - { name: ACCESS_TEAM, value: {{ .Values.login.accessTeam | quote }} }
+            - { name: ACCESS_AUD, value: {{ required "harness.enabled needs login.accessAud (the naila.nopsqi.dev Access app)" .Values.login.accessAud | quote }} }
+            - name: ALLOWED_EMAIL
+              valueFrom: { secretKeyRef: { name: assistant-claude-secret, key: ALLOWED_EMAIL } }
+          ports: [{ name: http, containerPort: 8080 }, { name: metrics, containerPort: 8081 }]
+          readinessProbe: { httpGet: { path: /harness/healthz, port: http }, periodSeconds: 30 }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          volumeMounts:
+            - { name: home, mountPath: /home/claude }
+            - { name: naila, mountPath: /naila, readOnly: true }
+          resources: { requests: { cpu: 10m, memory: 64Mi }, limits: { memory: 512Mi } }   # spikes while it runs the Claude CLI
+      volumes:
+        - { name: home, persistentVolumeClaim: { claimName: assistant-harness-home } }
+        # The RC pod's ConfigMap (harness-* keys, settings.json, the guards, direct-lines) plus harness-start.sh.
+        - name: config
+          projected: { sources: [{ configMap: { name: assistant-claude } }, { configMap: { name: assistant-harness } }] }
+        - { name: handbooks, configMap: { name: assistant-claude, items: [{ key: actual-handbook.md, path: actual.md }] } }
+        - { name: naila, emptyDir: {} }
+        - { name: docs-venv, emptyDir: {} }
+        - { name: docs-tmp, emptyDir: {} }
+        - { name: vault, persistentVolumeClaim: { claimName: {{ if eq .Values.vault.mode "smb" }}assistant-vault-smb{{ else }}assistant-vault{{ end }} } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: assistant-harness-login, labels: { app: assistant-harness-login } }
+spec:
+  selector: { app: assistant-harness }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+    - { name: metrics, port: 8081, targetPort: metrics }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata: { name: assistant-harness-login, labels: { release: monitoring } }
+spec:
+  selector: { matchLabels: { app: assistant-harness-login } }
+  endpoints: [{ port: metrics, interval: 60s }]
+---
+# The harness pod's own login alerts, selected by job (the scrape target's `pod` label is the Kubernetes pod name, so the
+# sidecar's pod="harness" arrives as exported_pod). In this job, naila_remote_control_up is the core process (the
+# sidecar finds it by RESTART_MATCH). No token-expiry rule: no long-running claude process renews the token in this pod,
+# only the runs do, so an idle pod's token is expired as a matter of course; NailaHarnessLoggedOut covers a dead login.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata: { name: assistant-harness-login, labels: { release: monitoring } }
+spec:
+  groups:
+    - name: naila-harness
+      rules:
+        - alert: NailaHarnessLoggedOut
+          expr: naila_claude_logged_in{job="assistant-harness-login"} == 0
+          for: 10m
+          labels: { severity: critical }
+          annotations:
+            summary: "The harness pod's Claude Code is logged out"
+            description: "The Discord workers can't answer. Log in again at https://naila.nopsqi.dev/harness"
+        - alert: NailaHarnessDown
+          expr: naila_remote_control_up{job="assistant-harness-login"} == 0
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "The harness core is not running"
+            description: "The login sidecar of the harness pod finds no harness core process (not logged in yet, or crash-looping): check https://naila.nopsqi.dev/harness and `kubectl -n {{ .Release.Namespace }} logs deploy/assistant-harness -c harness`."
+        - alert: NailaHarnessLoginMetricsMissing
+          expr: absent(naila_claude_logged_in{job="assistant-harness-login"})
+          for: 15m
+          labels: { severity: warning }
+          annotations:
+            summary: "No login metrics from the harness pod's login sidecar"
+            description: "The assistant-harness pod's login container isn't being scraped, so a dead login would go unnoticed."
+        # The gateway exits on a channel map outside the guild or a bad token; the generic ContainerRestarting waits for more.
+        - alert: NailaDiscordGatewayRestarting
+          expr: increase(kube_pod_container_status_restarts_total{namespace="{{ .Release.Namespace }}", container="discord"}[1h]) > 2
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: "The Discord gateway restarted {{ "{{" }} $value | humanize {{ "}}" }} times in the last hour"
+            description: "Discord messages and buttons don't reach the harness. `kubectl -n {{ .Release.Namespace }} logs deploy/assistant-harness -c discord --previous`"
+{{- if .Values.networkPolicy.enabled }}
+---
+# Out: DNS, the internet on 443 (Anthropic, Discord, npm for the CLI install, Cloudflare Access keys), this phase's finance
+# server and the ops server. In: only the login page from cloudflared and its metrics from monitoring.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: assistant-harness }
+spec:
+  podSelector: { matchLabels: { app: assistant-harness } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: cloudflared } } }]
+      ports: [{ protocol: TCP, port: 8080 }]
+    - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: monitoring } } }]
+      ports: [{ protocol: TCP, port: 8081 }]
+  egress:
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } } }]
+      ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
+    # Not the tailnet (100.64.0.0/10, CGNAT) or link-local (169.254.0.0/16, cloud metadata) either.
+    - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16] } }]
+      ports: [{ protocol: TCP, port: 443 }]
+    - to: [{ podSelector: { matchLabels: { app: {{ $finance }} } } }, { podSelector: { matchLabels: { app: assistant-ops } } }]
+      ports: [{ protocol: TCP, port: 8080 }]
+{{- end }}
+{{- end }}

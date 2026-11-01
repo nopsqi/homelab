@@ -4,7 +4,7 @@
 // (claude) can change the mode, the sidecar can't. Only real files under uploads/ after resolving symlinks and `..`,
 // with one link (a hardlink in uploads/ can be another name for a file outside it); the vault is already readable
 // and anything else is the sidecar's to refuse. It decides nothing, except with --only ROOT[:ROOT…] (test runs): then it
-// denies every path that isn't, after resolving symlinks and `..`, a file under one of the roots. That mode fails closed:
+// denies every path that isn't, after resolving symlinks and `..`, a file with one link under one of the roots. That mode fails closed:
 // anything unreadable or unexpected is a deny (and the hook command adds `|| exit 2`, so a crash blocks too).
 import { chmodSync, realpathSync, statSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -22,7 +22,9 @@ if (only) {
     const p = JSON.parse(input).tool_input?.path
     const real = typeof p === 'string' && p.startsWith('/') ? realpathSync(p) : ''
     const roots = only.flatMap((r) => { try { return [realpathSync(r)] } catch { return [] } })
-    ok = !!real && roots.some((r) => real.startsWith(r + '/')) && statSync(real).isFile()
+    const st = real ? statSync(real) : undefined
+    // one link only: a second hard link would make a file outside the roots convertible under a name inside them
+    ok = !!st && roots.some((r) => real.startsWith(r + '/')) && st.isFile() && st.nlink === 1
   } catch { ok = false }
   if (!ok) deny(`In this test run documents can be converted only from ${only.join(' or ')}.`)
 }

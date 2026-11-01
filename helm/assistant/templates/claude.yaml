@@ -20,6 +20,33 @@
 {{- $main := printf "files/modes/%s/%s.md" .mode .base -}}
 {{- replace "<!-- mode -->" (trimSuffix "\n" (.root.Files.Get $main | required (printf "%s is missing" $main))) $out -}}
 {{- end }}
+{{- /* Naila's settings (the RC session's), also the base of every harness run's settings (harness-start.sh): one text for both. */ -}}
+{{- define "assistant.settingsJson" -}}
+{
+  "permissions": {
+    "defaultMode": "default",
+    "allow": ["mcp__vault__tree", "mcp__vault__grep", "mcp__vault__read", "mcp__vault__open_tasks", "mcp__vault__workers_list",
+              "mcp__finance__accounts", "mcp__finance__categories", "mcp__finance__recent", "mcp__finance__spending_by_category", "mcp__finance__payee_history", "mcp__finance__actual_read",
+              "mcp__ops", "mcp__finance-read", "Read(//vault/Finance/**)", "Read(//handbooks/**)", "mcp__docs__convert",
+              "Read(~/.claude/uploads/**)", "Read(//home/claude/.claude/uploads/**)", "Read(//home/claude/.claude/projects/*/*/tool-results/**)"],
+    "ask": ["mcp__finance__add_transaction", "mcp__finance__transfer", "mcp__finance__update_transaction", "mcp__finance__actual_write", "mcp__finance-notes__write_note"],
+    "deny": ["Bash", "Write", "Edit", "NotebookEdit", "Read(~/.claude/.credentials.json)", "Read(//home/claude/.claude/.credentials.json)",
+             "Read(~/.claude/agents/**)", "Read(//home/claude/.claude/agents/**)", "Read(//home/claude/.claude/test.*/**)", "Read(//home/claude/.claude/projects/**/*.jsonl)", "Read(//home/claude/.claude.json)", "Read(//proc/**)", "Read(//config/**)", "mcp__claude_ai_Gmail"]
+  },
+  "hooks": {
+    "PreToolUse": [{ "matcher": "WebFetch|WebSearch", "hooks": [{ "type": "command", "command": "node /config/web-guard.mjs" }] },
+                   { "matcher": "Read|Glob|Grep", "hooks": [{ "type": "command", "command": "node /config/read-guard.mjs" }] },
+                   { "matcher": "SendMessage", "hooks": [{ "type": "command", "command": "node /config/message-guard.mjs" }] },
+                   { "matcher": "mcp__docs__convert", "hooks": [{ "type": "command", "command": "node /config/docs-grant.mjs" }] }]
+  }
+}
+{{- end }}
+{{- /* start.sh and harness-start.sh: "<name> <model>" per direct-line worker. */ -}}
+{{- define "assistant.directLines" -}}
+{{- range .Values.workers }}{{ if .direct }}
+    {{ .name }} {{ .model }}
+{{- end }}{{ end }}
+{{- end }}
 {{- define "assistant.testCopyNote" -}}
 The connected budget is a TEST COPY of the user's household budget, made for this. Test changes (creating, editing, deleting, budgeting) are fine here; still clean up what a test creates.
 {{- end }}
@@ -37,24 +64,7 @@ data:
   harness-CLAUDE.md: |
 {{ include "assistant.render" (dict "root" . "body" (.Files.Get "files/CLAUDE.md") "mode" "harness" "base" "naila") | indent 4 }}
   settings.json: |
-    {
-      "permissions": {
-        "defaultMode": "default",
-        "allow": ["mcp__vault__tree", "mcp__vault__grep", "mcp__vault__read", "mcp__vault__open_tasks", "mcp__vault__workers_list",
-                  "mcp__finance__accounts", "mcp__finance__categories", "mcp__finance__recent", "mcp__finance__spending_by_category", "mcp__finance__payee_history", "mcp__finance__actual_read",
-                  "mcp__ops", "mcp__finance-read", "Read(//vault/Finance/**)", "Read(//handbooks/**)", "mcp__docs__convert",
-                  "Read(~/.claude/uploads/**)", "Read(//home/claude/.claude/uploads/**)", "Read(//home/claude/.claude/projects/*/*/tool-results/**)"],
-        "ask": ["mcp__finance__add_transaction", "mcp__finance__transfer", "mcp__finance__update_transaction", "mcp__finance__actual_write", "mcp__finance-notes__write_note"],
-        "deny": ["Bash", "Write", "Edit", "NotebookEdit", "Read(~/.claude/.credentials.json)", "Read(//home/claude/.claude/.credentials.json)",
-                 "Read(~/.claude/agents/**)", "Read(//home/claude/.claude/agents/**)", "Read(//home/claude/.claude/test.*/**)", "Read(//home/claude/.claude/projects/**/*.jsonl)", "Read(//home/claude/.claude.json)", "Read(//proc/**)", "Read(//config/**)", "mcp__claude_ai_Gmail"]
-      },
-      "hooks": {
-        "PreToolUse": [{ "matcher": "WebFetch|WebSearch", "hooks": [{ "type": "command", "command": "node /config/web-guard.mjs" }] },
-                       { "matcher": "Read|Glob|Grep", "hooks": [{ "type": "command", "command": "node /config/read-guard.mjs" }] },
-                       { "matcher": "SendMessage", "hooks": [{ "type": "command", "command": "node /config/message-guard.mjs" }] },
-                       { "matcher": "mcp__docs__convert", "hooks": [{ "type": "command", "command": "node /config/docs-grant.mjs" }] }]
-      }
-    }
+{{ include "assistant.settingsJson" . | indent 4 }}
   web-guard.mjs: |
 {{ .Files.Get "files/web-guard.mjs" | indent 4 }}
   read-guard.mjs: |
@@ -80,10 +90,7 @@ data:
 {{- end }}
 {{- end }}
   # start.sh opens one Remote Control line per entry: "<name> <model>"
-  direct-lines: |
-{{- range .Values.workers }}{{ if .direct }}
-    {{ .name }} {{ .model }}
-{{- end }}{{ end }}
+  direct-lines: |{{ include "assistant.directLines" . }}
   # Mounted at /handbooks (not a subPath), so an edit reaches running conversations within a minute or two, no restart:
   # the workers read it when they need it. Deliberately left out of the checksum below.
   actual-handbook.md: |

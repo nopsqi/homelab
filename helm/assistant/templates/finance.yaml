@@ -1,5 +1,5 @@
 # Accounting tool server: actual-mcp over HTTP behind a bearer. Holds the Actual credentials; no model of its
-# own (the `finance` subagent in the Claude session is the brain). Only the Claude pod may call it.
+# own (the `finance` subagent in the Claude session is the brain). Only the Claude pod (and the harness pod, on the server of its phase) may call it.
 # assistant-finance serves Naila and the finance session; assistant-finance-test (finance.testServer) is the same
 # server on the test copy of the budget, with its own bearer, used only by /config/naila-test.sh and the live suite.
 {{- range $name, $on := dict "assistant-finance" .Values.finance.enabled "assistant-finance-test" (and .Values.finance.enabled .Values.finance.testServer) }}
@@ -13,6 +13,8 @@ metadata:
 spec:
   {{- if eq $name "assistant-finance" }}
   replicas: 1
+  {{- else if and $.Values.harness.enabled (eq $.Values.harness.phase "test") }}
+  replicas: 1   # the harness pod's test phase uses it all the time
   {{- else }}
   # The test server has no replicas here: it sits at 0 and tests/live/run.sh (naila repo) scales it up for a test run;
   # ArgoCD leaves a field the manifest doesn't set alone.
@@ -60,7 +62,12 @@ spec:
   podSelector: { matchLabels: { app: {{ $name }} } }
   policyTypes: [Ingress, Egress]
   ingress:
+    {{- /* the harness pod reaches only the server of its phase */}}
+    {{- if and $.Values.harness.enabled (eq $name (ternary "assistant-finance-test" "assistant-finance" (eq $.Values.harness.phase "test"))) }}
+    - from: [{ podSelector: { matchLabels: { app: assistant-claude } } }, { podSelector: { matchLabels: { app: assistant-harness } } }]
+    {{- else }}
     - from: [{ podSelector: { matchLabels: { app: assistant-claude } } }]
+    {{- end }}
       ports: [{ protocol: TCP, port: 8080 }]
   egress:
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } } }]

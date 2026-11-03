@@ -357,33 +357,36 @@ spec:
         {{- end }}
     # The core's own run counters (job assistant-harness-core). Every worker x kind x outcome series exists from the core's
     # start at 0 (P9), so increase() sees a series' first failure; a core restart resets them, which increase() handles.
+    # Summed, so one problem raises one alert rather than one per worker and kind.
     - name: naila-harness-core
       rules:
         - alert: NailaRunsFailing
-          expr: increase(naila_harness_runs_total{job="assistant-harness-core",outcome!~"ok|limit"}[30m]) > 0
+          expr: sum by (namespace, outcome) (increase(naila_harness_runs_total{job="assistant-harness-core",outcome!~"ok|limit"}[30m])) > 0
           for: 0m
           labels: { severity: warning }
           annotations:
-            summary: "{{ "{{" }} $labels.worker {{ "}}" }}'s {{ "{{" }} $labels.kind {{ "}}" }} runs failed ({{ "{{" }} $labels.outcome {{ "}}" }})"
-            description: "A worker run ended without an answer in the last 30 minutes, so the owner may have got no reply. `kubectl -n {{ .Release.Namespace }} logs deploy/assistant-harness -c harness | grep 'run failed'` gives the reason."
+            summary: '{{ "{{" }} $value | printf "%.0f" {{ "}}" }} harness runs failed ({{ "{{" }} $labels.outcome {{ "}}" }}) in the last 30 minutes'
+            description: "Worker runs ended without an answer, so the owner may have got no reply. `kubectl -n {{ .Release.Namespace }} logs deploy/assistant-harness -c harness | grep 'run failed'` gives each run's worker and reason."
         - alert: NailaUsageLimit
-          expr: increase(naila_harness_runs_total{job="assistant-harness-core",outcome="limit"}[1h]) > 0
+          expr: sum by (namespace) (increase(naila_harness_runs_total{job="assistant-harness-core",outcome="limit"}[1h])) > 0
           labels: { severity: warning }
           annotations:
-            summary: "{{ "{{" }} $labels.worker {{ "}}" }} hit the Claude usage limit"
-            description: "A run of the harness pod's Max login stopped at the usage limit in the last hour; the workers can't answer until it resets (the owner is told when)."
+            summary: '{{ "{{" }} $value | printf "%.0f" {{ "}}" }} harness runs stopped at the Claude usage limit in the last hour'
+            description: "The harness pod's Max login is at its usage limit; the workers can't answer until it resets (the owner is told when)."
+        # Only while the login sidecar sees the core running: NailaHarnessDown covers a stopped core, and
+        # NailaHarnessLoginMetricsMissing a sidecar that isn't scraped.
         - alert: NailaCoreMetricsMissing
-          expr: absent(naila_harness_up{job="assistant-harness-core"})
+          expr: absent(naila_harness_up{job="assistant-harness-core"}) and on() (naila_remote_control_up{job="assistant-harness-login"} == 1)
           for: 15m
           labels: { severity: warning }
           annotations:
-            summary: "No run metrics from the harness core"
-            description: "The assistant-harness pod's core isn't being scraped on 3102 (down, not started, or not listening), so failing runs would go unnoticed. `kubectl -n {{ .Release.Namespace }} logs deploy/assistant-harness -c harness`"
+            summary: "No run metrics from the running harness core"
+            description: "The harness core is running but its metrics on 3102 aren't scraped (not listening, or the scrape is blocked), so failing runs would go unnoticed. `kubectl -n {{ .Release.Namespace }} logs deploy/assistant-harness -c harness`"
 {{- if .Values.networkPolicy.enabled }}
 ---
 # Out: DNS, the internet on 443 (Anthropic, Discord, npm for the CLI install, Cloudflare Access keys), this phase's finance
-# server and the ops server. In: only the login page from cloudflared, and from monitoring the login sidecar's metrics
-# (8081) and the core's (3102).
+# server and the ops server. In: only the login page from cloudflared, the login sidecar's metrics (8081) from monitoring,
+# and the core's (3102) from the Prometheus pods only.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: { name: assistant-harness }
@@ -394,7 +397,9 @@ spec:
     - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: cloudflared } } }]
       ports: [{ protocol: TCP, port: 8080 }]
     - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: monitoring } } }]
-      ports: [{ protocol: TCP, port: 8081 }, { protocol: TCP, port: 3102 }]
+      ports: [{ protocol: TCP, port: 8081 }]
+    - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: monitoring } }, podSelector: { matchLabels: { app.kubernetes.io/name: prometheus } } }]
+      ports: [{ protocol: TCP, port: 3102 }]
   egress:
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } } }]
       ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]

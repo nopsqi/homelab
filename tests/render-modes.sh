@@ -521,11 +521,11 @@ for label, r in (("test", test), ("real", real), ("two channels", two)):
         if c["name"] != "harness" and any(p.get("containerPort") == 3102 for p in c.get("ports", [])): bad.append(f"{tag}: {c['name']} also declares 3102")
     np = r.get(("NetworkPolicy", "assistant-harness"))
     ing = (np or {"spec": {}})["spec"].get("ingress", [])
-    mon = [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "monitoring"}}}]
+    mon = [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "monitoring"}}, "podSelector": {"matchLabels": {"app.kubernetes.io/name": "prometheus"}}}]
     opens = [x for x in ing if not x.get("ports") or any(p.get("port") in (3102, "core-metrics") for p in x["ports"])]
     if not np or not opens: bad.append(f"{tag}: no ingress rule admits 3102")
     for x in opens:
-        if x.get("from") != mon: bad.append(f"{tag}: 3102 (or every port) is open to {x.get('from')!r}")
+        if x.get("from") != mon: bad.append(f"{tag}: 3102 (or every port) is open to {x.get('from')!r}, not only to Prometheus pods in monitoring")
         if any(p.get("protocol", "TCP") != "TCP" for p in x.get("ports", []) if p.get("port") == 3102): bad.append(f"{tag}: 3102 is not TCP")
 
     tag = f"the Service assistant-harness-core exposes core-metrics, and its own ServiceMonitor scrapes it (job assistant-harness-core) ({label})"
@@ -548,9 +548,11 @@ for label, r in (("test", test), ("real", real), ("two channels", two)):
 
     tag = f"the three alerts exist and no alert text names Discord ({label})"
     rs = {x["alert"]: x for g in (r.get(("PrometheusRule", "assistant-harness-login")) or {"spec": {"groups": []}})["spec"]["groups"] for x in g["rules"]}
-    want = {"NailaRunsFailing": ('increase(naila_harness_runs_total{job="assistant-harness-core",outcome!~"ok|limit"}[30m]) > 0', "0m"),
-            "NailaUsageLimit": ('increase(naila_harness_runs_total{job="assistant-harness-core",outcome="limit"}[1h]) > 0', None),
-            "NailaCoreMetricsMissing": ('absent(naila_harness_up{job="assistant-harness-core"})', "15m")}
+    # aggregated, so one problem raises one alert; the missing-metrics rule only while the login sidecar sees the core running
+    # (NailaHarnessDown covers a stopped core, NailaHarnessLoginMetricsMissing a dead sidecar)
+    want = {"NailaRunsFailing": ('sum by (namespace, outcome) (increase(naila_harness_runs_total{job="assistant-harness-core",outcome!~"ok|limit"}[30m])) > 0', "0m"),
+            "NailaUsageLimit": ('sum by (namespace) (increase(naila_harness_runs_total{job="assistant-harness-core",outcome="limit"}[1h])) > 0', None),
+            "NailaCoreMetricsMissing": ('absent(naila_harness_up{job="assistant-harness-core"}) and on() (naila_remote_control_up{job="assistant-harness-login"} == 1)', "15m")}
     for a, (expr, fr) in want.items():
         x = rs.get(a)
         if not x: bad.append(f"{tag}: no {a}"); continue
@@ -560,6 +562,8 @@ for label, r in (("test", test), ("real", real), ("two channels", two)):
         if not x.get("annotations", {}).get("summary") or not x.get("annotations", {}).get("description"): bad.append(f"{tag}: {a} lacks a summary or description")
         for k, v in x.get("annotations", {}).items():
             if "discord" in v.lower(): bad.append(f"{tag}: {a} {k} names Discord")
+            if re.search(r"\$labels\.(worker|kind)\b", v): bad.append(f"{tag}: {a} {k} names a label the sum drops")
+        if a != "NailaCoreMetricsMissing" and '{{ $value | printf "%.0f" }}' not in x.get("annotations", {}).get("summary", ""): bad.append(f"{tag}: {a} summary lacks the count")
     for a, x in rs.items():
         if "naila_harness_" in x["expr"] and J not in x["expr"]: bad.append(f"{tag}: {a} reads the core's metrics without {J}")
 

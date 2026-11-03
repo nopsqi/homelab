@@ -155,6 +155,7 @@ spec:
             - { name: HOST, value: 127.0.0.1 }
             - { name: PORT, value: "3100" }              # channel API, for the gateway containers
             - { name: CORE_TOOLS_PORT, value: "3101" }   # core tools, for the runs
+            - { name: METRICS_PORT, value: "3102" }      # run metrics on 0.0.0.0, for Prometheus (Service assistant-harness-core)
             - { name: MCP_FINANCE_URL, value: http://{{ $finance }}:8080/mcp }
             - { name: VAULT_ROOT, value: {{ $vaultRoot }} }
             - { name: FINANCE_NOTES_ROOT, value: {{ $vaultRoot }}/Finance }
@@ -178,6 +179,7 @@ spec:
             {{- end }}
             - { name: GATEWAY_SECRETS, value: {{ join "," $entries | quote }} }
             - { name: HARNESS_CHANNELS, value: {{ toJson $specs | quote }} }
+          ports: [{ name: core-metrics, containerPort: 3102 }]
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           volumeMounts:
             - { name: home, mountPath: /home/claude }
@@ -294,6 +296,23 @@ spec:
   selector: { matchLabels: { app: assistant-harness-login } }
   endpoints: [{ port: metrics, interval: 60s }]
 ---
+# The core's run metrics (naila_harness_up, naila_harness_runs_total) behind a Service of their own, so the scrape's job
+# label is assistant-harness-core, apart from the login sidecar's job (P8).
+apiVersion: v1
+kind: Service
+metadata: { name: assistant-harness-core, labels: { app: assistant-harness-core } }
+spec:
+  selector: { app: assistant-harness }
+  ports:
+    - { name: core-metrics, port: 3102, targetPort: core-metrics }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata: { name: assistant-harness-core, labels: { release: monitoring } }
+spec:
+  selector: { matchLabels: { app: assistant-harness-core } }
+  endpoints: [{ port: core-metrics, interval: 60s }]
+---
 # The harness pod's own login alerts, selected by job (the scrape target's `pod` label is the Kubernetes pod name, so the
 # sidecar's pod="harness" arrives as exported_pod). In this job, naila_remote_control_up is the core process (the
 # sidecar finds it by RESTART_MATCH). No token-expiry rule: no long-running claude process renews the token in this pod,
@@ -336,10 +355,35 @@ spec:
             summary: "The {{ "{{" }} $labels.container {{ "}}" }} gateway restarted {{ "{{" }} $value | humanize {{ "}}" }} times in the last hour"
             description: "Messages and confirmations on the {{ "{{" }} $labels.container {{ "}}" }} channel don't reach the harness. `kubectl -n {{ $.Release.Namespace }} logs deploy/assistant-harness -c {{ "{{" }} $labels.container {{ "}}" }} --previous`"
         {{- end }}
+    # The core's own run counters (job assistant-harness-core). Every worker x kind x outcome series exists from the core's
+    # start at 0 (P9), so increase() sees a series' first failure; a core restart resets them, which increase() handles.
+    - name: naila-harness-core
+      rules:
+        - alert: NailaRunsFailing
+          expr: increase(naila_harness_runs_total{job="assistant-harness-core",outcome!~"ok|limit"}[30m]) > 0
+          for: 0m
+          labels: { severity: warning }
+          annotations:
+            summary: "{{ "{{" }} $labels.worker {{ "}}" }}'s {{ "{{" }} $labels.kind {{ "}}" }} runs failed ({{ "{{" }} $labels.outcome {{ "}}" }})"
+            description: "A worker run ended without an answer in the last 30 minutes, so the owner may have got no reply. `kubectl -n {{ .Release.Namespace }} logs deploy/assistant-harness -c harness | grep 'run failed'` gives the reason."
+        - alert: NailaUsageLimit
+          expr: increase(naila_harness_runs_total{job="assistant-harness-core",outcome="limit"}[1h]) > 0
+          labels: { severity: warning }
+          annotations:
+            summary: "{{ "{{" }} $labels.worker {{ "}}" }} hit the Claude usage limit"
+            description: "A run of the harness pod's Max login stopped at the usage limit in the last hour; the workers can't answer until it resets (the owner is told when)."
+        - alert: NailaCoreMetricsMissing
+          expr: absent(naila_harness_up{job="assistant-harness-core"})
+          for: 15m
+          labels: { severity: warning }
+          annotations:
+            summary: "No run metrics from the harness core"
+            description: "The assistant-harness pod's core isn't being scraped on 3102 (down, not started, or not listening), so failing runs would go unnoticed. `kubectl -n {{ .Release.Namespace }} logs deploy/assistant-harness -c harness`"
 {{- if .Values.networkPolicy.enabled }}
 ---
 # Out: DNS, the internet on 443 (Anthropic, Discord, npm for the CLI install, Cloudflare Access keys), this phase's finance
-# server and the ops server. In: only the login page from cloudflared and its metrics from monitoring.
+# server and the ops server. In: only the login page from cloudflared, and from monitoring the login sidecar's metrics
+# (8081) and the core's (3102).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: { name: assistant-harness }
@@ -350,7 +394,7 @@ spec:
     - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: cloudflared } } }]
       ports: [{ protocol: TCP, port: 8080 }]
     - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: monitoring } } }]
-      ports: [{ protocol: TCP, port: 8081 }]
+      ports: [{ protocol: TCP, port: 8081 }, { protocol: TCP, port: 3102 }]
   egress:
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } } }]
       ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]

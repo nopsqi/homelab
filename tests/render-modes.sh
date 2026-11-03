@@ -20,6 +20,8 @@
 # Then the channels (harness.channels): the discord container and the core env render as at <git-ref>, a second channel gets
 #  its own container and secrets, bad channel config fails the render, one gateway alert covers every gateway, the harness
 #  prompts name no channel, and harness-start.sh unsets every per-channel secret before the core starts.
+# Then the core's run metrics: 3102 open to monitoring only, its own Service and ServiceMonitor (job assistant-harness-core),
+#  the login Service and ServiceMonitor as at <git-ref>, and the three core alerts, scoped by job, none naming Discord.
 set -euo pipefail
 ref="${1:-origin/master}"
 root="$(git rev-parse --show-toplevel)"
@@ -170,7 +172,8 @@ H = ("Deployment", "assistant-harness")
 
 # harness pod renders only when enabled
 for kind, name in [H, ("PersistentVolumeClaim", "assistant-harness-home"), ("Service", "assistant-harness-login"), ("NetworkPolicy", "assistant-harness"),
-                   ("ServiceMonitor", "assistant-harness-login"), ("PrometheusRule", "assistant-harness-login"), ("ConfigMap", "assistant-harness")]:
+                   ("ServiceMonitor", "assistant-harness-login"), ("PrometheusRule", "assistant-harness-login"), ("ConfigMap", "assistant-harness"),
+                   ("Service", "assistant-harness-core"), ("ServiceMonitor", "assistant-harness-core")]:
     if (kind, name) not in test: bad.append(f"harness pod renders only when enabled: {kind}/{name} missing with harness.enabled")
 for label, r in (("harness.enabled=false", off), ("staging values", staging)):
     for k in r:
@@ -505,6 +508,60 @@ for label, r, gws in (("prod", test, {"discord"}), ("two channels", two, {"disco
             if "discord" in v.lower(): bad.append(f"{tag}: {x['alert']} {k} names Discord ({label})")
     lo = next((x for x in rs if x["alert"] == "NailaHarnessLoggedOut"), {})
     if not lo.get("annotations", {}).get("description", "").startswith("The workers can't answer."): bad.append(f"{tag}: NailaHarnessLoggedOut says {lo.get('annotations', {}).get('description')!r}")
+
+# The core's run metrics (plan 4 Task 6): its own Service and ServiceMonitor, so the scrape's job label is
+# assistant-harness-core (P8); 3102 open to monitoring only; alerts scoped by that job (Ruling 13).
+J = 'job="assistant-harness-core"'
+for label, r in (("test", test), ("real", real), ("two channels", two)):
+    tag = f"the core exposes 3102 to monitoring only ({label})"
+    h = ctr(r, "harness") or {}
+    if {(p.get("name"), p.get("containerPort")) for p in h.get("ports", [])} != {("core-metrics", 3102)}: bad.append(f"{tag}: harness container ports are {h.get('ports')!r}")
+    if val(h, "METRICS_PORT") != "3102": bad.append(f"{tag}: harness METRICS_PORT is {val(h, 'METRICS_PORT')!r}")
+    for c in pod(r)["containers"]:
+        if c["name"] != "harness" and any(p.get("containerPort") == 3102 for p in c.get("ports", [])): bad.append(f"{tag}: {c['name']} also declares 3102")
+    np = r.get(("NetworkPolicy", "assistant-harness"))
+    ing = (np or {"spec": {}})["spec"].get("ingress", [])
+    mon = [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "monitoring"}}}]
+    opens = [x for x in ing if not x.get("ports") or any(p.get("port") in (3102, "core-metrics") for p in x["ports"])]
+    if not np or not opens: bad.append(f"{tag}: no ingress rule admits 3102")
+    for x in opens:
+        if x.get("from") != mon: bad.append(f"{tag}: 3102 (or every port) is open to {x.get('from')!r}")
+        if any(p.get("protocol", "TCP") != "TCP" for p in x.get("ports", []) if p.get("port") == 3102): bad.append(f"{tag}: 3102 is not TCP")
+
+    tag = f"the Service assistant-harness-core exposes core-metrics, and its own ServiceMonitor scrapes it (job assistant-harness-core) ({label})"
+    svc, sm = r.get(("Service", "assistant-harness-core")), r.get(("ServiceMonitor", "assistant-harness-core"))
+    if not svc: bad.append(f"{tag}: no Service")
+    else:
+        if svc["spec"].get("selector") != {"app": "assistant-harness"}: bad.append(f"{tag}: Service selects {svc['spec'].get('selector')!r}")
+        if svc["metadata"].get("labels") != {"app": "assistant-harness-core"}: bad.append(f"{tag}: Service labels {svc['metadata'].get('labels')!r}")
+        if [(p.get("name"), p.get("port"), p.get("targetPort")) for p in svc["spec"]["ports"]] != [("core-metrics", 3102, "core-metrics")]: bad.append(f"{tag}: Service ports {svc['spec']['ports']!r}")
+    if not sm: bad.append(f"{tag}: no ServiceMonitor")
+    else:
+        if sm["metadata"].get("labels", {}).get("release") != "monitoring": bad.append(f"{tag}: ServiceMonitor lacks release: monitoring")
+        if sm["spec"].get("selector") != {"matchLabels": {"app": "assistant-harness-core"}}: bad.append(f"{tag}: ServiceMonitor selects {sm['spec'].get('selector')!r}")
+        if "jobLabel" in sm["spec"]: bad.append(f"{tag}: ServiceMonitor sets jobLabel (the job must be the Service name)")
+        eps = sm["spec"].get("endpoints", [])
+        if [e.get("port") for e in eps] != ["core-metrics"]: bad.append(f"{tag}: ServiceMonitor endpoints {eps!r}")
+        if any("job" in json.dumps(e.get("relabelings", [])) or e.get("path", "/metrics") != "/metrics" for e in eps): bad.append(f"{tag}: an endpoint relabels job or scrapes another path")
+    for k in (("Service", "assistant-harness-login"), ("ServiceMonitor", "assistant-harness-login")):
+        if r.get(k) != oldh.get(k): bad.append(f"{tag}: {k[0]}/{k[1]} differs from the ref (it must stay as it was)")
+
+    tag = f"the three alerts exist and no alert text names Discord ({label})"
+    rs = {x["alert"]: x for g in (r.get(("PrometheusRule", "assistant-harness-login")) or {"spec": {"groups": []}})["spec"]["groups"] for x in g["rules"]}
+    want = {"NailaRunsFailing": ('increase(naila_harness_runs_total{job="assistant-harness-core",outcome!~"ok|limit"}[30m]) > 0', "0m"),
+            "NailaUsageLimit": ('increase(naila_harness_runs_total{job="assistant-harness-core",outcome="limit"}[1h]) > 0', None),
+            "NailaCoreMetricsMissing": ('absent(naila_harness_up{job="assistant-harness-core"})', "15m")}
+    for a, (expr, fr) in want.items():
+        x = rs.get(a)
+        if not x: bad.append(f"{tag}: no {a}"); continue
+        if x["expr"].strip() != expr: bad.append(f"{tag}: {a} expr is {x['expr']!r}, want {expr!r}")
+        if x.get("for", "0m") != (fr or "0m"): bad.append(f"{tag}: {a} for is {x.get('for')!r}, want {fr!r}")
+        if x.get("labels", {}).get("severity") != "warning": bad.append(f"{tag}: {a} severity is {x.get('labels', {}).get('severity')!r}")
+        if not x.get("annotations", {}).get("summary") or not x.get("annotations", {}).get("description"): bad.append(f"{tag}: {a} lacks a summary or description")
+        for k, v in x.get("annotations", {}).items():
+            if "discord" in v.lower(): bad.append(f"{tag}: {a} {k} names Discord")
+    for a, x in rs.items():
+        if "naila_harness_" in x["expr"] and J not in x["expr"]: bad.append(f"{tag}: {a} reads the core's metrics without {J}")
 
 tag = "harness prompts name no channel"
 for f in ("naila.md", "naila.channel.md", "finance-advisor.md", "finance-advisor.notes.md", "finance-bookkeeper.md"):

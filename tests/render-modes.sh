@@ -2,9 +2,12 @@
 # Usage: tests/render-modes.sh [git-ref]   (default origin/master)
 # Renders helm/assistant at <git-ref> and in the working tree, then checks ConfigMap assistant-claude:
 #  - every RC key (all but harness-*) is byte-identical between the two renders, except that harness-test.sh (retired) may be
-#    gone; any other difference fails (R9), and no ConfigMap key or file names harness-test.sh;
+#    gone and the RC_ALLOWED keys (shared with harness mode; RC is retired) may differ; any other difference fails (R9), and
+#    no ConfigMap key or file names harness-test.sh;
 #  - no harness-*.md key contains SendMessage, ListAgents, naila-c4 or phone, nor the finance write bearer;
-#  - harness-settings.json denies the write tools, SendMessage, ListAgents and Agent, and allows the core tools;
+#  - the finance rules: no key teaches "added 0 (updated instead)"; the bookkeeper checks duplicates and rounds spending up,
+#    the advisor edits Profile.md by passage, the handbook states the Rp1.000 round-up;
+#  - harness-settings.json denies the write tools, SendMessage, ListAgents and Agent, and allows the core tools and find_duplicates;
 #  - the RC checksum ignores a harness-only mode edit and follows an RC one.
 # Then the assistant-harness pod (harness.enabled, harness.phase):
 #  - it renders only when enabled, and enabling it leaves the RC objects as they were;
@@ -61,22 +64,32 @@ def keys(path):
     sys.exit(f"FAIL: ConfigMap assistant-claude not found in {path}")
 
 old, new = keys(sys.argv[1]), keys(sys.argv[2])
-RETIRED = "harness-test.sh"   # retired with RC mode; the only RC ConfigMap difference allowed (R9)
+RETIRED = "harness-test.sh"   # retired with RC mode; its removal is allowed (R9)
+# RC is retired (claude.rcLines false): these keys share their text with harness mode, so they may differ (plan 4 Global Constraints).
+RC_ALLOWED = {"agent-finance-bookkeeper.md", "agent-finance-advisor.md", "actual-handbook.md"}
 def rcdiff(o, n):
-    """Differences in the RC ConfigMap keys (every key but harness-*) other than the retired key's removal."""
+    """Differences in the RC ConfigMap keys (every key but harness-*) other than the retired key's removal and RC_ALLOWED edits."""
     out = []
     for k in sorted(set(o) | set(n)):
         if k.startswith("harness-") and k != RETIRED: continue
         if k == RETIRED:
             if k in n: out.append(f"{k} is still in the ConfigMap")
             continue
+        if k in RC_ALLOWED and k in o and k in n: continue
         if o.get(k) != n.get(k): out.append(f"RC key {k} differs (or is missing on one side)")
     return out
 bad = rcdiff(old, new)
 # the check itself: the retired key's removal alone passes, any other difference fails
 gone = {k: v for k, v in old.items() if k != RETIRED}
 if rcdiff({**old, RETIRED: "x"}, gone): bad.append("rcdiff rejects the removal of the retired key")
-probe = next(k for k in sorted(old) if not k.startswith("harness-"))
+# exactly the RC_ALLOWED keys may differ: every other RC key changed fails, and an RC_ALLOWED key may not go missing
+for k in sorted(gone):
+    if k.startswith("harness-"): continue
+    if bool(rcdiff(gone, {**gone, k: gone[k] + "x"})) == (k in RC_ALLOWED): bad.append(f"rcdiff {'rejects' if k in RC_ALLOWED else 'accepts'} a change to RC key {k}")
+for k in sorted(RC_ALLOWED):
+    if k not in gone: bad.append(f"RC_ALLOWED key {k} is not in the ref render")
+    elif not rcdiff(gone, {x: v for x, v in gone.items() if x != k}): bad.append(f"rcdiff accepts the removal of RC_ALLOWED key {k}")
+probe = next(k for k in sorted(old) if not k.startswith("harness-") and k not in RC_ALLOWED)
 for what, mut in (("a changed RC key", {**gone, probe: old[probe] + "x"}), ("a removed RC key", {k: v for k, v in gone.items() if k != probe}),
                   ("an added RC key", {**gone, "extra.txt": "x"}), ("the retired key kept", {**gone, RETIRED: "x"})):
     if not rcdiff(old, mut): bad.append(f"rcdiff accepts {what}")
@@ -93,10 +106,19 @@ for k in harness:
         if w in new[k]:
             bad.append(f"{k} contains {w!r}")
 import re
+# the finance rules (H1, M1, H5): adds are proven by their result, spending rounds up to Rp1.000, Profile.md is edited by passage
+for k in new:
+    if "added 0 (updated instead)" in new[k]: bad.append(f"ConfigMap key {k} contains 'added 0 (updated instead)'")
+for w in ("find_duplicates", "allow_duplicate", "round", "Rounding"):
+    if w not in new.get("harness-agent-finance-bookkeeper.md", ""): bad.append(f"harness-agent-finance-bookkeeper.md does not name {w!r}")
+for w in ("edit_note", "Profile.md"):
+    if w not in new.get("harness-agent-finance-advisor.md", ""): bad.append(f"harness-agent-finance-advisor.md does not name {w!r}")
+if not re.search(r"round(?:ed|s)? up to (?:the next |whole )?Rp ?1\.000", new.get("actual-handbook.md", ""), re.I):
+    bad.append("actual-handbook.md does not state the Rp1.000 round-up")
 WRITES = ["mcp__finance__add_transaction", "mcp__finance__transfer", "mcp__finance__update_transaction",
-          "mcp__finance__actual_write", "mcp__finance-notes__write_note"]
-want = {"finance-bookkeeper": ({"mcp__core__propose_plan"}, {"mcp__core__ask_worker"}),
-        "finance-advisor": ({"mcp__core__propose_plan", "mcp__core__ask_worker"}, set()),
+          "mcp__finance__actual_write", "mcp__finance-notes__write_note", "mcp__finance-notes__edit_note"]
+want = {"finance-bookkeeper": ({"mcp__core__propose_plan", "mcp__finance__find_duplicates"}, {"mcp__core__ask_worker"}),
+        "finance-advisor": ({"mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__finance-read__find_duplicates"}, set()),
         "ops-oncall": (set(), {"mcp__core__propose_plan", "mcp__core__ask_worker"})}
 for name, (has, hasnt) in want.items():
     k = f"harness-agent-{name}.md"
@@ -122,7 +144,7 @@ if hs is not None:
     deny, allow = set(hs.get("deny", [])), set(hs.get("allow", []))
     for t in set(WRITES) | {"SendMessage", "ListAgents", "Agent"}:
         if t not in deny: bad.append(f"harness-settings.json does not deny {t}")
-    for t in ("mcp__core__propose_plan", "mcp__core__ask_worker"):
+    for t in ("mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__finance__find_duplicates"):   # P1: dontAsk denies an unlisted tool
         if t not in allow: bad.append(f"harness-settings.json does not allow {t}")
     for t in allow & (set(WRITES) | {"SendMessage", "ListAgents", "Agent"}): bad.append(f"harness-settings.json allows {t}")
     if hs.get("defaultMode") != "dontAsk": bad.append("harness-settings.json: defaultMode is not dontAsk")

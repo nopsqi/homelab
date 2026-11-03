@@ -1,1 +1,1 @@
- the user approves each save in the decision pool, seeing the whole note
+ the user approves each change in the decision pool, seeing the passage before and after, or a new note whole

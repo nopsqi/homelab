@@ -5,6 +5,7 @@
     "allow": [
       "mcp__core__propose_plan",
       "mcp__core__ask_worker",
+      "mcp__finance__find_duplicates",
       "mcp__vault__write_inbox",
       "mcp__vault__append_daily"
     ],
@@ -14,6 +15,7 @@
       "mcp__finance__update_transaction",
       "mcp__finance__actual_write",
       "mcp__finance-notes__write_note",
+      "mcp__finance-notes__edit_note",
       "SendMessage",
       "ListAgents",
       "Agent"

@@ -22,16 +22,17 @@ fi
 # chart): fail closed. The phrase is the one the server logs at startup when VAULT_EXCLUDE is set.
 VAULT_SERVER=/naila/packages/vault-mcp/dist/server.js
 if [ -n "${VAULT_EXCLUDE:-}" ] && ! grep -qF 'vault-mcp: VAULT_EXCLUDE supported' "$VAULT_SERVER"; then die "VAULT_EXCLUDE is set but $VAULT_SERVER doesn't support it: this naila image is older than the chart"; fi
-for k in harness-CLAUDE.md harness-agent-finance-bookkeeper.md harness-settings.json settings.json docs-grant.mjs direct-lines; do
+for k in harness-CLAUDE.md harness-agent-finance-bookkeeper.md harness-settings.json harness-write-guard.mjs settings.json docs-grant.mjs direct-lines; do
   [ -f "/config/$k" ] || die "/config/$k is missing: this chart predates harness mode"
 done
 [ -n "${MCP_FINANCE_TOKEN:-}" ] && [ -n "${MCP_FINANCE_READ_TOKEN:-}" ] && [ -n "${MCP_OPS_TOKEN:-}" ] || die "a bearer is missing (MCP_FINANCE_TOKEN, MCP_FINANCE_READ_TOKEN, MCP_OPS_TOKEN)"
 
 [ "$(claude --version 2>/dev/null | cut -d' ' -f1)" = "$CLAUDE_VERSION" ] || npm i -g @anthropic-ai/claude-code@$CLAUDE_VERSION
 # The Runner relies on these; an older CLI would fail every run in a less obvious way. --disallowedTools takes the write tools
-# from a run another worker asked (P25): without it such a run would keep them, so fail closed.
+# from a run another worker asked (P25), and --settings carries each run's capability settings: without either a run would
+# keep tools it must not have, so fail closed.
 help=$(claude --help 2>&1 </dev/null) || true
-for f in --tools --permission-mode --strict-mcp-config --mcp-config --disallowedTools; do
+for f in --tools --permission-mode --strict-mcp-config --mcp-config --disallowedTools --settings; do
   printf '%s\n' "$help" | grep -qE -- "(^|[[:space:],])$f([[:space:],=]|\$)" || die "claude $CLAUDE_VERSION has no $f flag"
 done
 
@@ -62,43 +63,73 @@ if [ "$HARNESS_PHASE" = test ] && grep -q '//assistant-finance:' "$C"/agents/*.m
 if grep -qF -- "$MCP_FINANCE_TOKEN" "$C"/agents/*.md; then die "a worker holds the finance write bearer"; fi
 
 # Settings: Naila's (/config/settings.json) plus harness mode's (harness-settings.json: no "ask", since nobody is there to
-# answer; the write tools and cross-session messaging denied; the core tools allowed). Docs conversion is limited to
-# uploads and this phase's vault (docs-grant.mjs --only, failing closed), minus VAULT_EXCLUDE in the real phase. Test phase: no file-tool rule reaches the vault
-# outside /vault/Harness-test, and the test notes cabinet is readable. Real phase: no file tool reads a VAULT_EXCLUDE folder.
+# answer). The static deny is the floor (whatever a run's switches say) plus Naila's; the static allow is only the core tools
+# no switch governs plus ask_worker and propose_plan (P24). Every other allow comes from each run's own settings (--settings),
+# which the core generates from the worker's capability switches (P22): Naila's blanket allows (mcp__ops, mcp__finance-read,
+# the finance reads, Finance/, every session's tool-results/) are dropped here, since a static allow would reach every run
+# (P28). Bare Write and Edit are not denied (a static bare deny beats a run's allow, so files.write could never work): they
+# stay closed unless the run's settings allow its own workspace, and the write guard holds them to
+# <VAULT_ROOT>/Naila/Workspace/<worker>/, rooted on its command line (P18). Docs conversion is limited to uploads and this
+# phase's vault (docs-grant.mjs --only, failing closed), minus VAULT_EXCLUDE in the real phase. Test phase: no file-tool rule
+# reaches the vault outside /vault/Harness-test. Real phase: no file tool reads a VAULT_EXCLUDE folder.
+case "$VAULT_ROOT" in /*) ;; *) die "VAULT_ROOT must be an absolute path, got '$VAULT_ROOT'" ;; esac
+printf '%s' "$VAULT_ROOT" | grep -qE '^/[A-Za-z0-9._/-]+$' || die "VAULT_ROOT may hold only letters, digits and ._/- (it goes into a hook command), got '$VAULT_ROOT'"
 node -e '
-const fs = require("fs"), [src, patch, dst, phase, root, notes, grant, uploads, exclude] = process.argv.slice(1)
+const fs = require("fs"), [src, patch, dst, phase, root, grant, uploads, exclude] = process.argv.slice(1)
 const s = JSON.parse(fs.readFileSync(src, "utf8")), p = s.permissions, h = JSON.parse(fs.readFileSync(patch, "utf8")).permissions
 delete p.ask
 p.defaultMode = h.defaultMode
-p.allow = p.allow.filter((r) => !h.deny.includes(r) && (phase === "real" || !r.includes("//vault/")))
+p.allow = [...h.allow]
+p.deny = p.deny.filter((r) => r !== "Write" && r !== "Edit")
 p.deny.push(...h.deny, "Read(//home/claude/.claude/harness/**)")
 if (phase === "test") {
   p.deny.push("Read(//vault/Finance/**)")
   let other = []
   try { other = fs.readdirSync("/vault", { withFileTypes: true }).filter((e) => e.name !== "Harness-test" && e.name !== "Finance") } catch {}
   for (const e of other) p.deny.push(e.isDirectory() ? `Read(//vault/${e.name}/**)` : `Read(//vault/${e.name})`)
-  p.allow.push(`Read(/${notes}/**)`)
 }
 const excluded = phase === "real" ? (exclude ?? "").split(",").map((e) => e.trim()).filter(Boolean) : []
 for (const x of excluded) p.deny.push(`Read(/${root}/${x}/**)`)
 const docsExclude = excluded.length ? ` --exclude ${excluded.map((x) => `${root}/${x}`).join(",")}` : ""
-p.allow.push(...h.allow)
 const pre = (s.hooks ??= {}).PreToolUse ??= []
-s.hooks.PreToolUse = pre.filter((e) => !/docs/.test(e.matcher ?? ""))
+s.hooks.PreToolUse = pre.filter((e) => !/docs|Write|Edit/.test(e.matcher ?? ""))
 s.hooks.PreToolUse.push({ matcher: "mcp__docs__convert", hooks: [{ type: "command", command: `node ${grant} --only ${uploads}:${root}${docsExclude} || exit 2` }] })
-fs.writeFileSync(dst, JSON.stringify(s, null, 2))' /config/settings.json /config/harness-settings.json "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" "$FINANCE_NOTES_ROOT" /config/docs-grant.mjs "$C/uploads" "${VAULT_EXCLUDE:-}"
+s.hooks.PreToolUse.push({ matcher: "Write|Edit", hooks: [{ type: "command", command: `node /config/harness-write-guard.mjs --root ${root}/Naila/Workspace || exit 2` }] })
+fs.writeFileSync(dst, JSON.stringify(s, null, 2))' /config/settings.json /config/harness-settings.json "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/docs-grant.mjs "$C/uploads" "${VAULT_EXCLUDE:-}"
+# The check, failing startup: no test-phase rule reaches the real vault; docs conversion is limited to the phase roots; the
+# deny holds the whole static floor (harness-settings.json, Agent and Bash among it) and, when the image has the capability
+# registry, the image's own FLOOR_DENY (a chart older than the image's floor fails closed); the allow holds nothing beyond the
+# static core tools; Write and Edit go through the write guard rooted at this phase's workspace root.
 node -e '
-const s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")), allow = s.permissions.allow, phase = process.argv[2]
+const fs = require("fs"), [f, phase, root, patch, capsjs] = process.argv.slice(1)
+const fail = (m) => { console.error(`harness-start: ${m}`); process.exit(2) }
+;(async () => {
+const s = JSON.parse(fs.readFileSync(f, "utf8")), allow = s.permissions.allow, deny = s.permissions.deny
 const bad = phase !== "test" ? [] : allow.filter((r) => {
   if (/^(Read|Glob|Grep|Edit|Write)$/.test(r)) return true
   const m = /^(?:Read|Glob|Grep|Edit|Write)\((.*)\)$/.exec(r); if (!m) return false
   const path = m[1], lit = path.split(/[*?[{]/)[0]
   return (path.startsWith("//vault/") || path === "//vault") ? !path.startsWith("//vault/Harness-test/") : "//vault/".startsWith(lit)
 })
-if (bad.length) { console.error(`harness-start: test-phase runs would be allowed into the real vault: ${bad.join(", ")}`); process.exit(2) }
-const docs = s.hooks.PreToolUse.filter((e) => new RegExp(`^(${e.matcher})$`).test("mcp__docs__convert"))
-if (docs.length !== 1 || !/ --only \S+( --exclude \S+)? \|\| exit 2$/.test(docs[0].hooks[0].command)) { console.error("harness-start: mcp__docs__convert is not limited to the phase roots"); process.exit(2) }
-if (phase === "real" && !/ --exclude \S+ \|\| exit 2$/.test(docs[0].hooks[0].command)) { console.error("harness-start: mcp__docs__convert does not exclude VAULT_EXCLUDE in the real phase"); process.exit(2) }' "$C/settings.json" "$HARNESS_PHASE"
+if (bad.length) fail(`test-phase runs would be allowed into the real vault: ${bad.join(", ")}`)
+const hooked = (tool) => s.hooks.PreToolUse.filter((e) => new RegExp(`^(${e.matcher})$`).test(tool)).flatMap((e) => e.hooks.map((x) => x.command))
+const docs = hooked("mcp__docs__convert")
+if (docs.length !== 1 || !/ --only \S+( --exclude \S+)? \|\| exit 2$/.test(docs[0])) fail("mcp__docs__convert is not limited to the phase roots")
+if (phase === "real" && !/ --exclude \S+ \|\| exit 2$/.test(docs[0])) fail("mcp__docs__convert does not exclude VAULT_EXCLUDE in the real phase")
+const h = JSON.parse(fs.readFileSync(patch, "utf8")).permissions
+const floor = [...h.deny, "Agent", "Bash"]
+if (fs.existsSync(capsjs)) {
+  const m = await import(capsjs)
+  if (!Array.isArray(m.FLOOR_DENY) || !m.FLOOR_DENY.length) fail(`${capsjs} has no FLOOR_DENY`)
+  floor.push(...m.FLOOR_DENY)
+}
+const missing = [...new Set(floor.filter((r) => !deny.includes(r)))]
+if (missing.length) fail(`the runs\x27 settings do not deny the floor: ${missing.join(", ")}`)
+const extra = allow.filter((r) => !h.allow.includes(r))
+if (extra.length) fail(`the static allow holds more than the core tools: ${extra.join(", ")}`)
+const guard = `node /config/harness-write-guard.mjs --root ${root}/Naila/Workspace || exit 2`
+for (const t of ["Write", "Edit"]) { const c = hooked(t); if (c.length !== 1 || c[0] !== guard) fail(`${t} does not go through the write guard rooted at ${root}/Naila/Workspace`) }
+})().catch((e) => fail(e.message))' "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/harness-settings.json /naila/packages/harness/dist/capabilities.js
 
 # Work dirs (the core runs each worker in HARNESS_HOME/work/<worker>): naila's holds her harness CLAUDE.md; each direct-line
 # worker's names its agent and model, as start.sh does for the RC lines.

@@ -120,7 +120,7 @@ spec:
       labels: { app: assistant-harness }
       # What the core and its runs are built from at start, including what harness-start.sh takes from the RC ConfigMap
       # (settings.json, direct-lines, finance-test-note). Not the RC-only mode files: an RC edit doesn't restart the harness.
-      annotations: { checksum/config: {{ print (.Files.Get "files/CLAUDE.md") (include "assistant.agentFiles" .) (include "assistant.harnessModeFiles" .) (toJson .Values.workers) (.Files.Get "files/harness-settings.json") (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/harness-start.sh") (include "assistant.settingsJson" .) (include "assistant.directLines" .) (include "assistant.testCopyNote" .) (toJson $h) .Values.claude.version .Values.finance.testBudget | sha256sum | trunc 12 }} }
+      annotations: { checksum/config: {{ print (.Files.Get "files/CLAUDE.md") (include "assistant.agentFiles" .) (include "assistant.harnessModeFiles" .) (toJson .Values.workers) (.Files.Get "files/harness-settings.json") (.Files.Get "files/harness-write-guard.mjs") (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/harness-start.sh") (include "assistant.settingsJson" .) (include "assistant.directLines" .) (include "assistant.testCopyNote" .) (toJson $h) .Values.claude.version .Values.finance.testBudget | sha256sum | trunc 12 }} }
     spec:
       automountServiceAccountToken: false
       shareProcessNamespace: true   # the login sidecar sees the core (status) and restarts it after a login; pause reaps exited runs
@@ -382,6 +382,13 @@ spec:
           annotations:
             summary: "No run metrics from the running harness core"
             description: "The harness core is running but its metrics on 3102 aren't scraped (not listening, or the scrape is blocked), so failing runs would go unnoticed. `kubectl -n {{ .Release.Namespace }} logs deploy/assistant-harness -c harness`"
+        - alert: NailaCapabilityMismatch
+          expr: sum by (namespace, reason) (increase(naila_harness_capability_mismatch_total{job="assistant-harness-core"}[30m])) > 0
+          for: 0m
+          labels: { severity: warning }
+          annotations:
+            summary: '{{ "{{" }} $value | printf "%.0f" {{ "}}" }} harness runs had tools that differ from their capability switches ({{ "{{" }} $labels.reason {{ "}}" }}) in the last 30 minutes'
+            description: "A run's tools did not match its worker's switches: an unexpected tool stops the run before it acts, a missing one leaves a switched-on capability without its tools (an agent file's tools list lacking it, or a CLI change). `kubectl -n {{ .Release.Namespace }} logs deploy/assistant-harness -c harness | grep 'capability mismatch'` names the worker and the tools."
 {{- if .Values.networkPolicy.enabled }}
 ---
 # Out: DNS, the internet on 443 (Anthropic, Discord, npm for the CLI install, Cloudflare Access keys), this phase's finance

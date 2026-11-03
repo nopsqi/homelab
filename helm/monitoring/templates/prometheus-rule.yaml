@@ -9,8 +9,9 @@ spec:
   groups:
     - name: homelab
       rules:
+        # Not the harness core's scrape: NailaHarnessDown (assistant chart) already reports a stopped core.
         - alert: TargetDown
-          expr: up == 0
+          expr: up{job!="assistant-harness-core"} == 0
           for: 5m
           labels:
             severity: critical

@@ -69,7 +69,9 @@ if grep -qF -- "$MCP_FINANCE_TOKEN" "$C"/agents/*.md; then die "a worker holds t
 # the finance reads, Finance/, every session's tool-results/) are dropped here, since a static allow would reach every run
 # (P28). Bare Write and Edit are not denied (a static bare deny beats a run's allow, so files.write could never work): they
 # stay closed unless the run's settings allow its own workspace, and the write guard holds them to
-# <VAULT_ROOT>/Naila/Workspace/<worker>/, rooted on its command line (P18). Docs conversion is limited to uploads and this
+# <VAULT_ROOT>/Naila/Workspace/<worker>/, rooted on its command line (P18); it also takes NotebookEdit (floor-denied), which
+# it always refuses. Roll back the chart together with the image: this chart on an image older than naila 82db432 leaves runs
+# without vault, finance or ops reads (safe, degraded), since only the per-run settings allow them. Docs conversion is limited to uploads and this
 # phase's vault (docs-grant.mjs --only, failing closed), minus VAULT_EXCLUDE in the real phase. Test phase: no file-tool rule
 # reaches the vault outside /vault/Harness-test. Real phase: no file tool reads a VAULT_EXCLUDE folder.
 case "$VAULT_ROOT" in /*) ;; *) die "VAULT_ROOT must be an absolute path, got '$VAULT_ROOT'" ;; esac
@@ -94,7 +96,7 @@ const docsExclude = excluded.length ? ` --exclude ${excluded.map((x) => `${root}
 const pre = (s.hooks ??= {}).PreToolUse ??= []
 s.hooks.PreToolUse = pre.filter((e) => !/docs|Write|Edit/.test(e.matcher ?? ""))
 s.hooks.PreToolUse.push({ matcher: "mcp__docs__convert", hooks: [{ type: "command", command: `node ${grant} --only ${uploads}:${root}${docsExclude} || exit 2` }] })
-s.hooks.PreToolUse.push({ matcher: "Write|Edit", hooks: [{ type: "command", command: `node /config/harness-write-guard.mjs --root ${root}/Naila/Workspace || exit 2` }] })
+s.hooks.PreToolUse.push({ matcher: "Write|Edit|NotebookEdit", hooks: [{ type: "command", command: `node /config/harness-write-guard.mjs --root ${root}/Naila/Workspace || exit 2` }] })
 fs.writeFileSync(dst, JSON.stringify(s, null, 2))' /config/settings.json /config/harness-settings.json "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/docs-grant.mjs "$C/uploads" "${VAULT_EXCLUDE:-}"
 # The check, failing startup: no test-phase rule reaches the real vault; docs conversion is limited to the phase roots; the
 # deny holds the whole static floor (harness-settings.json, Agent and Bash among it) and, when the image has the capability
@@ -128,7 +130,7 @@ if (missing.length) fail(`the runs\x27 settings do not deny the floor: ${missing
 const extra = allow.filter((r) => !h.allow.includes(r))
 if (extra.length) fail(`the static allow holds more than the core tools: ${extra.join(", ")}`)
 const guard = `node /config/harness-write-guard.mjs --root ${root}/Naila/Workspace || exit 2`
-for (const t of ["Write", "Edit"]) { const c = hooked(t); if (c.length !== 1 || c[0] !== guard) fail(`${t} does not go through the write guard rooted at ${root}/Naila/Workspace`) }
+for (const t of ["Write", "Edit", "NotebookEdit"]) { const c = hooked(t); if (c.length !== 1 || c[0] !== guard) fail(`${t} does not go through the write guard rooted at ${root}/Naila/Workspace`) }
 })().catch((e) => fail(e.message))' "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/harness-settings.json /naila/packages/harness/dist/capabilities.js
 
 # Work dirs (the core runs each worker in HARNESS_HOME/work/<worker>): naila's holds her harness CLAUDE.md; each direct-line

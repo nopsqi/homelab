@@ -1,4 +1,4 @@
-// PreToolUse hook for Write and Edit in the harness runs (files.write). A run may write only inside its own workspace,
+// PreToolUse hook for Write and Edit in the harness runs (files.write); NotebookEdit (floor-denied) is always refused. A run may write only inside its own workspace,
 // <root>/<worker>/, where root (<VAULT_ROOT>/Naila/Workspace) comes from --root on the hook's command line, rendered by
 // harness-start.sh, never from the run's env (P18), and the worker from HARNESS_WORKER, which the core sets per run.
 // The path is resolved first: no `..`, the real path of its nearest existing ancestor (so a link can't lead out), the
@@ -15,7 +15,8 @@ const deny = (why) => {
 }
 let input = ''
 for await (const chunk of process.stdin) input += chunk
-const plain = (p) => typeof p === 'string' && p.startsWith('/') && !p.includes('\0') && !p.split('/').some((s) => s === '..' || s === '.')
+// no `..` or `.` segment, no backslash, no control character (NUL, newline, …)
+const plain = (p) => typeof p === 'string' && p.startsWith('/') && !/[\\\x00-\x1f]/.test(p) && !p.split('/').some((s) => s === '..' || s === '.')
 try {
   const at = process.argv.indexOf('--root')
   const rootArg = at < 0 ? undefined : process.argv[at + 1]

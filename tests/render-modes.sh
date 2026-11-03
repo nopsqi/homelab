@@ -291,6 +291,10 @@ else:
         ("/vault/Naila/Decisions.md", W(f"{v}/Naila/Decisions.md"), R, N, "deny"),
         ("the workspace folder itself", W(f"{ws}/naila"), R, N, "deny"),
         ("a relative path", W("naila/x.md"), R, N, "deny"),
+        ("a backslash in the path", W(f"{ws}/naila/a\\..\\x.md"), R, N, "deny"),
+        ("a control character in the path", W(f"{ws}/naila/x\x01.md"), R, N, "deny"),
+        ("a newline in the path", W(f"{ws}/naila/x\n.md"), R, N, "deny"),
+        ("NotebookEdit, even in its own workspace", {"tool_name": "NotebookEdit", "tool_input": {"notebook_path": f"{ws}/naila/x.ipynb", "new_source": "x"}}, R, N, "deny"),
         ("a call without --root", W(f"{ws}/naila/x.md"), [], N, "deny"),
         ("--root with no value", W(f"{ws}/naila/x.md"), ["--root"], N, "deny"),
         ("a call without HARNESS_WORKER", W(f"{ws}/naila/x.md"), R, {}, "deny"),
@@ -448,7 +452,7 @@ for ph, r in (("test", test), ("real", real)):
                         ("WebFetch", "web-guard.mjs"), ("mcp__docs__convert", "docs-grant.mjs")):
         if not any(guard in c for c in hooked(tool)): bad.append(f"{tag}: the {guard} hook is missing for {tool}")
     wroot = f"{val(ctr(r, 'harness'), 'VAULT_ROOT')}/Naila/Workspace"
-    for tool in ("Write", "Edit"):   # P18: the root on the command line
+    for tool in ("Write", "Edit", "NotebookEdit"):   # P18: the root on the command line
         if hooked(tool) != [f"node /config/harness-write-guard.mjs --root {wroot} || exit 2"]: bad.append(f"P18: {tag}: the {tool} hooks are {hooked(tool)}, want the write guard with --root {wroot}")
     # harness-start's own check, run as rendered: it passes these settings and fails each weakened copy
     data = {**r[("ConfigMap", "assistant-claude")]["data"], **r[("ConfigMap", "assistant-harness")]["data"]}

@@ -28,9 +28,10 @@ done
 [ -n "${MCP_FINANCE_TOKEN:-}" ] && [ -n "${MCP_FINANCE_READ_TOKEN:-}" ] && [ -n "${MCP_OPS_TOKEN:-}" ] || die "a bearer is missing (MCP_FINANCE_TOKEN, MCP_FINANCE_READ_TOKEN, MCP_OPS_TOKEN)"
 
 [ "$(claude --version 2>/dev/null | cut -d' ' -f1)" = "$CLAUDE_VERSION" ] || npm i -g @anthropic-ai/claude-code@$CLAUDE_VERSION
-# The Runner relies on these; an older CLI would fail every run in a less obvious way.
+# The Runner relies on these; an older CLI would fail every run in a less obvious way. --disallowedTools takes the write tools
+# from a run another worker asked (P25): without it such a run would keep them, so fail closed.
 help=$(claude --help 2>&1 </dev/null) || true
-for f in --tools --permission-mode --strict-mcp-config --mcp-config; do
+for f in --tools --permission-mode --strict-mcp-config --mcp-config --disallowedTools; do
   printf '%s\n' "$help" | grep -qE -- "(^|[[:space:],])$f([[:space:],=]|\$)" || die "claude $CLAUDE_VERSION has no $f flag"
 done
 

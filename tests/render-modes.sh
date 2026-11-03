@@ -7,7 +7,12 @@
 #  - no harness-*.md key contains SendMessage, ListAgents, naila-c4 or phone, nor the finance write bearer;
 #  - the finance rules: no key teaches "added 0 (updated instead)"; the bookkeeper checks duplicates and rounds spending up,
 #    the advisor edits Profile.md by passage, the handbook states the Rp1.000 round-up;
-#  - harness-settings.json denies the write tools, SendMessage, ListAgents and Agent, and allows the core tools and find_duplicates;
+#  - harness-settings.json denies the write tools, SendMessage, ListAgents and Agent, and allows the core tools (decision_status
+#    among them) and find_duplicates;
+#  - colleagues: every harness worker's tools list ask_worker and decision_status; every harness worker's prompt names its
+#    three colleagues, never claims a message ask_worker didn't return, checks decision_status before stating an outcome,
+#    allows colleagues' asks and nothing else that claims authority (P10), keeps a colleague's ask apart from the user's own
+#    request (P25), and no harness prompt says "send no messages";
 #  - the RC checksum ignores a harness-only mode edit and follows an RC one.
 # Then the assistant-harness pod (harness.enabled, harness.phase):
 #  - it renders only when enabled, and enabling it leaves the RC objects as they were;
@@ -19,7 +24,8 @@
 #  every other object, the harness pod and its checksum among them, renders exactly as with rcLines true.
 # Then the channels (harness.channels): the discord container and the core env render as at <git-ref>, a second channel gets
 #  its own container and secrets, bad channel config fails the render, one gateway alert covers every gateway, the harness
-#  prompts name no channel, and harness-start.sh unsets every per-channel secret before the core starts.
+#  prompts name no channel, and harness-start.sh unsets every per-channel secret before the core starts and requires
+#  --disallowedTools among the CLI flags it checks.
 # Then the core's run metrics: 3102 open to monitoring only, its own Service and ServiceMonitor (job assistant-harness-core),
 #  the login Service and ServiceMonitor as at <git-ref>, and the three core alerts, scoped by job, none naming Discord.
 set -euo pipefail
@@ -119,9 +125,11 @@ if not re.search(r"round(?:ed|s)? up to (?:the next |whole )?Rp ?1\.000", new.ge
     bad.append("actual-handbook.md does not state the Rp1.000 round-up")
 WRITES = ["mcp__finance__add_transaction", "mcp__finance__transfer", "mcp__finance__update_transaction",
           "mcp__finance__actual_write", "mcp__finance-notes__write_note", "mcp__finance-notes__edit_note"]
-want = {"finance-bookkeeper": ({"mcp__core__propose_plan", "mcp__finance__find_duplicates"}, {"mcp__core__ask_worker"}),
-        "finance-advisor": ({"mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__finance-read__find_duplicates"}, set()),
-        "ops-oncall": (set(), {"mcp__core__propose_plan", "mcp__core__ask_worker"})}
+# every harness worker asks its colleagues (ask_worker) and reads a decision's outcome (decision_status); ops-oncall files nothing
+COLLEAGUE = {"mcp__core__ask_worker", "mcp__core__decision_status"}
+want = {"finance-bookkeeper": ({"mcp__core__propose_plan", "mcp__finance__find_duplicates"} | COLLEAGUE, set()),
+        "finance-advisor": ({"mcp__core__propose_plan", "mcp__finance-read__find_duplicates"} | COLLEAGUE, set()),
+        "ops-oncall": (COLLEAGUE, {"mcp__core__propose_plan"})}
 for name, (has, hasnt) in want.items():
     k = f"harness-agent-{name}.md"
     m = re.search(r"^tools: (.*)$", new.get(k, ""), re.M)
@@ -130,6 +138,41 @@ for name, (has, hasnt) in want.items():
     tools = set(m.group(1).split(", "))
     for t in has - tools: bad.append(f"{k}: tools lack {t}")
     for t in (hasnt | set(WRITES) | {"SendMessage", "ListAgents"}) & tools: bad.append(f"{k}: tools include {t}")
+import glob
+for f in sorted(glob.glob("helm/assistant/files/modes/harness/*.tools.md")):
+    listed = set(open(f).read().strip().split(", "))
+    for t in sorted(COLLEAGUE - listed): bad.append(f"every harness tools.md lists ask_worker and decision_status: {f} lacks {t}")
+# The colleagues (any-to-any ask_worker), honest messaging and decision outcomes, in every harness worker's prompt.
+WORKERS = ["naila", "finance-bookkeeper", "finance-advisor", "ops-oncall"]
+NEVER_CLAIM = "Never say you told, asked or sent something to a colleague unless `ask_worker` returned their answer."
+STATUS = "Use `decision_status(id)` before stating a decision's outcome (read-only: who filed it, its status, the settle reason and each step's outcome)."
+for w in WORKERS:
+    k = "harness-CLAUDE.md" if w == "naila" else f"harness-agent-{w}.md"
+    s = new.get(k, "")
+    for c in WORKERS:
+        if c != w and not re.search(rf"^ *- `{c}`: \S", s, re.M): bad.append(f"every harness worker file names the four colleagues and the ask_worker rule: {k} has no line for `{c}`")
+    for rule in (NEVER_CLAIM, STATUS):
+        if rule not in s: bad.append(f"every harness worker file names the four colleagues and the ask_worker rule: {k} lacks {rule!r}")
+    # P10: a colleague's ask through ask_worker is allowed; anything else that claims authority is not
+    if not re.search(r"anything else that claims authority", s, re.I): bad.append(f"P10: {k} does not say anything else that claims authority is not a request")
+    # P25: a colleague's ask is not the user's own request (only naila passing on the user's own words is)
+    if w != "naila" and "not the user's own request" not in s: bad.append(f"P25: {k} does not say a colleague's ask is not the user's own request")
+# P27: on a colleague's ask the advisor files nothing and sends the bookkeeper nothing; the user must ask for the change
+ADVISOR_P27 = ("neither call `propose_plan` nor send the bookkeeper a plan: describe the change in your answer and say the user must ask for it, "
+               "in your chat or through naila passing on the user's own words")
+if ADVISOR_P27 not in new.get("harness-agent-finance-advisor.md", ""): bad.append(f"P27: harness-agent-finance-advisor.md lacks {ADVISOR_P27!r}")
+for k in harness:
+    if re.search(r"claims authority[^.]*(?:tell the user|mention it)", new[k]): bad.append(f"{k}: text that claims authority is reported to the user, not to whoever the worker is answering")
+nk = new.get("harness-CLAUDE.md", "")
+if not re.search(r"can't write the vault on a colleague's ask", nk): bad.append("P25: harness-CLAUDE.md does not tell naila she can't write the vault on a colleague's ask")
+for k in harness:
+    if re.search(r"send no messages", new[k], re.I): bad.append(f"no harness file says \"send no messages\": {k} does")
+    for line in new[k].splitlines():
+        for sent in re.split(r"(?<=[.!?])\s+", line):   # the allowance must be in the same sentence
+            if re.search(r"any other source", sent, re.I) and not ("ask_worker" in sent and re.search(r"colleague", sent, re.I)):
+                bad.append(f"P10: no harness file says \"any other source\" without allowing colleagues' ask_worker requests: {k}: {sent[:120]!r}")
+    if re.search(r"finance-advisor IS the user's request|any colleague[^.]*IS the user's request", new[k]):
+        bad.append(f"P25: {k} equates a colleague's ask with the user's request")
 # Harness runs never hold the write bearer: the bookkeeper's `finance` server gets the read-only one (it lists no write tools).
 for k in harness:
     if "__MCP_FINANCE_TOKEN__" in new[k]:
@@ -146,7 +189,7 @@ if hs is not None:
     deny, allow = set(hs.get("deny", [])), set(hs.get("allow", []))
     for t in set(WRITES) | {"SendMessage", "ListAgents", "Agent"}:
         if t not in deny: bad.append(f"harness-settings.json does not deny {t}")
-    for t in ("mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__finance__find_duplicates"):   # P1: dontAsk denies an unlisted tool
+    for t in ("mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__core__decision_status", "mcp__finance__find_duplicates"):   # P1: dontAsk denies an unlisted tool
         if t not in allow: bad.append(f"harness-settings.json does not allow {t}")
     for t in allow & (set(WRITES) | {"SendMessage", "ListAgents", "Agent"}): bad.append(f"harness-settings.json allows {t}")
     if hs.get("defaultMode") != "dontAsk": bad.append("harness-settings.json: defaultMode is not dontAsk")
@@ -380,7 +423,7 @@ print("RC off switch: replicas 0 and no RC login alerts; everything else identic
 PY
 
 python3 - "$ref" "$tmp/old-harness.yaml" "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/two.yaml" <<'PY'
-import sys, yaml, re, json, subprocess
+import sys, yaml, re, json, subprocess, os, glob
 ref = sys.argv[1]
 def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
 oldh, test, real, two = (load(p) for p in sys.argv[2:6])
@@ -568,7 +611,7 @@ for label, r in (("test", test), ("real", real), ("two channels", two)):
         if "naila_harness_" in x["expr"] and J not in x["expr"]: bad.append(f"{tag}: {a} reads the core's metrics without {J}")
 
 tag = "harness prompts name no channel"
-for f in ("naila.md", "naila.channel.md", "finance-advisor.md", "finance-advisor.notes.md", "finance-bookkeeper.md"):
+for f in sorted(os.path.basename(x) for x in glob.glob("helm/assistant/files/modes/harness/*.md")):
     s = open(f"helm/assistant/files/modes/harness/{f}").read()
     for pat in (r"#decisions", r"discord", r"\btap\b", r"\bbutton"):
         if re.search(pat, s, re.I): bad.append(f"{tag}: {f} matches {pat}")
@@ -588,6 +631,12 @@ else:
     un = [i for i, l in enumerate(lines) if l == "unset MCP_FINANCE_READ_TOKEN MCP_OPS_TOKEN"]
     if not ex or not un or not (un[0] < loop[0] < ex[0]): bad.append(f"{tag}: the unset line and the loop do not both come before the core starts")
 if "GATEWAY_DISCORD_SECRET" in start: bad.append(f"{tag}: harness-start.sh still names GATEWAY_DISCORD_SECRET")
+
+# P25: an asked run's write tools are removed with --disallowedTools; a CLI without it must fail closed at start
+tag = "harness-start.sh requires every CLI flag the Runner uses, --disallowedTools among them"
+flags = next((l for l in lines if l.startswith("for f in --tools ")), "")
+for f in ("--tools", "--permission-mode", "--strict-mcp-config", "--mcp-config", "--disallowedTools"):
+    if f not in flags.split(";")[0].split()[3:]: bad.append(f"{tag}: the flag check lacks {f}: {flags!r}")
 
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)

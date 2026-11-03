@@ -794,6 +794,18 @@ flags = next((l for l in lines if l.startswith("for f in --tools ")), "")
 for f in ("--tools", "--permission-mode", "--strict-mcp-config", "--mcp-config", "--disallowedTools", "--settings"):
     if f not in flags.split(";")[0].split()[3:]: bad.append(f"{tag}: the flag check lacks {f}: {flags!r}")
 
+# The core's per-run files.read rule opens //home/claude/.claude/projects/<own slug>/*/tool-results/** (and the floor names
+# paths under /home/claude/.claude): the runs' CLAUDE_CONFIG_DIR, where Claude Code saves tool results, must be exactly that.
+tag = "the runs' CLAUDE_CONFIG_DIR is /home/claude/.claude (the core's tool-results and floor paths assume it)"
+for label, r in (("test", test), ("real", real)):
+    h = ctr(r, "harness") or {}
+    if "CLAUDE_CONFIG_DIR" in envmap(h): bad.append(f"{tag}: the harness container sets CLAUDE_CONFIG_DIR itself ({label})")
+    sets = [l for l in lines if re.search(r"\bCLAUDE_CONFIG_DIR=", l)]
+    cl = [l for l in lines if l.startswith("C=")]
+    if len(sets) != 1 or len(cl) != 1: bad.append(f"{tag}: harness-start.sh sets C {len(cl)} times and CLAUDE_CONFIG_DIR {len(sets)} times"); continue
+    p = subprocess.run(["bash", "-c", f'{cl[0]}; {sets[0]}; echo "$CLAUDE_CONFIG_DIR"'], env={"PATH": "/usr/bin:/bin", "HOME": val(h, "HOME") or ""}, capture_output=True, text=True)
+    if p.stdout.strip() != "/home/claude/.claude": bad.append(f"{tag}: it is {p.stdout.strip()!r} ({label})")
+
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
 print("channels: discord renders as at the ref; a second channel is its own; bad config fails; one gateway alert; prompts and start script channel-free")

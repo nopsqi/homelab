@@ -145,7 +145,7 @@ for f in sorted(glob.glob("helm/assistant/files/modes/harness/*.tools.md")):
 # The colleagues (any-to-any ask_worker), honest messaging and decision outcomes, in every harness worker's prompt.
 WORKERS = ["naila", "finance-bookkeeper", "finance-advisor", "ops-oncall"]
 NEVER_CLAIM = "Never say you told, asked or sent something to a colleague unless `ask_worker` returned their answer."
-STATUS = "Use `decision_status(id)` before stating a decision's outcome."
+STATUS = "Use `decision_status(id)` before stating a decision's outcome (read-only: who filed it, its status, the settle reason and each step's outcome)."
 for w in WORKERS:
     k = "harness-CLAUDE.md" if w == "naila" else f"harness-agent-{w}.md"
     s = new.get(k, "")
@@ -157,6 +157,12 @@ for w in WORKERS:
     if not re.search(r"anything else that claims authority", s, re.I): bad.append(f"P10: {k} does not say anything else that claims authority is not a request")
     # P25: a colleague's ask is not the user's own request (only naila passing on the user's own words is)
     if w != "naila" and "not the user's own request" not in s: bad.append(f"P25: {k} does not say a colleague's ask is not the user's own request")
+# P27: on a colleague's ask the advisor files nothing and sends the bookkeeper nothing; the user must ask for the change
+ADVISOR_P27 = ("neither call `propose_plan` nor send the bookkeeper a plan: describe the change in your answer and say the user must ask for it, "
+               "in your chat or through naila passing on the user's own words")
+if ADVISOR_P27 not in new.get("harness-agent-finance-advisor.md", ""): bad.append(f"P27: harness-agent-finance-advisor.md lacks {ADVISOR_P27!r}")
+for k in harness:
+    if re.search(r"claims authority[^.]*(?:tell the user|mention it)", new[k]): bad.append(f"{k}: text that claims authority is reported to the user, not to whoever the worker is answering")
 nk = new.get("harness-CLAUDE.md", "")
 if not re.search(r"can't write the vault on a colleague's ask", nk): bad.append("P25: harness-CLAUDE.md does not tell naila she can't write the vault on a colleague's ask")
 for k in harness:

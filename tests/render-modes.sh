@@ -18,6 +18,9 @@
 #    announced there and undoable: P23, P29) and propose_capability_change, only naila's names engine_info, the ceilings hold
 #    the self_note tools and never engine_info (P19), harness-settings.json allows them and engine_info (P1), and the limits
 #    sentence is the slot <!-- mode:limits --> (RC CLAUDE.md byte-identical, harness mode points at engine_info: P21).
+#  - plan 5 Task 4: the advisor works by its method (snapshot and Profile.md first, rupiah impact, Rp50.000, verify before
+#    asserting, new evidence) and does the monthly review (one write_note for Finance/Reviews/); "Reply short" is gone; naila,
+#    the bookkeeper and ops-oncall each verify before asserting; snapshot is a budget read in both finance ceilings (P19).
 # Then the assistant-harness pod (harness.enabled, harness.phase):
 #  - it renders only when enabled, and enabling it leaves the RC objects as they were;
 #  - test phase points at assistant-finance-test and /vault/Harness-test, real phase at assistant-finance and /vault;
@@ -155,8 +158,8 @@ STATIC_ALLOW = {"mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__core__
 # every harness worker asks its colleagues (ask_worker) and reads a decision's outcome (decision_status); ops-oncall's
 # propose_plan is in its ceiling (budget.write-plans applies to it) and stays off by its switch
 COLLEAGUE = {"mcp__core__ask_worker", "mcp__core__decision_status"}
-want = {"finance-bookkeeper": ({"mcp__core__propose_plan", "mcp__finance__find_duplicates"} | COLLEAGUE, set()),
-        "finance-advisor": ({"mcp__core__propose_plan", "mcp__finance-read__find_duplicates"} | COLLEAGUE, set()),
+want = {"finance-bookkeeper": ({"mcp__core__propose_plan", "mcp__finance__find_duplicates", "mcp__finance__snapshot"} | COLLEAGUE, set()),
+        "finance-advisor": ({"mcp__core__propose_plan", "mcp__finance-read__find_duplicates", "mcp__finance-read__snapshot"} | COLLEAGUE, set()),
         "ops-oncall": (COLLEAGUE, set())}
 for name, (has, hasnt) in want.items():
     k = f"harness-agent-{name}.md"
@@ -175,7 +178,7 @@ for f in sorted(glob.glob("helm/assistant/files/modes/harness/*.tools.md")):
 # packages/harness/src/capabilities.ts (CAPABILITIES, WORKER_SERVERS): an MCP tool counts for a worker only when the worker
 # has its server (budget.read: mcp__finance__* for the bookkeeper, mcp__finance-read__* for the advisor). Each later task
 # that adds a tool updates the ceiling and CEILING_CORE / CAPS here.
-BUDGET_READS = ["accounts", "categories", "recent", "spending_by_category", "payee_history", "actual_read", "find_duplicates"]
+BUDGET_READS = ["accounts", "categories", "recent", "spending_by_category", "payee_history", "actual_read", "find_duplicates", "snapshot"]
 CAPS = {"files.read": ["Read", "Glob", "Grep"], "files.write": ["Write", "Edit"], "web.search": ["WebSearch"], "web.fetch": ["WebFetch"],
         "messaging.ask": ["mcp__core__ask_worker"], "budget.read": [f"mcp__{s}__{t}" for s in ("finance", "finance-read") for t in BUDGET_READS],
         "budget.write-plans": ["mcp__core__propose_plan"], "vault.read": [f"mcp__vault__{t}" for t in ("tree", "grep", "read", "open_tasks")],
@@ -215,6 +218,19 @@ for w in WORKERS:
 ADVISOR_P27 = ("neither call `propose_plan` nor send the bookkeeper a plan: describe the change in your answer and say the user must ask for it, "
                "in your chat or through naila passing on the user's own words")
 if ADVISOR_P27 not in new.get("harness-agent-finance-advisor.md", ""): bad.append(f"P27: harness-agent-finance-advisor.md lacks {ADVISOR_P27!r}")
+# plan 5 Task 4: the advisor works by a method (snapshot and Finance/Profile.md first, ranked by rupiah impact, Rp50.000 not
+# worth the effort, verify before asserting, "my assumption", a position held unless new evidence) and does the monthly review
+# (naila review.ts reviewRequest starts "Monthly review of"; one write_note for Finance/Reviews/<YYYY-MM>.md); "Reply short"
+# is gone from both renders; naila, the bookkeeper and ops-oncall each verify before asserting
+ADVISOR_METHOD = ("snapshot", "Finance/Profile.md", "rupiah impact", "Rp50.000", "Verify before asserting", "my assumption", "new evidence",
+                  "Monthly review of", "Finance/Reviews/", "edit_note")
+for w in ADVISOR_METHOD:
+    if w not in new.get("harness-agent-finance-advisor.md", ""): bad.append(f"plan 5: harness-agent-finance-advisor.md does not name {w!r}")
+for k in ("harness-agent-finance-advisor.md", "agent-finance-advisor.md"):
+    if k not in new: bad.append(f"plan 5: {k} is not in the render")
+    elif "Reply short" in new[k]: bad.append(f"plan 5: {k} still says 'Reply short'")
+for k in ("harness-CLAUDE.md", "harness-agent-finance-bookkeeper.md", "harness-agent-ops-oncall.md"):
+    if "Verify before asserting:" not in new.get(k, ""): bad.append(f"plan 5: {k} lacks 'Verify before asserting:'")
 for k in harness:
     if re.search(r"claims authority[^.]*(?:tell the user|mention it)", new[k]): bad.append(f"{k}: text that claims authority is reported to the user, not to whoever the worker is answering")
 # Task 16: every worker keeps its own notes (only on the user's ask in its own conversation, P23; every change announced

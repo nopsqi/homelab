@@ -130,7 +130,10 @@ spec:
         # uploads (HARNESS_UPLOADS_ROOT): it makes uploads/<channel>/ itself (0750, its own uid) and the per-upload folders in it,
         # so no channel folder is made here. A channel folder from before (uploads/discord was 2770 for the gateway) and
         # uploads/ itself end 0750 with setgid cleared (GNU chmod keeps it on a directory); links are not followed, and nothing
-        # below a channel folder is touched. `-exec … ;` rather than `+`: busybox (the naila image is Alpine) always has it.
+        # below a channel folder is touched. `-exec … ;` rather than `+`: busybox (the naila image is Alpine) always has it, and
+        # its failure only makes that test false, never find's exit code. On purpose: a channel folder not owned by uid 1000
+        # (chmod refused) keeps its mode, with chmod's error in the init log, instead of a crash-looping pod. The proof that the
+        # modes took is the deploy's live check, `stat -c '%a %u' ~/.claude/uploads ~/.claude/uploads/*` in the harness container.
         - name: naila-tools
           image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
           command: ["sh", "-c", "cp -a /app/. /naila/ && mkdir -p {{ $up }} && find {{ $up }} -maxdepth 1 -type d -exec chmod 750 {} \\; -exec chmod g-s {} \\;"]
@@ -199,7 +202,10 @@ spec:
         # messages and confirmations to the core on 127.0.0.1. Its own uid, not the core's: the pod shares one process namespace
         # (so login can restart the core), and only a different uid keeps /proc/<core pid>/{environ,root} (the write bearer, the
         # login) closed to a process facing the outside. It mounts no volume: files the user sends are streamed to the core
-        # (POST /api/v2/uploads), which alone writes them under uploads/<channel>/ (Ruling 16).
+        # (POST /api/v2/uploads), which alone writes them under uploads/<channel>/. That is no file isolation: the docs sidecar
+        # listens on 127.0.0.1:3002 with no bearer, and every container of the pod, this one included, shares that loopback, so
+        # it can ask docs to convert any upload or vault file docs reads. docs-grant.mjs (Ruling 16) governs only the runs' tool
+        # calls. A docs bearer is a separate task.
         - name: {{ $ch.name }}
           image: {{ $.Values.image.repository }}:{{ $.Values.image.tag }}
           command: ["node", "packages/channels/{{ $ch.name }}/dist/main.js"]

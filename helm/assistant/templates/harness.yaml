@@ -142,6 +142,18 @@ spec:
             - { name: naila, mountPath: /naila }
             - { name: home, mountPath: /home/claude }
           resources: { requests: { cpu: 10m, memory: 32Mi }, limits: { memory: 256Mi } }
+        # The docs sidecar's bearer (Ruling 19): every container of the pod shares 127.0.0.1, the gateways facing the internet
+        # included, so docs answers only `Authorization: Bearer <token>`. A fresh token at every pod start: 32 bytes from
+        # /dev/urandom as 64 hex characters, mode 0440 (uid and group 1000: the core reads it as owner, docs through fsGroup
+        # 1000), in an in-memory emptyDir that only the core and docs mount. No Secret and nothing in git; nothing prints it. A
+        # token it can't make in full fails this container, and the pod with it. A rerun (the pod's sandbox recreated, the
+        # emptyDir kept) replaces the read-only file of the run before.
+        - name: docs-token
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          command: ["sh", "-c", "rm -f /run/docs-auth/token && umask 0337 && head -c 32 /dev/urandom | od -An -v -tx1 | tr -d ' \\n' > /run/docs-auth/token && chmod 0440 /run/docs-auth/token && [ \"$(wc -c < /run/docs-auth/token)\" -eq 64 ]"]
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
+          volumeMounts: [{ name: docs-auth, mountPath: /run/docs-auth }]
+          resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { memory: 32Mi } }
       containers:
         - name: harness
           image: node:24-bookworm@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413
@@ -184,6 +196,7 @@ spec:
             {{- end }}
             - { name: GATEWAY_SECRETS, value: {{ join "," $entries | quote }} }
             - { name: HARNESS_CHANNELS, value: {{ toJson $specs | quote }} }
+            - { name: DOCS_TOKEN_FILE, value: /run/docs-auth/token }   # docs' bearer: the core puts it into each run's MCP config alone
           ports: [{ name: core-metrics, containerPort: 3102 }]
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           volumeMounts:
@@ -191,6 +204,7 @@ spec:
             - { name: config, mountPath: /config, readOnly: true }
             - { name: handbooks, mountPath: /handbooks, readOnly: true }
             - { name: naila, mountPath: /naila, readOnly: true }
+            - { name: docs-auth, mountPath: /run/docs-auth, readOnly: true }
             - name: vault
               mountPath: {{ $vaultRoot }}
               {{- with $vaultSub }}
@@ -202,10 +216,9 @@ spec:
         # messages and confirmations to the core on 127.0.0.1. Its own uid, not the core's: the pod shares one process namespace
         # (so login can restart the core), and only a different uid keeps /proc/<core pid>/{environ,root} (the write bearer, the
         # login) closed to a process facing the outside. It mounts no volume: files the user sends are streamed to the core
-        # (POST /api/v2/uploads), which alone writes them under uploads/<channel>/. That is no file isolation: the docs sidecar
-        # listens on 127.0.0.1:3002 with no bearer, and every container of the pod, this one included, shares that loopback, so
-        # it can ask docs to convert any upload or vault file docs reads. docs-grant.mjs (Ruling 16) governs only the runs' tool
-        # calls. A docs bearer is a separate task.
+        # (POST /api/v2/uploads), which alone writes them under uploads/<channel>/. It shares the pod's loopback with the docs
+        # sidecar (127.0.0.1:3002), which answers only the bearer in the docs-auth volume (Ruling 19); this container doesn't
+        # mount it, and its own uid keeps /proc/<pid>/root of the core and docs closed to it.
         - name: {{ $ch.name }}
           image: {{ $.Values.image.repository }}:{{ $.Values.image.tag }}
           command: ["node", "packages/channels/{{ $ch.name }}/dist/main.js"]
@@ -241,6 +254,7 @@ spec:
             - { name: HOME, value: /tmp }
             - { name: DOCS_ROOTS, value: "/home/claude/.claude/uploads:{{ $vaultRoot }}" }
             - { name: DOCS_PORT, value: "3002" }
+            - { name: DOCS_TOKEN_FILE, value: /run/docs-auth/token }   # every request needs it as a bearer; no usable token: all refused
             - { name: PIP_DISABLE_PIP_VERSION_CHECK, value: "1" }
           readinessProbe: { exec: { command: ["python", "-c", "import socket; socket.create_connection(('127.0.0.1', 3002), 2)"] }, periodSeconds: 15 }
           # Its own uid, as in the RC pod: the shared process namespace leaves other containers' /proc/<pid> open to the same uid.
@@ -259,6 +273,7 @@ spec:
               {{- end }}
             - { name: docs-venv, mountPath: /venv }
             - { name: docs-tmp, mountPath: /tmp }
+            - { name: docs-auth, mountPath: /run/docs-auth, readOnly: true }
           resources: { requests: { cpu: 10m, memory: 128Mi }, limits: { memory: 768Mi } }
         # Login page for this pod's Claude login (naila.nopsqi.dev/harness, behind Cloudflare Access) and its metrics,
         # labelled pod="harness". After a login it restarts the core (RESTART_MATCH) through the shared process namespace.
@@ -290,6 +305,7 @@ spec:
         - { name: naila, emptyDir: {} }
         - { name: docs-venv, emptyDir: {} }
         - { name: docs-tmp, emptyDir: {} }
+        - { name: docs-auth, emptyDir: { medium: Memory, sizeLimit: 1Mi } }   # the docs bearer: in RAM, gone with the pod
         - { name: vault, persistentVolumeClaim: { claimName: {{ if eq .Values.vault.mode "smb" }}assistant-vault-smb{{ else }}assistant-vault{{ end }} } }
 ---
 apiVersion: v1

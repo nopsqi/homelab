@@ -167,20 +167,29 @@ done < /config/direct-lines
 # engine_info's models (naila 3ae8cbb): the chart's per-worker model of each direct line, as comma-separated worker=model pairs
 export HARNESS_MODELS="$(awk 'NF >= 2 { printf "%s%s=%s", (n++ ? "," : ""), $1, $2 }' /config/direct-lines)"
 
-# User-scope MCP: only vault (rooted at this phase's vault) and docs; projects: only the trusted work dirs. Written to
-# ~/.claude.json and copied to ~/.claude/.claude.json, where Claude Code looks once CLAUDE_CONFIG_DIR is set.
+# User-scope MCP: only vault (rooted at this phase's vault); projects: only the trusted work dirs. Written to ~/.claude.json
+# and copied to ~/.claude/.claude.json, where Claude Code looks once CLAUDE_CONFIG_DIR is set.
+# Docs (Ruling 19): the sidecar answers only the bearer in /run/docs-auth/token (DOCS_TOKEN_FILE), and the core alone puts
+# it, with the docs server, into each run's own 0600 MCP config (floor-denied to the run), so docs has no user-scope entry
+# and the bearer never lands on the home volume, in an env or on a command line. An image older than that core (no
+# dist/docs-auth.js, P24) runs the old docs server too, which takes no bearer: it keeps the user-scope entry with none, as before.
 claude mcp remove vault --scope user >/dev/null 2>&1 || true
 vault_env=(-e VAULT_ROOT="$VAULT_ROOT" -e TZ="$TZ")
 [ -z "${VAULT_EXCLUDE:-}" ] || vault_env+=(-e VAULT_EXCLUDE="$VAULT_EXCLUDE")   # real phase: the test folder stays out
 claude mcp add vault --scope user "${vault_env[@]}" -- node "$VAULT_SERVER" >/dev/null
 claude mcp remove docs --scope user >/dev/null 2>&1 || true
-claude mcp add --transport http docs --scope user http://127.0.0.1:3002/mcp >/dev/null
+DOCS_BY_CORE=1; [ -f /naila/packages/harness/dist/docs-auth.js ] || DOCS_BY_CORE=0
+if [ "$DOCS_BY_CORE" = 0 ]; then
+  echo "harness-start: this naila image predates the docs bearer (Ruling 19): the runs keep the user-scope docs entry, with no bearer"
+  claude mcp add --transport http docs --scope user http://127.0.0.1:3002/mcp >/dev/null
+fi
 node -e '
-const fs = require("fs"), [f, ...dirs] = process.argv.slice(1), c = JSON.parse(fs.readFileSync(f, "utf8"))
-if (!c.mcpServers?.vault || !c.mcpServers?.docs) { console.error("harness-start: claude mcp add did not write the vault and docs servers"); process.exit(2) }
-c.mcpServers = { vault: c.mcpServers.vault, docs: c.mcpServers.docs }
+const fs = require("fs"), [f, byCore, ...dirs] = process.argv.slice(1), c = JSON.parse(fs.readFileSync(f, "utf8"))
+const want = byCore === "1" ? ["vault"] : ["vault", "docs"]
+if (want.some((s) => !c.mcpServers?.[s])) { console.error(`harness-start: claude mcp add did not write the ${want.join(" and ")} server(s)`); process.exit(2) }
+c.mcpServers = Object.fromEntries(want.map((s) => [s, c.mcpServers[s]]))
 c.projects = Object.fromEntries(dirs.map((d) => [d, { hasTrustDialogAccepted: true }]))
-fs.writeFileSync(f, JSON.stringify(c, null, 2))' "$HOME/.claude.json" "${dirs[@]}"
+fs.writeFileSync(f, JSON.stringify(c, null, 2))' "$HOME/.claude.json" "$DOCS_BY_CORE" "${dirs[@]}"
 cp "$HOME/.claude.json" "$C/.claude.json"
 
 # The core reads only its own env; the workers' bearers live in the agent files now, and each channel's secret is in

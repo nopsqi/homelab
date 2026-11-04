@@ -524,16 +524,53 @@ for ph, x in phases.items():
     if "discord:$(GATEWAY_DISCORD_SECRET)" not in (val(h, "GATEWAY_SECRETS") or "").split(","): bad.append(f"{tag}: GATEWAY_SECRETS is {val(h, 'GATEWAY_SECRETS')!r}")
     if key(ctr(r, "discord"), "GATEWAY_SECRET") != "GATEWAY_DISCORD_SECRET": bad.append(f"{tag}: discord GATEWAY_SECRET from {key(ctr(r, 'discord'), 'GATEWAY_SECRET')!r}")
     # uids: the shared process namespace opens /proc/<pid>/{environ,root} to the same uid, so only harness and login run as 1000
-    # (init containers finish before any of them start); the gateway is 1002 in group 1000, writing into a setgid 2770 folder.
+    # (init containers finish before any of them start); the gateway is 1002 in group 1000.
     psc = pod(r).get("securityContext", {})
     uid = lambda c: c.get("securityContext", {}).get("runAsUser", psc.get("runAsUser"))
     dsc = ctr(r, "discord").get("securityContext", {})
     if (dsc.get("runAsUser"), dsc.get("runAsGroup")) != (1002, 1000): bad.append(f"discord container runs as {dsc.get('runAsUser')}:{dsc.get('runAsGroup')}, want 1002:1000 ({ph})")
     for c in pod(r)["containers"]:
         if c["name"] not in ("harness", "login") and uid(c) == 1000: bad.append(f"{c['name']} runs as uid 1000, the core's uid ({ph})")
-    init = " ".join(" ".join(c.get("command", [])) for c in pod(r).get("initContainers", []))
-    if "chmod 2770 /home/claude/.claude/uploads/discord" not in init or "chmod 750 /home/claude/.claude/uploads " not in init:
-        bad.append(f"uploads/discord is not created setgid group-writable (2770) under a group-traversable uploads/ (750) ({ph})")
+    # Task 13: the core owns uploads (it makes uploads/<channel> itself, 0750, and its <id> folders). The init container, run as
+    # rendered on a temp home: uploads/ ends 0750 and no per-channel folder is made; an existing channel folder (uploads/discord
+    # was 2770 for the gateway) ends 0750, setgid cleared; nothing below a channel folder and nothing behind a link is touched.
+    tag = f"the init container creates no per-channel uploads folder ({ph})"
+    inits = pod(r).get("initContainers", [])
+    sh = (inits[0].get("command") or [None, None, ""])[2] if len(inits) == 1 else ""
+    if "2770" in sh or re.search(r"mkdir[^&;]*/uploads/", sh): bad.append(f"{tag}: the init command is {sh!r}")
+    import stat as st_, tempfile as tf_, subprocess as sp_
+    def run_init(prepare):
+        t = os.path.realpath(tf_.mkdtemp()); hc, app, nl = f"{t}/home", f"{t}/app", f"{t}/naila"
+        for d in (hc, app, nl): os.makedirs(d)
+        open(f"{app}/x", "w").write("x")
+        prepare(hc, t)
+        p = sp_.run(["sh", "-c", sh.replace("/home/claude", hc).replace("/app/.", f"{app}/.").replace("/naila/", f"{nl}/")], capture_output=True, text=True)
+        return p, hc, t
+    mode = lambda p: st_.S_IMODE(os.lstat(p).st_mode) if os.path.lexists(p) else None
+    p, hc, t = run_init(lambda hc, t: None)
+    up = f"{hc}/.claude/uploads"
+    if p.returncode != 0 or not os.path.isdir(up) or mode(up) != 0o750 or os.listdir(up) or not os.path.exists(f"{t}/naila/x"):
+        bad.append(f"{tag}: on a fresh home: exit {p.returncode} {p.stderr.strip()[-200:]!r}, uploads {oct(mode(up) or 0) if os.path.isdir(up) else 'missing'}, holding {os.listdir(up) if os.path.isdir(up) else []}")
+    def before(hc, t):
+        u = f"{hc}/.claude/uploads"
+        for d in ("discord/id1", "test/id2"): os.makedirs(f"{u}/{d}")
+        open(f"{u}/discord/id1/f.pdf", "w").write("x")
+        os.makedirs(f"{t}/outside")
+        os.symlink(f"{t}/outside", f"{u}/link")
+        for d, m in (("", 0o2770), ("discord", 0o2770), ("discord/id1", 0o2750), ("test", 0o750), ("test/id2", 0o750)): os.chmod(f"{u}/{d}".rstrip("/"), m)
+        os.chmod(f"{u}/discord/id1/f.pdf", 0o640); os.chmod(f"{t}/outside", 0o2777)
+    p, hc, t = run_init(before)
+    up = f"{hc}/.claude/uploads"
+    o8 = lambda m: None if m is None else oct(m)
+    got = {d: o8(mode(f"{up}/{d}".rstrip("/"))) for d in ("", "discord", "discord/id1", "discord/id1/f.pdf", "test", "test/id2")} | {"outside": o8(mode(f"{t}/outside"))}
+    want = {"": "0o750", "discord": "0o750", "discord/id1": "0o2750", "discord/id1/f.pdf": "0o640", "test": "0o750", "test/id2": "0o750", "outside": "0o2777"}
+    if p.returncode != 0 or got != want or sorted(os.listdir(up)) != ["discord", "link", "test"]:
+        bad.append(f"{tag}: on a home from before: exit {p.returncode} {p.stderr.strip()[-200:]!r}, modes {got}, want {want}, uploads holds {sorted(os.listdir(up))}")
+    tag = f"the core's HARNESS_UPLOADS_ROOT is /home/claude/.claude/uploads and docs still reads uploads ({ph})"
+    if val(h, "HARNESS_UPLOADS_ROOT") != "/home/claude/.claude/uploads": bad.append(f"{tag}: HARNESS_UPLOADS_ROOT is {val(h, 'HARNESS_UPLOADS_ROOT')!r}")
+    dm = [m for m in ctr(r, "docs").get("volumeMounts", []) if m["name"] == "home"]
+    if dm != [{"name": "home", "mountPath": "/home/claude/.claude/uploads", "subPath": ".claude/uploads", "readOnly": True}]: bad.append(f"{tag}: docs mounts the home volume as {dm!r}")
+    if not (val(ctr(r, "docs"), "DOCS_ROOTS") or "").startswith("/home/claude/.claude/uploads:"): bad.append(f"{tag}: docs DOCS_ROOTS is {val(ctr(r, 'docs'), 'DOCS_ROOTS')!r}")
     lg = ctr(r, "login")
     for k, want in (("BASE_PATH", "/harness"), ("POD_ROLE", "harness"), ("RESTART_MATCH", "harness/dist/main.js")):
         if val(lg, k) != want: bad.append(f"login sidecar {k} is {val(lg, k)!r}, want {want!r} ({ph})")
@@ -781,13 +818,34 @@ def channels(c):
     return v if isinstance(v, list) else None
 def compact(d): return json.dumps(d, separators=(",", ":"))
 
-tag = f"channel loop: the discord container renders as at {ref}"
+# Task 13 (R9): as at the ref but for the mount, which is gone. HARNESS_UPLOADS stays one release as a rollback leftover (P24:
+# a gateway image older than naila 95dd7a2 exits without it); the new gateway ignores it. So the env is compared minus
+# HARNESS_UPLOADS, which may only be the leftover, checked below.
+tag = f"channel loop: the discord container renders as at {ref}, without its volume mount"
 o, n = ctr(oldh, "discord"), ctr(test, "discord")
 if o is None or n is None: bad.append(f"{tag}: no discord container ({'at the ref' if o is None else 'now'})")
 else:
-    if envset(o) != envset(n): bad.append(f"{tag}: env differs: only at the ref {sorted(envset(o) - envset(n))}, only now {sorted(envset(n) - envset(o))}")
-    for k in ("volumeMounts", "securityContext", "command"):
+    drop = lambda c: {x for x in envset(c) if x[0] != "HARNESS_UPLOADS"}
+    if drop(o) != drop(n): bad.append(f"{tag}: env differs: only at the ref {sorted(drop(o) - drop(n))}, only now {sorted(drop(n) - drop(o))}")
+    for k in ("securityContext", "command"):
         if o.get(k) != n.get(k): bad.append(f"{tag}: {k} is {n.get(k)!r}, was {o.get(k)!r}")
+tag = "no gateway container mounts a volume"
+for label, r in (("test", test), ("real", real), ("two channels", two)):
+    gws = [c for c in pod(r)["containers"] if (c.get("command") or [None, ""])[1:2] and str(c["command"][1]).startswith("packages/channels/")]
+    if {c["name"] for c in gws} != ({"discord", "telegram"} if label == "two channels" else {"discord"}): bad.append(f"{tag}: the gateways are {[c['name'] for c in gws]} ({label})")
+    for c in gws:
+        if c.get("volumeMounts"): bad.append(f"{tag}: {c['name']} mounts {c['volumeMounts']!r} ({label})")
+tag = "HARNESS_UPLOADS is only the discord gateway's rollback leftover, marked for removal"
+LEFT = "/home/claude/.claude/uploads/discord"
+for label, r in (("test", test), ("real", real), ("two channels", two)):
+    for c in pod(r)["containers"] + pod(r).get("initContainers", []):
+        has = "HARNESS_UPLOADS" in envmap(c)
+        if c["name"] == "discord" and (not has or val(c, "HARNESS_UPLOADS") != LEFT): bad.append(f"{tag}: discord HARNESS_UPLOADS is {val(c, 'HARNESS_UPLOADS')!r}, want the leftover {LEFT!r} ({label})")
+        if c["name"] != "discord" and has: bad.append(f"{tag}: {c['name']} has HARNESS_UPLOADS ({label})")
+tpl = open("helm/assistant/templates/harness.yaml").read()
+if not re.search(r"HARNESS_UPLOADS[^\n]*remove after 2026-11-19", tpl): bad.append(f"{tag}: the template's HARNESS_UPLOADS line does not say \"remove after 2026-11-19\"")
+for f in ("values.yaml", "values.prod.yaml", "values.staging.yaml"):
+    if re.search(r"^\s+uploads:", open(f"helm/assistant/{f}").read(), re.M): bad.append(f"{tag}: helm/assistant/{f} still sets gateway.uploads")
 
 tag = f"channel loop: the core env holds every variable it held at {ref} with the same value, except GATEWAY_SECRETS, which contains the entry discord:$(GATEWAY_DISCORD_SECRET)"
 oe, ne = envmap(ctr(oldh, "harness")), envmap(ctr(test, "harness"))
@@ -861,6 +919,7 @@ for what, args, msg in (("a missing secretKey", ["--set", "harness.channels.disc
                         ("two channels sharing a secretKey", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_DISCORD_SECRET"}'], "harness.channels.tg.secretKey"),
                         ("a gateway handed another channel's secretKey", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"GATEWAY_DISCORD_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X"),
                         ("a gateway handed a GATEWAY_*_SECRET key not its own", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"GATEWAY_OTHER_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X"),
+                        ("a leftover gateway.uploads (the core owns uploads)", ["--set", "harness.channels.discord.gateway.uploads=true"], "harness.channels.discord.gateway.uploads"),
                         ("a gateway handed CORE_TOOLS_SECRET", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"CORE_TOOLS_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X")):
     p = render("--set", "harness.phase=test", *args)
     if p.returncode == 0: bad.append(f"{tag}: {what} renders")

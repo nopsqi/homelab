@@ -34,11 +34,14 @@
 #  --disallowedTools among the CLI flags it checks.
 # Then the core's run metrics: 3102 open to monitoring only, its own Service and ServiceMonitor (job assistant-harness-core),
 #  the login Service and ServiceMonitor as at <git-ref>, and the three core alerts, scoped by job, none naming Discord.
-# Then the docs bearer (Ruling 19; both phases, two channels, RC off): one init container (docs-token, run as rendered) writes
-#  a fresh 64-hex-character token, mode 0440, into an emptyDir with medium Memory; exactly the core (harness) and docs mount it,
-#  read-only, both with DOCS_TOKEN_FILE; no gateway, login or other init container does, and no other object names it; the
-#  runs' static settings deny the folder; harness-start.sh registers no user-scope docs entry on an image whose core sends the
-#  bearer and the old unauthenticated one on an older image (P24), run as rendered, and never handles the bearer itself.
+# Then the docs bearer and socket (Rulings 19, 21; both phases, two channels, RC off): one init container (docs-token, run as
+#  rendered) writes a fresh 64-hex-character token, mode 0440, into an emptyDir with medium Memory; exactly the core (harness,
+#  read-only) and docs (which makes its socket there) mount it, both with DOCS_TOKEN_FILE and DOCS_SOCKET; no gateway, login or
+#  other init container does, and no other workload names it; nothing in the pod names port 3002 (docs has no TCP listener);
+#  docs' readiness and startup probes, run as rendered, need the socket to accept (but pass an older image's docs, which
+#  predates DOCS_SOCKET: P24); the runs' static settings deny the folder; harness-start.sh registers no user-scope docs entry
+#  on an image with the docs relay and the old unauthenticated one on an older image (P24), run as rendered, and never
+#  handles the bearer itself.
 set -euo pipefail
 ref="${1:-origin/master}"
 root="$(git rev-parse --show-toplevel)"
@@ -1089,11 +1092,11 @@ if bad:
 print("channels: discord renders as at the ref; a second channel is its own; bad config fails; one gateway alert; prompts and start script channel-free")
 PY
 python3 - "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/two.yaml" "$tmp/real-rcoff.yaml" <<'PY'
-import sys, yaml, re, json, subprocess, os, tempfile, stat
+import sys, yaml, re, json, subprocess, os, tempfile, stat, socket
 def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
 H = ("Deployment", "assistant-harness")
 bad = []
-DIR, FILE = "/run/docs-auth", "/run/docs-auth/token"
+DIR, FILE, SOCK = "/run/docs-auth", "/run/docs-auth/token", "/run/docs-auth/docs.sock"
 def pod(r): return r[H]["spec"]["template"]["spec"]
 def envmap(c): return {e["name"]: e for e in c.get("env", [])}
 for label, path in zip(("test", "real", "two channels", "real, RC off"), sys.argv[1:5]):
@@ -1103,16 +1106,44 @@ for label, path in zip(("test", "real", "two channels", "real, RC off"), sys.arg
     tag = f"Ruling 19: the docs bearer's volume is an emptyDir with medium Memory ({label})"
     vols = [v for v in ps.get("volumes", []) if v["name"] == "docs-auth"]
     if len(vols) != 1 or set(vols[0]) != {"name", "emptyDir"} or vols[0]["emptyDir"].get("medium") != "Memory": bad.append(f"{tag}: it is {vols!r}")
-    tag = f"Ruling 19: exactly the core (harness) and docs mount the docs bearer, read-only at {DIR} ({label})"
+    tag = f"Ruling 19: exactly the core (harness, read-only) and docs (its socket) mount the docs-auth folder at {DIR} ({label})"
     mounts = {c["name"]: [m for m in c.get("volumeMounts", []) if m["name"] == "docs-auth"] for c in ps["containers"]}
     have = {n for n, ms in mounts.items() if ms}
     if have != {"harness", "docs"}: bad.append(f"{tag}: mounted by {sorted(have)}")
+    if mounts.get("harness") != [{"name": "docs-auth", "mountPath": DIR, "readOnly": True}]: bad.append(f"{tag}: harness mounts {mounts.get('harness')!r}")
+    if mounts.get("docs") != [{"name": "docs-auth", "mountPath": DIR}]: bad.append(f"{tag}: docs mounts {mounts.get('docs')!r} (it makes its socket there)")
     for n in ("harness", "docs"):
-        if mounts.get(n) != [{"name": "docs-auth", "mountPath": DIR, "readOnly": True}]: bad.append(f"{tag}: {n} mounts {mounts.get(n)!r}")
         c = next((c for c in ps["containers"] if c["name"] == n), {})
-        if (envmap(c).get("DOCS_TOKEN_FILE") or {}).get("value") != FILE: bad.append(f"{tag}: {n} DOCS_TOKEN_FILE is {envmap(c).get('DOCS_TOKEN_FILE')!r}")
+        for k, want in (("DOCS_TOKEN_FILE", FILE), ("DOCS_SOCKET", SOCK)):
+            if (envmap(c).get(k) or {}).get("value") != want: bad.append(f"{tag}: {n} {k} is {envmap(c).get(k)!r}")
     for c in ps["containers"]:
-        if c["name"] not in ("harness", "docs") and "DOCS_TOKEN_FILE" in envmap(c): bad.append(f"{tag}: {c['name']} has DOCS_TOKEN_FILE")
+        for k in ("DOCS_TOKEN_FILE", "DOCS_SOCKET", "DOCS_PORT"):
+            if k in envmap(c) and (c["name"] not in ("harness", "docs") or k == "DOCS_PORT"): bad.append(f"{tag}: {c['name']} has {k}")
+    tag = f"Ruling 21: nothing in the harness pod names port 3002 (docs has no TCP listener) ({label})"
+    if "3002" in json.dumps(r[H]["spec"]["template"]): bad.append(f"{tag}: the pod template holds 3002")
+    tag = f"Ruling 21: docs' readiness and startup probes need its socket to accept ({label})"
+    dc = next((c for c in ps["containers"] if c["name"] == "docs"), {})
+    rp, sp = dc.get("readinessProbe") or {}, dc.get("startupProbe") or {}
+    if not rp or not sp or (rp.get("exec") or {}).get("command") != (sp.get("exec") or {}).get("command"): bad.append(f"{tag}: readiness {rp!r}, startup {sp!r}")
+    elif sp.get("periodSeconds", 10) * sp.get("failureThreshold", 3) < 600: bad.append(f"{tag}: the startup probe gives docs {sp.get('periodSeconds', 10) * sp.get('failureThreshold', 3)}s, under the 600s its pip install may take")
+    else:
+        pc = rp["exec"]["command"]
+        def probe(sock_dir, server_py, listening):
+            srv = None
+            if listening:
+                srv = socket.socket(socket.AF_UNIX); srv.bind(f"{sock_dir}/docs.sock"); srv.listen(1)
+            elif listening is None:   # a stale socket file, nothing listening
+                st_ = socket.socket(socket.AF_UNIX); st_.bind(f"{sock_dir}/docs.sock"); st_.close()
+            naila = tempfile.mkdtemp(); os.makedirs(f"{naila}/packages/docs-mcp"); open(f"{naila}/packages/docs-mcp/server.py", "w").write(server_py)
+            cmd = [a.replace(DIR, sock_dir).replace("/naila/", f"{naila}/") for a in pc]
+            cmd = [sys.executable if a == "python" else a.replace("python -c", f"{sys.executable} -c") for a in cmd]
+            rc = subprocess.run(cmd, capture_output=True, text=True, timeout=20).returncode
+            if srv: srv.close()
+            return rc
+        NEW, OLD = 'SOCKET = os.environ.get("DOCS_SOCKET", "/run/docs-auth/docs.sock")', 'port=int(os.environ.get("DOCS_PORT", "3002"))'
+        for server_py, listening, ok in ((NEW, True, True), (NEW, False, False), (NEW, None, False), (OLD, False, True)):
+            d = os.path.realpath(tempfile.mkdtemp())
+            if (probe(d, server_py, listening) == 0) != ok: bad.append(f"{tag}: run as rendered, the probe {'fails' if ok else 'passes'} with {'the new' if server_py == NEW else 'an older'} docs and the socket {'accepting' if listening else 'stale' if listening is None else 'absent'}")
     gws = [c["name"] for c in ps["containers"] if any(str(a).startswith("packages/channels/") for a in c.get("command") or [])]
     want_gws = ["discord", "telegram"] if label == "two channels" else ["discord"]
     if sorted(gws) != want_gws: bad.append(f"{tag}: the gateways are {gws}, want {want_gws}")
@@ -1155,17 +1186,17 @@ for label, path in zip(("test", "real", "two channels", "real, RC off"), sys.arg
     deny = json.loads(data["harness-settings.json"])["permissions"]["deny"]
     for t_ in ("Read", "Edit", "Write"):
         if f"{t_}(/{DIR}/**)" not in deny: bad.append(f"{tag}: harness-settings.json lacks {t_}(/{DIR}/**)")
-    # harness-start.sh: the core (an image with dist/docs-auth.js) gives each run docs with the bearer, so no user-scope docs
+    # harness-start.sh: the core (an image with dist/docs-relay.js) gives each run docs through the relay, so no user-scope docs
     # entry; an older image (P24) keeps the user-scope entry its own unauthenticated docs server answers. Run as rendered.
     tag = f"Ruling 19: harness-start.sh's user-scope docs entry follows the image (P24) ({label})"
     start = data["harness-start.sh"]
-    sel = [l for l in start.splitlines() if l.startswith("DOCS_BY_CORE=") and "docs-auth.js" in l]
+    sel = [l for l in start.splitlines() if l.startswith("DOCS_BY_CORE=") and "dist/docs-relay.js" in l]
     mc = [x for x in re.finditer(r"^node -e '([^']*)' ([^\n]*)$", start, re.M) if x.group(2).startswith('"$HOME/.claude.json"')]
     if len(sel) != 1 or len(mc) != 1: bad.append(f"{tag}: {len(sel)} DOCS_BY_CORE lines, {len(mc)} ~/.claude.json patches"); continue
     for has, want in ((True, ["vault"]), (False, ["docs", "vault"])):
         d = tempfile.mkdtemp(); nl = os.path.join(d, "naila")
         os.makedirs(f"{nl}/packages/harness/dist")
-        if has: open(f"{nl}/packages/harness/dist/docs-auth.js", "w").write("")
+        if has: open(f"{nl}/packages/harness/dist/docs-relay.js", "w").write("")
         cj = os.path.join(d, ".claude.json")
         json.dump({"mcpServers": {"vault": {"command": "node"}, "docs": {"type": "http", "url": "http://127.0.0.1:3002/mcp"}, "other": {}}}, open(cj, "w"))
         p = subprocess.run(["bash", "-c", sel[0].replace("/naila/", f"{nl}/") + '; echo "$DOCS_BY_CORE"'], capture_output=True, text=True)
@@ -1173,7 +1204,7 @@ for label, path in zip(("test", "real", "two channels", "real, RC off"), sys.arg
         args = [a.replace('"$HOME/.claude.json"', cj).replace('"$DOCS_BY_CORE"', by).replace('"${dirs[@]}"', "/w/naila") for a in mc[0].group(2).split(" ")]
         q = subprocess.run(["node", "-e", mc[0].group(1), *args], capture_output=True, text=True)
         got = sorted(json.load(open(cj)).get("mcpServers", {})) if q.returncode == 0 else q.stderr.strip()
-        if got != want: bad.append(f"{tag}: with{'' if has else 'out'} dist/docs-auth.js the user-scope servers are {got!r}, want {want!r} (DOCS_BY_CORE={by!r})")
+        if got != want: bad.append(f"{tag}: with{'' if has else 'out'} dist/docs-relay.js the user-scope servers are {got!r}, want {want!r} (DOCS_BY_CORE={by!r})")
         if not has:
             json.dump({"mcpServers": {"vault": {}}}, open(cj, "w"))
             if subprocess.run(["node", "-e", mc[0].group(1), *args], capture_output=True, text=True).returncode == 0: bad.append(f"{tag}: on an older image it accepts a ~/.claude.json without the docs entry")
@@ -1184,5 +1215,5 @@ for label, path in zip(("test", "real", "two channels", "real, RC off"), sys.arg
 
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
-print("docs bearer: an in-memory emptyDir filled by docs-token, mounted by the core and docs only; the runs' settings deny it; harness-start follows the image")
+print("docs bearer and socket: an in-memory emptyDir filled by docs-token, mounted by the core and docs only; no port 3002; probes need the socket; the runs' settings deny it; harness-start follows the image")
 PY

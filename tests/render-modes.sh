@@ -351,35 +351,44 @@ else:
         ("unreadable input", "{", R, N, "deny")):
         got = hook(wr, ev, args, env_)
         if got != want_: bad.append(f"{tag}: {what}: {got}, want {want_}")
-# docs-grant (final fix I1): with --by-caps it follows HARNESS_CAPS/HARNESS_WORKER under --uploads and --root; without flags
-# (the RC lines) it denies nothing, as at the ref. tests/docs-grant.sh has the full matrix; these run the rendered key.
-tag = "docs-grant follows the switches with --by-caps, and without flags behaves as at the ref"
+# docs-grant (final fix I1): with --by-caps it follows HARNESS_CAPS/HARNESS_WORKER under --uploads and --root, and opens only
+# uploads/<HARNESS_ORIGIN>/ (Ruling 16: none without a well-formed origin); without flags (the RC lines) it denies nothing, as
+# at the ref. tests/docs-grant.sh has the full matrix; these run the rendered key.
+tag = "docs-grant follows the switches and the run's origin with --by-caps, and without flags behaves as at the ref"
 dg, dg_old = new.get("docs-grant.mjs", ""), old.get("docs-grant.mjs", "")
 v = os.path.join(gd, "dvault"); up = os.path.join(gd, "duploads")
 for d in ("Daily", "Finance", "Naila/Workspace/finance-bookkeeper"): os.makedirs(os.path.join(v, d))
-os.makedirs(up)
+for d in ("discord", "test"): os.makedirs(os.path.join(up, d))
 for f in ("Daily/x.md", "Finance/s.pdf", "Naila/Workspace/finance-bookkeeper/b.xlsx"): open(os.path.join(v, f), "w").write("x")
-open(os.path.join(up, "u.pdf"), "w").write("x")
+for f in ("discord/u.pdf", "test/t.pdf"): open(os.path.join(up, f), "w").write("x")
 C = lambda p: {"tool_name": "mcp__docs__convert", "tool_input": {"path": p}}
 BC = ["--by-caps", "--uploads", up, "--root", v]
 BK = "docs.convert,files.read,messaging.ask,budget.read,budget.write-plans"
-for what, p, caps, w, want_ in (
+for what, p, caps, w, want_, *o_ in (   # o_: HARNESS_ORIGIN (default discord, the uploads' channel; None leaves it unset)
     ("the bookkeeper with vault.read off, a vault note", f"{v}/Daily/x.md", BK, "finance-bookkeeper", "deny"),
-    ("the bookkeeper, an upload", f"{up}/u.pdf", BK, "finance-bookkeeper", "none"),
+    ("the bookkeeper, an upload of its run's channel", f"{up}/discord/u.pdf", BK, "finance-bookkeeper", "none"),
+    ("the bookkeeper, an upload of another channel", f"{up}/test/t.pdf", BK, "finance-bookkeeper", "deny"),
     ("naila with vault.read on, a vault note", f"{v}/Daily/x.md", "docs.convert,files.read,vault.read", "naila", "none"),
     ("the bookkeeper with files.read, Finance", f"{v}/Finance/s.pdf", BK, "finance-bookkeeper", "none"),
     ("ops-oncall with files.read, Finance", f"{v}/Finance/s.pdf", "docs.convert,files.read", "ops-oncall", "deny"),
     ("the bookkeeper, its own workspace", f"{v}/Naila/Workspace/finance-bookkeeper/b.xlsx", BK, "finance-bookkeeper", "none"),
     ("naila with files.read, the bookkeeper's workspace", f"{v}/Naila/Workspace/finance-bookkeeper/b.xlsx", "docs.convert,files.read,vault.read", "naila", "none"),
     ("ops-oncall without vault.read, the bookkeeper's workspace", f"{v}/Naila/Workspace/finance-bookkeeper/b.xlsx", "docs.convert,files.read", "ops-oncall", "deny"),
-    ("docs.convert off, an upload", f"{up}/u.pdf", "files.read,vault.read", "naila", "deny"),
-    ("no HARNESS_CAPS (an older image), an upload", f"{up}/u.pdf", None, "naila", "deny"),
-    ("no HARNESS_WORKER, an upload", f"{up}/u.pdf", BK, None, "deny")):
-    env_ = {**({"HARNESS_CAPS": caps} if caps is not None else {}), **({"HARNESS_WORKER": w} if w else {})}
+    ("docs.convert off, an upload", f"{up}/discord/u.pdf", "files.read,vault.read", "naila", "deny"),
+    ("no HARNESS_CAPS (an older image), an upload", f"{up}/discord/u.pdf", None, "naila", "deny"),
+    ("no HARNESS_WORKER, an upload", f"{up}/discord/u.pdf", BK, None, "deny"),
+    ("a test-origin run, a Discord upload", f"{up}/discord/u.pdf", BK, "finance-bookkeeper", "deny", "test"),
+    ("a test-origin run, its own upload", f"{up}/test/t.pdf", BK, "finance-bookkeeper", "none", "test"),
+    ("no HARNESS_ORIGIN (the scheduler, an image older than naila 95dd7a2), an upload", f"{up}/discord/u.pdf", BK, "finance-bookkeeper", "deny", None),
+    ("no HARNESS_ORIGIN, a vault note with vault.read", f"{v}/Daily/x.md", "docs.convert,vault.read", "naila", "none", None),
+    ("a malformed HARNESS_ORIGIN, an upload", f"{up}/discord/u.pdf", BK, "finance-bookkeeper", "deny", "Discord"),
+    ("a HARNESS_ORIGIN with a slash, an upload", f"{up}/discord/u.pdf", BK, "finance-bookkeeper", "deny", "discord/.")):
+    o_ = o_[0] if o_ else "discord"
+    env_ = {**({"HARNESS_CAPS": caps} if caps is not None else {}), **({"HARNESS_WORKER": w} if w else {}), **({"HARNESS_ORIGIN": o_} if o_ is not None else {})}
     got = hook(dg, C(p), BC, env_)
     if got != want_: bad.append(f"{tag}: {what}: {got}, want {want_}")
-for p in (f"{v}/Daily/x.md", f"{up}/u.pdf", "/etc/hostname"):
-    for env_ in ({}, {"HARNESS_CAPS": "docs.convert", "HARNESS_WORKER": "ops-oncall"}):
+for p in (f"{v}/Daily/x.md", f"{up}/discord/u.pdf", "/etc/hostname"):
+    for env_ in ({}, {"HARNESS_CAPS": "docs.convert", "HARNESS_WORKER": "ops-oncall"}, {"HARNESS_CAPS": "docs.convert", "HARNESS_WORKER": "ops-oncall", "HARNESS_ORIGIN": "test"}):
         if hook(dg, C(p), [], env_) != hook(dg_old, C(p), [], env_): bad.append(f"{tag}: without flags, {p} with {env_}: {hook(dg, C(p), [], env_)}, at the ref {hook(dg_old, C(p), [], env_)}")
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad))

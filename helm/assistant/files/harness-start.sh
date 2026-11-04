@@ -73,7 +73,8 @@ if grep -qF -- "$MCP_FINANCE_TOKEN" "$C"/agents/*.md; then die "a worker holds t
 # it always refuses. Roll back the chart together with the image: this chart on an image older than naila 82db432 leaves runs
 # without vault, finance or ops reads (safe, degraded), since only the per-run settings allow them; it also converts no documents
 # at all (an older image sets no HARNESS_CAPS, and docs-grant --by-caps then denies every path). Docs conversion follows each
-# run's switches (docs-grant.mjs --by-caps, failing closed): uploads always, this phase's vault only with vault.read, its
+# run's switches (docs-grant.mjs --by-caps, failing closed): its own channel's uploads (uploads/<HARNESS_ORIGIN>/, Ruling 16;
+# none for a run without an origin, or on an image older than naila 95dd7a2, which sets none), this phase's vault only with vault.read, its
 # Finance/ for a finance worker with files.read, the worker's own workspace with files.read; minus VAULT_EXCLUDE in the real
 # phase. Test phase: no file-tool rule reaches the vault outside /vault/Harness-test. Real phase: no file tool reads a VAULT_EXCLUDE folder.
 case "$VAULT_ROOT" in /*) ;; *) die "VAULT_ROOT must be an absolute path, got '$VAULT_ROOT'" ;; esac

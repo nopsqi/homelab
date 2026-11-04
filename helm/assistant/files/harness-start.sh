@@ -71,9 +71,11 @@ if grep -qF -- "$MCP_FINANCE_TOKEN" "$C"/agents/*.md; then die "a worker holds t
 # stay closed unless the run's settings allow its own workspace, and the write guard holds them to
 # <VAULT_ROOT>/Naila/Workspace/<worker>/, rooted on its command line (P18); it also takes NotebookEdit (floor-denied), which
 # it always refuses. Roll back the chart together with the image: this chart on an image older than naila 82db432 leaves runs
-# without vault, finance or ops reads (safe, degraded), since only the per-run settings allow them. Docs conversion is limited to uploads and this
-# phase's vault (docs-grant.mjs --only, failing closed), minus VAULT_EXCLUDE in the real phase. Test phase: no file-tool rule
-# reaches the vault outside /vault/Harness-test. Real phase: no file tool reads a VAULT_EXCLUDE folder.
+# without vault, finance or ops reads (safe, degraded), since only the per-run settings allow them; it also converts no documents
+# at all (an older image sets no HARNESS_CAPS, and docs-grant --by-caps then denies every path). Docs conversion follows each
+# run's switches (docs-grant.mjs --by-caps, failing closed): uploads always, this phase's vault only with vault.read, its
+# Finance/ for a finance worker with files.read, the worker's own workspace with files.read; minus VAULT_EXCLUDE in the real
+# phase. Test phase: no file-tool rule reaches the vault outside /vault/Harness-test. Real phase: no file tool reads a VAULT_EXCLUDE folder.
 case "$VAULT_ROOT" in /*) ;; *) die "VAULT_ROOT must be an absolute path, got '$VAULT_ROOT'" ;; esac
 printf '%s' "$VAULT_ROOT" | grep -qE '^/[A-Za-z0-9._/-]+$' || die "VAULT_ROOT may hold only letters, digits and ._/- (it goes into a hook command), got '$VAULT_ROOT'"
 node -e '
@@ -95,11 +97,11 @@ for (const x of excluded) p.deny.push(`Read(/${root}/${x}/**)`)
 const docsExclude = excluded.length ? ` --exclude ${excluded.map((x) => `${root}/${x}`).join(",")}` : ""
 const pre = (s.hooks ??= {}).PreToolUse ??= []
 s.hooks.PreToolUse = pre.filter((e) => !/docs|Write|Edit/.test(e.matcher ?? ""))
-s.hooks.PreToolUse.push({ matcher: "mcp__docs__convert", hooks: [{ type: "command", command: `node ${grant} --only ${uploads}:${root}${docsExclude} || exit 2` }] })
+s.hooks.PreToolUse.push({ matcher: "mcp__docs__convert", hooks: [{ type: "command", command: `node ${grant} --by-caps --uploads ${uploads} --root ${root}${docsExclude} || exit 2` }] })
 s.hooks.PreToolUse.push({ matcher: "Write|Edit|NotebookEdit", hooks: [{ type: "command", command: `node /config/harness-write-guard.mjs --root ${root}/Naila/Workspace || exit 2` }] })
 fs.writeFileSync(dst, JSON.stringify(s, null, 2))' /config/settings.json /config/harness-settings.json "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/docs-grant.mjs "$C/uploads" "${VAULT_EXCLUDE:-}"
-# The check, failing startup: no test-phase rule reaches the real vault; docs conversion is limited to the phase roots; the
-# deny holds the whole static floor (harness-settings.json, Agent and Bash among it) and, when the image has the capability
+# The check, failing startup: no test-phase rule reaches the real vault; docs conversion follows the run's switches under this
+# phase's roots (docs-grant.mjs --by-caps --root VAULT_ROOT); the deny holds the whole static floor (harness-settings.json, Agent and Bash among it) and, when the image has the capability
 # registry, the image's own FLOOR_DENY (a chart older than the image's floor fails closed); the allow holds nothing beyond the
 # static core tools (harness-settings.json's allow, mcp__core__ tools only: propose_plan, ask_worker, decision_status,
 # propose_capability_change, the self_note tools and engine_info); Write and Edit go through the write guard rooted at this phase's workspace root.
@@ -117,7 +119,9 @@ const bad = phase !== "test" ? [] : allow.filter((r) => {
 if (bad.length) fail(`test-phase runs would be allowed into the real vault: ${bad.join(", ")}`)
 const hooked = (tool) => s.hooks.PreToolUse.filter((e) => new RegExp(`^(${e.matcher})$`).test(tool)).flatMap((e) => e.hooks.map((x) => x.command))
 const docs = hooked("mcp__docs__convert")
-if (docs.length !== 1 || !/ --only \S+( --exclude \S+)? \|\| exit 2$/.test(docs[0])) fail("mcp__docs__convert is not limited to the phase roots")
+const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+if (docs.length !== 1 || !new RegExp(`^node \\S+/docs-grant\\.mjs --by-caps --uploads /\\S+ --root ${esc(root)}( --exclude \\S+)? \\|\\| exit 2$`).test(docs[0]))
+  fail("mcp__docs__convert does not follow the run\x27s switches under the phase roots (docs-grant.mjs --by-caps --root VAULT_ROOT)")
 if (phase === "real" && !/ --exclude \S+ \|\| exit 2$/.test(docs[0])) fail("mcp__docs__convert does not exclude VAULT_EXCLUDE in the real phase")
 const h = JSON.parse(fs.readFileSync(patch, "utf8")).permissions
 const floor = [...h.deny, "Agent", "Bash"]

@@ -99,7 +99,11 @@ const excluded = phase === "real" ? (exclude ?? "").split(",").map((e) => e.trim
 for (const x of excluded) p.deny.push(`Read(/${root}/${x}/**)`)
 const docsExclude = excluded.length ? ` --exclude ${excluded.map((x) => `${root}/${x}`).join(",")}` : ""
 const pre = (s.hooks ??= {}).PreToolUse ??= []
-s.hooks.PreToolUse = pre.filter((e) => !/docs|Write|Edit|Read|Glob|Grep/.test(e.matcher ?? ""))
+// Claude Code runs an entry with no matcher, "" or "*" for every tool: it would hook the guarded tools beside their guard, and
+// dropping it would drop it for every other tool too, so it fails the start (the check below counts such an entry as well).
+const every = (e) => e.matcher === undefined || e.matcher === null || e.matcher === "" || e.matcher === "*"
+if (pre.some(every)) { console.error("harness-start: settings.json has a PreToolUse entry with no matcher, \"\" or \"*\" (every tool): give it a matcher"); process.exit(2) }
+s.hooks.PreToolUse = pre.filter((e) => !/docs|Write|Edit|Read|Glob|Grep/.test(e.matcher))
 s.hooks.PreToolUse.push({ matcher: "Read|Glob|Grep", hooks: [{ type: "command", command: "node /config/read-guard.mjs --by-origin || exit 2" }] })
 s.hooks.PreToolUse.push({ matcher: "mcp__docs__convert", hooks: [{ type: "command", command: `node ${grant} --by-caps --uploads ${uploads} --root ${root}${docsExclude} || exit 2` }] })
 s.hooks.PreToolUse.push({ matcher: "Write|Edit|NotebookEdit", hooks: [{ type: "command", command: `node /config/harness-write-guard.mjs --root ${root}/Naila/Workspace || exit 2` }] })
@@ -122,7 +126,9 @@ const bad = phase !== "test" ? [] : allow.filter((r) => {
   return (path.startsWith("//vault/") || path === "//vault") ? !path.startsWith("//vault/Harness-test/") : "//vault/".startsWith(lit)
 })
 if (bad.length) fail(`test-phase runs would be allowed into the real vault: ${bad.join(", ")}`)
-const hooked = (tool) => s.hooks.PreToolUse.filter((e) => new RegExp(`^(${e.matcher})$`).test(tool)).flatMap((e) => e.hooks.map((x) => x.command))
+// an entry with no matcher, "" or "*" hooks every tool (Claude Code), so it counts for each
+const every = (e) => e.matcher === undefined || e.matcher === null || e.matcher === "" || e.matcher === "*"
+const hooked = (tool) => s.hooks.PreToolUse.filter((e) => every(e) || new RegExp(`^(${e.matcher})$`).test(tool)).flatMap((e) => e.hooks.map((x) => x.command))
 const docs = hooked("mcp__docs__convert")
 const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 if (docs.length !== 1 || !new RegExp(`^node \\S+/docs-grant\\.mjs --by-caps --uploads /\\S+ --root ${esc(root)}( --exclude \\S+)? \\|\\| exit 2$`).test(docs[0]))

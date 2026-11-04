@@ -229,6 +229,16 @@ for w in ADVISOR_METHOD:
 for k in ("harness-agent-finance-advisor.md", "agent-finance-advisor.md"):
     if k not in new: bad.append(f"plan 5: {k} is not in the render")
     elif "Reply short" in new[k]: bad.append(f"plan 5: {k} still says 'Reply short'")
+# Task 4 fix round 1: answer order, labels, holding without refusing, the snapshot's edges, the review's length retry,
+# sources and language, and naila's verify line scoped (a colleague's answer only from ask_worker)
+ADVISOR_FIX1 = ("only what changes the answer goes into the reply", "put it before the conclusion only when it outweighs the question",
+                'A figure the user gives is "your figure"', "not that you refuse", "`emergency_fund.unknown`", "judge trends on full months only",
+                "average spending is 0", "at most 3,000 characters", "shorten the review and file it again", "cite the previous review note",
+                "in the language the user writes to you in")
+for w in ADVISOR_FIX1:
+    if w not in new.get("harness-agent-finance-advisor.md", ""): bad.append(f"plan 5 fix 1: harness-agent-finance-advisor.md does not name {w!r}")
+for w in ("a colleague's answer only from what `ask_worker` returned", "don't ask a colleague again just to recall an earlier answer"):
+    if w not in new.get("harness-CLAUDE.md", ""): bad.append(f"plan 5 fix 1: harness-CLAUDE.md lacks {w!r}")
 for k in ("harness-CLAUDE.md", "harness-agent-finance-bookkeeper.md", "harness-agent-ops-oncall.md"):
     if "Verify before asserting:" not in new.get(k, ""): bad.append(f"plan 5: {k} lacks 'Verify before asserting:'")
 for k in harness:

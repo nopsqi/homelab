@@ -169,7 +169,7 @@ export HARNESS_MODELS="$(awk 'NF >= 2 { printf "%s%s=%s", (n++ ? "," : ""), $1, 
 
 # User-scope MCP: only vault (rooted at this phase's vault); projects: only the trusted work dirs. Written to ~/.claude.json
 # and copied to ~/.claude/.claude.json, where Claude Code looks once CLAUDE_CONFIG_DIR is set.
-# Docs (Rulings 19, 21): the sidecar listens only on its socket in /run/docs-auth and answers only the bearer there; the core
+# Docs (Rulings 19, 21): the sidecar listens only on its socket in /run/docs-sock and answers only the bearer in /run/docs-token; the core
 # alone gives each run docs, as the stdio relay (docs-relay.js) in the run's own MCP config, which reads the bearer itself. So
 # docs has no user-scope entry, and the bearer never lands on the home volume, in a config, an env or a command line. An image
 # older than that core (no dist/docs-relay.js, P24) runs the old docs server too, on 127.0.0.1 with no bearer: it keeps the

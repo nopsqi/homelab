@@ -1132,12 +1132,12 @@ for label, path in zip(("test", "real", "two channels", "real, RC off"), sys.arg
     if sc.get("allowPrivilegeEscalation") is not False or sc.get("capabilities") != {"drop": ["ALL"]} or sc.get("readOnlyRootFilesystem") is not True: bad.append(f"{tag}: securityContext {sc!r}")
     if (sc.get("runAsUser", psc.get("runAsUser")), sc.get("runAsGroup", psc.get("runAsGroup"))) != (1000, 1000): bad.append(f"{tag}: it runs as {sc!r}, want the core's 1000:1000 (the file's owner and group)")
     cmd = t.get("command") or []
-    if cmd[:2] != ["sh", "-c"] or len(cmd) != 3 or "/dev/urandom" not in cmd[2]: bad.append(f"{tag}: command {cmd!r}"); continue
+    if cmd[:2] != ["node", "-e"] or len(cmd) != 3 or "/dev/urandom" not in cmd[2]: bad.append(f"{tag}: command {cmd!r}"); continue
     toks = []
     d = os.path.realpath(tempfile.mkdtemp())
     for _ in range(2):   # run as rendered on a temp dir: 64 lowercase hex characters (32 random bytes), mode 0440; a rerun on
         # the same dir (the pod's sandbox recreated, the emptyDir kept) replaces the read-only token with a fresh one
-        p = subprocess.run(["sh", "-c", cmd[2].replace(DIR, d)], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+        p = subprocess.run(["node", "-e", cmd[2].replace(DIR, d)], capture_output=True, text=True)
         f = os.path.join(d, "token")
         got = open(f).read() if os.path.exists(f) else None
         mode = stat.S_IMODE(os.stat(f).st_mode) if got is not None else None
@@ -1148,8 +1148,8 @@ for label, path in zip(("test", "real", "two channels", "real, RC off"), sys.arg
     if toks[0] == toks[1]: bad.append(f"{tag}: two runs wrote the same token")
     # a token it can't make in full fails the init container instead of leaving a short one
     d = os.path.realpath(tempfile.mkdtemp())
-    p = subprocess.run(["sh", "-c", cmd[2].replace(DIR, d).replace("/dev/urandom", "/dev/null")], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
-    if p.returncode == 0: bad.append(f"{tag}: it succeeds with an empty /dev/urandom")
+    p = subprocess.run(["node", "-e", cmd[2].replace(DIR, d).replace("/dev/urandom", "/dev/null")], capture_output=True, text=True)
+    if p.returncode == 0 or os.listdir(d): bad.append(f"{tag}: with an empty /dev/urandom it exits {p.returncode} leaving {os.listdir(d)}")
     data = {**r[("ConfigMap", "assistant-claude")]["data"], **r[("ConfigMap", "assistant-harness")]["data"]}
     tag = f"Ruling 19: the runs' static settings deny the docs bearer's folder ({label})"
     deny = json.loads(data["harness-settings.json"])["permissions"]["deny"]

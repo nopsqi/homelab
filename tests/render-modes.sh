@@ -432,6 +432,16 @@ for what, ev, o_, want_ in (
     ("a file outside ~/.claude", Rd("/etc/hostname"), None, "none")):
     got = hook(rg, ev, BO, {"HARNESS_ORIGIN": o_} if o_ is not None else {})
     if got != want_: bad.append(f"{tag}: {what}: {got}, want {want_}")
+# the deny reason says what is readable: the run's own uploads folder, or (no origin) tool-results/ alone and why
+def reason(src, ev, args, env_):
+    f = os.path.join(gd, f"r{abs(hash(src))}.mjs"); open(f, "w").write(src)
+    out = subprocess.run(["node", f, *args], input=json.dumps(ev), capture_output=True, text=True, env={"PATH": os.environ["PATH"], **env_}).stdout
+    try: return json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]
+    except ValueError: return out
+for o_, want_ in (("test", "Under ~/.claude only uploads/test/ (files sent in this conversation's channel) and tool-results/ may be read."),
+                  (None, "Under ~/.claude only tool-results/ may be read: this run came from no channel, so no uploads are open to it.")):
+    got = reason(rg, Rd(f"{cl}/uploads/discord/id1/u.pdf"), BO, {"HARNESS_ORIGIN": o_} if o_ else {}).replace(hc, "/home/claude")
+    if got != want_: bad.append(f"{tag}: the deny reason with origin {o_!r} is {got!r}, want {want_!r}")
 for ev in (Rd(f"{cl}/uploads/discord/id1/u.pdf"), Rd(f"{cl}/uploads/test/id2/t.pdf"), Gl(f"{cl}/uploads", "**"), Gr(f"{cl}/uploads"),
            Rd(f"{cl}/projects/p/s/tool-results/r.txt"), Rd(f"{cl}/.credentials.json"), Rd("/etc/hostname"), Ga(f"{cl}/uploads/disc*/**"), Ga(f"{cl}/uploads/discord/**")):
     for env_ in ({}, {"HARNESS_ORIGIN": "test"}, {"HARNESS_ORIGIN": "Bad"}):
@@ -601,7 +611,14 @@ def patched_settings(r, ph):
     if p.returncode != 0: return None, f"settings patch failed ({ph}): {p.stderr.strip()}"
     return json.loads(open(out).read()), None
 import json
+import copy
 for ph, r in (("test", test), ("real", real)):
+    # the settings patch refuses a base PreToolUse entry with no matcher, "" or "*": it would hook the guarded tools as well
+    for m_ in (None, "", "*"):
+        r2 = copy.deepcopy(r); cm = r2[("ConfigMap", "assistant-claude")]["data"]
+        b = json.loads(cm["settings.json"]); b["hooks"]["PreToolUse"].append({**({} if m_ is None else {"matcher": m_}), "hooks": [{"type": "command", "command": "true"}]})
+        cm["settings.json"] = json.dumps(b)
+        if patched_settings(r2, ph)[1] is None: bad.append(f"{ph} phase: the settings patch accepts a base PreToolUse entry with matcher {m_!r} (every tool)")
     s, err = patched_settings(r, ph)
     if err: bad.append(err); continue
     denied = "Read(//vault/Harness-test/**)" in s["permissions"]["deny"]
@@ -629,7 +646,7 @@ for ph, r in (("test", test), ("real", real)):
         if re.search(r"Finance|tool-results", t): bad.append(f"P28: {tag}: the merged static allow opens {t} to every run")
         if t not in STATIC_ALLOW: bad.append(f"P22: {tag}: the merged static allow holds {t}, outside the static core tools")
     pre = s.get("hooks", {}).get("PreToolUse", [])
-    def hooked(tool): return [h["command"] for e in pre if re.fullmatch(f"(?:{e.get('matcher', '')})", tool) for h in e["hooks"]]
+    def hooked(tool): return [h["command"] for e in pre if e.get("matcher") in (None, "", "*") or re.fullmatch(f"(?:{e['matcher']})", tool) for h in e["hooks"]]   # no, "" or "*" matcher: every tool
     for tool, guard in (("Read", "read-guard.mjs"), ("Glob", "read-guard.mjs"), ("Grep", "read-guard.mjs"), ("WebSearch", "web-guard.mjs"),
                         ("WebFetch", "web-guard.mjs"), ("mcp__docs__convert", "docs-grant.mjs")):
         if not any(guard in c for c in hooked(tool)): bad.append(f"{tag}: the {guard} hook is missing for {tool}")
@@ -674,7 +691,11 @@ for ph, r in (("test", test), ("real", real)):
                      ("no read guard", lambda x: x["hooks"].__setitem__("PreToolUse", [e for e in x["hooks"]["PreToolUse"] if "read-guard" not in json.dumps(e)])),
                      ("the read guard without --by-origin", lambda x: [h.__setitem__("command", h["command"].replace(" --by-origin", "")) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "read-guard" in h["command"]]),
                      ("the read guard on Read only", lambda x: [e.__setitem__("matcher", "Read") for e in x["hooks"]["PreToolUse"] if "read-guard" in json.dumps(e)]),
-                     ("a second Glob hook", lambda x: x["hooks"]["PreToolUse"].append({"matcher": "Glob", "hooks": [{"type": "command", "command": "true"}]}))):
+                     ("a second Glob hook", lambda x: x["hooks"]["PreToolUse"].append({"matcher": "Glob", "hooks": [{"type": "command", "command": "true"}]})),
+                     # Claude Code runs an entry with no matcher, "" or "*" for every tool: it counts as a second hook
+                     ("a hook with no matcher", lambda x: x["hooks"]["PreToolUse"].append({"hooks": [{"type": "command", "command": "true"}]})),
+                     ("a hook with matcher \"\"", lambda x: x["hooks"]["PreToolUse"].append({"matcher": "", "hooks": [{"type": "command", "command": "true"}]})),
+                     ("a hook with matcher \"*\"", lambda x: x["hooks"]["PreToolUse"].append({"matcher": "*", "hooks": [{"type": "command", "command": "true"}]}))):
         if run_check(weaken(w_)).returncode == 0: bad.append(f"{tag}: harness-start's check accepts {what}")
     # the static allow is core tools only: a harness-settings.json that allows anything else (and settings carrying it) fails
     hsj = json.loads(data["harness-settings.json"])
@@ -844,6 +865,10 @@ for label, r in (("test", test), ("real", real), ("two channels", two)):
         if c["name"] != "discord" and has: bad.append(f"{tag}: {c['name']} has HARNESS_UPLOADS ({label})")
 tpl = open("helm/assistant/templates/harness.yaml").read()
 if not re.search(r"HARNESS_UPLOADS[^\n]*remove after 2026-11-19", tpl): bad.append(f"{tag}: the template's HARNESS_UPLOADS line does not say \"remove after 2026-11-19\"")
+import datetime
+today = os.environ.get("RENDER_MODES_TODAY") or datetime.date.today().isoformat()   # set it to test the deadline
+if today > "2026-11-19" and any("HARNESS_UPLOADS" in envmap(c) for r in (test, real, two) for c in pod(r)["containers"]):   # rendered, not the reserved name
+    bad.append(f"{tag}: it is {today}, past 2026-11-19: remove the HARNESS_UPLOADS leftover from the discord gateway (and turn this check into \"no HARNESS_UPLOADS anywhere\")")
 for f in ("values.yaml", "values.prod.yaml", "values.staging.yaml"):
     if re.search(r"^\s+uploads:", open(f"helm/assistant/{f}").read(), re.M): bad.append(f"{tag}: helm/assistant/{f} still sets gateway.uploads")
 

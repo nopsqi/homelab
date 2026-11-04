@@ -83,6 +83,14 @@ cp -a helm/assistant "$tmp/d" && sed -i 's/^    {{ .name }} {{ .model }}$/    {{
 cp -a helm/assistant "$tmp/n" && sed -i 's/made for this\./made for this, really./' "$tmp/n/templates/claude.yaml"
 for v in s d n; do helm template "$tmp/$v" -f "$tmp/$v/values.yaml" -f "$tmp/$v/values.prod.yaml" --set harness.phase=test --set claude.rcLines=true > "$tmp/$v.yaml"; done
 
+# A checksum is 12 hex characters: unquoted, one like 1055865050e4 is a float to the API server (YAML 1.2), which rejects
+# the Deployment. Every checksum/config annotation in every working-tree render is a quoted string.
+for f in "$tmp"/new.yaml "$tmp"/off.yaml "$tmp"/real.yaml "$tmp"/test-rcoff.yaml "$tmp"/real-rcoff.yaml "$tmp"/staging.yaml "$tmp"/two.yaml; do
+  if grep -n 'checksum/config:' "$f" | grep -vqE 'checksum/config: "[0-9a-f]{12}"'; then
+    echo "FAIL: $(basename "$f") has a checksum/config annotation that is not a quoted 12-hex string"; exit 1
+  fi
+done
+[ "$(grep -c 'checksum/config: "' "$tmp/new.yaml")" = 2 ] || { echo "FAIL: new.yaml does not have the two quoted checksum/config annotations"; exit 1; }
 python3 - "$tmp/old.yaml" "$tmp/new.yaml" "$tmp/harness-edit.yaml" "$tmp/rc-edit.yaml" <<'PY'
 import sys, yaml
 

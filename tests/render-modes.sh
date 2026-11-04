@@ -886,6 +886,9 @@ for label, r in (("test", test), ("real", real), ("two channels", two)):
             if "discord" in v.lower(): bad.append(f"{tag}: {a} {k} names Discord")
             if re.search(r"\$labels\.(worker|kind)\b", v): bad.append(f"{tag}: {a} {k} names a label the sum drops")
         if a != "NailaCoreMetricsMissing" and '{{ $value | printf "%.0f" }}' not in x.get("annotations", {}).get("summary", ""): bad.append(f"{tag}: {a} summary lacks the count")
+    # final fix M5: reason="missing" also covers an MCP server that failed to connect for that run
+    if "an MCP server (finance, docs) failed to connect for that run" not in (rs.get("NailaCapabilityMismatch") or {}).get("annotations", {}).get("description", ""):
+        bad.append(f"{tag}: NailaCapabilityMismatch's description does not name an MCP server (finance, docs) that failed to connect for that run")
     for a, x in rs.items():
         if "naila_harness_" in x["expr"] and J not in x["expr"]: bad.append(f"{tag}: {a} reads the core's metrics without {J}")
 

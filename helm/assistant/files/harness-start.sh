@@ -6,8 +6,8 @@
 #                       (VAULT_EXCLUDE: denied to the file tools, left out by the vault servers).
 # The runs' CLAUDE_CONFIG_DIR is ~/.claude itself: the login page (the login sidecar, naila.nopsqi.dev/harness) logs in
 # there, and a run that renews the token writes it back to the same file, so the pod has one login. Under ~/.claude only
-# uploads/ and tool-results/ are open to the runs (read-guard.mjs): the login, the agent files with the bearers and
-# harness.db (HARNESS_HOME) are not. Only the core keeps the finance write bearer; the workers get the read-only one.
+# uploads/<the run's origin channel>/ and tool-results/ are open to the runs (read-guard.mjs --by-origin, Ruling 16): the
+# login, the agent files with the bearers, harness.db (HARNESS_HOME) and other channels' uploads are not. Only the core keeps the finance write bearer; the workers get the read-only one.
 set -eu
 export NPM_CONFIG_PREFIX=$HOME/.npm-global PATH=$HOME/.npm-global/bin:$PATH
 C=$HOME/.claude
@@ -76,7 +76,9 @@ if grep -qF -- "$MCP_FINANCE_TOKEN" "$C"/agents/*.md; then die "a worker holds t
 # run's switches (docs-grant.mjs --by-caps, failing closed): its own channel's uploads (uploads/<HARNESS_ORIGIN>/, Ruling 16;
 # none for a run without an origin, or on an image older than naila 95dd7a2, which sets none), this phase's vault only with vault.read, its
 # Finance/ for a finance worker with files.read, the worker's own workspace with files.read; minus VAULT_EXCLUDE in the real
-# phase. Test phase: no file-tool rule reaches the vault outside /vault/Harness-test. Real phase: no file tool reads a VAULT_EXCLUDE folder.
+# phase. Read, Glob and Grep go through read-guard.mjs --by-origin (Ruling 16): of the uploads only the run's own channel's
+# folder, none without HARNESS_ORIGIN, as the core narrows each run's Read allow; `|| exit 2` makes a crash a block. Test
+# phase: no file-tool rule reaches the vault outside /vault/Harness-test. Real phase: no file tool reads a VAULT_EXCLUDE folder.
 case "$VAULT_ROOT" in /*) ;; *) die "VAULT_ROOT must be an absolute path, got '$VAULT_ROOT'" ;; esac
 printf '%s' "$VAULT_ROOT" | grep -qE '^/[A-Za-z0-9._/-]+$' || die "VAULT_ROOT may hold only letters, digits and ._/- (it goes into a hook command), got '$VAULT_ROOT'"
 node -e '
@@ -97,7 +99,8 @@ const excluded = phase === "real" ? (exclude ?? "").split(",").map((e) => e.trim
 for (const x of excluded) p.deny.push(`Read(/${root}/${x}/**)`)
 const docsExclude = excluded.length ? ` --exclude ${excluded.map((x) => `${root}/${x}`).join(",")}` : ""
 const pre = (s.hooks ??= {}).PreToolUse ??= []
-s.hooks.PreToolUse = pre.filter((e) => !/docs|Write|Edit/.test(e.matcher ?? ""))
+s.hooks.PreToolUse = pre.filter((e) => !/docs|Write|Edit|Read|Glob|Grep/.test(e.matcher ?? ""))
+s.hooks.PreToolUse.push({ matcher: "Read|Glob|Grep", hooks: [{ type: "command", command: "node /config/read-guard.mjs --by-origin || exit 2" }] })
 s.hooks.PreToolUse.push({ matcher: "mcp__docs__convert", hooks: [{ type: "command", command: `node ${grant} --by-caps --uploads ${uploads} --root ${root}${docsExclude} || exit 2` }] })
 s.hooks.PreToolUse.push({ matcher: "Write|Edit|NotebookEdit", hooks: [{ type: "command", command: `node /config/harness-write-guard.mjs --root ${root}/Naila/Workspace || exit 2` }] })
 fs.writeFileSync(dst, JSON.stringify(s, null, 2))' /config/settings.json /config/harness-settings.json "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/docs-grant.mjs "$C/uploads" "${VAULT_EXCLUDE:-}"
@@ -105,7 +108,8 @@ fs.writeFileSync(dst, JSON.stringify(s, null, 2))' /config/settings.json /config
 # phase's roots (docs-grant.mjs --by-caps --root VAULT_ROOT); the deny holds the whole static floor (harness-settings.json, Agent and Bash among it) and, when the image has the capability
 # registry, the image's own FLOOR_DENY (a chart older than the image's floor fails closed); the allow holds nothing beyond the
 # static core tools (harness-settings.json's allow, mcp__core__ tools only: propose_plan, ask_worker, decision_status,
-# propose_capability_change, the self_note tools and engine_info); Write and Edit go through the write guard rooted at this phase's workspace root.
+# propose_capability_change, the self_note tools and engine_info); Write and Edit go through the write guard rooted at this phase's workspace root;
+# Read, Glob and Grep through the read guard narrowed to the run's origin channel (--by-origin, Ruling 16).
 node -e '
 const fs = require("fs"), [f, phase, root, patch, capsjs] = process.argv.slice(1)
 const fail = (m) => { console.error(`harness-start: ${m}`); process.exit(2) }
@@ -137,6 +141,8 @@ const extra = allow.filter((r) => !h.allow.includes(r) || !/^mcp__core__[a-z_]+$
 if (extra.length) fail(`the static allow holds more than the core tools: ${extra.join(", ")}`)
 const guard = `node /config/harness-write-guard.mjs --root ${root}/Naila/Workspace || exit 2`
 for (const t of ["Write", "Edit", "NotebookEdit"]) { const c = hooked(t); if (c.length !== 1 || c[0] !== guard) fail(`${t} does not go through the write guard rooted at ${root}/Naila/Workspace`) }
+const rguard = "node /config/read-guard.mjs --by-origin || exit 2"
+for (const t of ["Read", "Glob", "Grep"]) { const c = hooked(t); if (c.length !== 1 || c[0] !== rguard) fail(`${t} does not go through the read guard narrowed to the run\x27s origin (read-guard.mjs --by-origin)`) }
 })().catch((e) => fail(e.message))' "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/harness-settings.json /naila/packages/harness/dist/capabilities.js
 
 # Work dirs (the core runs each worker in HARNESS_HOME/work/<worker>): naila's holds her harness CLAUDE.md; each direct-line

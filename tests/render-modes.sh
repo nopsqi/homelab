@@ -83,7 +83,7 @@ def keys(path):
 old, new = keys(sys.argv[1]), keys(sys.argv[2])
 RETIRED = "harness-test.sh"   # retired with RC mode; its removal is allowed (R9)
 # RC is retired (claude.rcLines false): these keys share their text with harness mode, so they may differ (plan 4 Global Constraints).
-RC_ALLOWED = {"agent-finance-bookkeeper.md", "agent-finance-advisor.md", "actual-handbook.md", "web-guard.mjs", "docs-grant.mjs"}
+RC_ALLOWED = {"agent-finance-bookkeeper.md", "agent-finance-advisor.md", "actual-handbook.md", "web-guard.mjs", "docs-grant.mjs", "read-guard.mjs"}
 def rcdiff(o, n):
     """Differences in the RC ConfigMap keys (every key but harness-*) other than the retired key's removal and RC_ALLOWED edits."""
     out = []
@@ -96,10 +96,10 @@ def rcdiff(o, n):
         if o.get(k) != n.get(k): out.append(f"RC key {k} differs (or is missing on one side)")
     return out
 bad = rcdiff(old, new)
-# web-guard.mjs (plan 4 Task 13) and docs-grant.mjs (final fix I1) follow the run's capabilities, and without them behave as at
-# the ref (checked below); nothing else joins RC_ALLOWED
-if RC_ALLOWED != {"agent-finance-bookkeeper.md", "agent-finance-advisor.md", "actual-handbook.md", "web-guard.mjs", "docs-grant.mjs"}:
-    bad.append(f"the RC-identical check allows web-guard.mjs, docs-grant.mjs and nothing new beyond RC_ALLOWED: it is {sorted(RC_ALLOWED)}")
+# web-guard.mjs (plan 4 Task 13) and docs-grant.mjs (final fix I1) follow the run's capabilities, read-guard.mjs (Ruling 16) the
+# run's origin with --by-origin, and without them behave as at the ref (checked below); nothing else joins RC_ALLOWED
+if RC_ALLOWED != {"agent-finance-bookkeeper.md", "agent-finance-advisor.md", "actual-handbook.md", "web-guard.mjs", "docs-grant.mjs", "read-guard.mjs"}:
+    bad.append(f"the RC-identical check allows web-guard.mjs, docs-grant.mjs, read-guard.mjs and nothing new beyond RC_ALLOWED: it is {sorted(RC_ALLOWED)}")
 # the check itself: the retired key's removal alone passes, any other difference fails
 gone = {k: v for k, v in old.items() if k != RETIRED}
 if rcdiff({**old, RETIRED: "x"}, gone): bad.append("rcdiff rejects the removal of the retired key")
@@ -390,10 +390,56 @@ for what, p, caps, w, want_, *o_ in (   # o_: HARNESS_ORIGIN (default discord, t
 for p in (f"{v}/Daily/x.md", f"{up}/discord/u.pdf", "/etc/hostname"):
     for env_ in ({}, {"HARNESS_CAPS": "docs.convert", "HARNESS_WORKER": "ops-oncall"}, {"HARNESS_CAPS": "docs.convert", "HARNESS_WORKER": "ops-oncall", "HARNESS_ORIGIN": "test"}):
         if hook(dg, C(p), [], env_) != hook(dg_old, C(p), [], env_): bad.append(f"{tag}: without flags, {p} with {env_}: {hook(dg, C(p), [], env_)}, at the ref {hook(dg_old, C(p), [], env_)}")
+# read-guard (Ruling 16): with --by-origin (the harness runs) the only uploads readable are uploads/<HARNESS_ORIGIN>/, none
+# without a well-formed origin, judged by real paths; tool-results/ and the rest as before. Without flags (the RC lines) it
+# behaves as at the ref, whatever HARNESS_ORIGIN says. The hook's paths are literal (/home/claude) and /home may be a link on
+# the machine running this, so both keys run with a temp dir in its place.
+tag = "read-guard --by-origin opens only the run's own channel's uploads, and without flags behaves as at the ref"
+hc = os.path.realpath(tempfile.mkdtemp())
+at = lambda src: src.replace("\\/home\\/claude", hc.replace("/", "\\/")).replace("/home/claude", hc)
+rg, rg_old = at(new.get("read-guard.mjs", "")), at(old.get("read-guard.mjs", ""))
+cl = f"{hc}/.claude"
+for d in ("uploads/discord/id1", "uploads/test/id2", "projects/p/s/tool-results"): os.makedirs(f"{cl}/{d}")
+for f in ("uploads/discord/id1/u.pdf", "uploads/test/id2/t.pdf", "projects/p/s/tool-results/r.txt", ".credentials.json"): open(f"{cl}/{f}", "w").write("x")
+os.symlink(f"{cl}/uploads/discord/id1/u.pdf", f"{cl}/uploads/test/id2/into-discord.pdf")
+os.symlink("discord", f"{cl}/uploads/evil")
+Rd = lambda p: {"tool_name": "Read", "tool_input": {"file_path": p}}
+Gl = lambda path, pat: {"tool_name": "Glob", "tool_input": {"path": path, "pattern": pat}}
+Gr = lambda path: {"tool_name": "Grep", "tool_input": {"path": path, "pattern": "x"}}
+Ga = lambda pat: {"tool_name": "Glob", "tool_input": {"pattern": pat}}   # an absolute pattern, no path
+BO = ["--by-origin"]
+for what, ev, o_, want_ in (
+    ("a discord-origin run, its own upload", Rd(f"{cl}/uploads/discord/id1/u.pdf"), "discord", "none"),
+    ("a test-origin run, a Discord upload", Rd(f"{cl}/uploads/discord/id1/u.pdf"), "test", "deny"),
+    ("a test-origin run, its own upload", Rd(f"{cl}/uploads/test/id2/t.pdf"), "test", "none"),
+    ("a discord-origin run, a test upload", Rd(f"{cl}/uploads/test/id2/t.pdf"), "discord", "deny"),
+    ("no origin, an upload", Rd(f"{cl}/uploads/discord/id1/u.pdf"), None, "deny"),
+    ("a malformed origin, an upload", Rd(f"{cl}/uploads/discord/id1/u.pdf"), "Discord", "deny"),
+    ("an origin with a slash, an upload", Rd(f"{cl}/uploads/discord/id1/u.pdf"), "discord/id1", "deny"),
+    ("an empty origin, an upload", Rd(f"{cl}/uploads/discord/id1/u.pdf"), "", "deny"),
+    ("a test-origin run, a link from its folder to a Discord upload", Rd(f"{cl}/uploads/test/id2/into-discord.pdf"), "test", "deny"),
+    ("its channel folder a link to Discord's", Rd(f"{cl}/uploads/evil/id1/u.pdf"), "evil", "deny"),
+    ("a Glob over all uploads", Gl(f"{cl}/uploads", "**/*.pdf"), "discord", "deny"),
+    ("a Glob in its own folder", Gl(f"{cl}/uploads/discord", "**/*.pdf"), "discord", "none"),
+    ("a Glob with a wildcard in the channel name", Ga(f"{cl}/uploads/disc*/**"), "discord", "deny"),
+    ("a Glob with a wildcard after the channel name", Ga(f"{cl}/uploads/discord*/**"), "discord", "deny"),
+    ("a Glob of its own folder by absolute pattern", Ga(f"{cl}/uploads/discord/**"), "discord", "none"),
+    ("a Grep over all uploads", Gr(f"{cl}/uploads"), "discord", "deny"),
+    ("a Grep in its own folder", Gr(f"{cl}/uploads/discord"), "discord", "none"),
+    ("tool-results with an origin", Rd(f"{cl}/projects/p/s/tool-results/r.txt"), "discord", "none"),
+    ("tool-results without an origin", Rd(f"{cl}/projects/p/s/tool-results/r.txt"), None, "none"),
+    ("the login", Rd(f"{cl}/.credentials.json"), "discord", "deny"),
+    ("a file outside ~/.claude", Rd("/etc/hostname"), None, "none")):
+    got = hook(rg, ev, BO, {"HARNESS_ORIGIN": o_} if o_ is not None else {})
+    if got != want_: bad.append(f"{tag}: {what}: {got}, want {want_}")
+for ev in (Rd(f"{cl}/uploads/discord/id1/u.pdf"), Rd(f"{cl}/uploads/test/id2/t.pdf"), Gl(f"{cl}/uploads", "**"), Gr(f"{cl}/uploads"),
+           Rd(f"{cl}/projects/p/s/tool-results/r.txt"), Rd(f"{cl}/.credentials.json"), Rd("/etc/hostname"), Ga(f"{cl}/uploads/disc*/**"), Ga(f"{cl}/uploads/discord/**")):
+    for env_ in ({}, {"HARNESS_ORIGIN": "test"}, {"HARNESS_ORIGIN": "Bad"}):
+        if hook(rg, ev, [], env_) != hook(rg_old, ev, [], env_): bad.append(f"{tag}: without flags, {ev} with {env_}: {hook(rg, ev, [], env_)}, at the ref {hook(rg_old, ev, [], env_)}")
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad))
     sys.exit(1)
-print("RC render identical; harness keys clean; web-guard, write-guard and docs-grant behave")
+print("RC render identical; harness keys clean; web-guard, write-guard, docs-grant and read-guard behave")
 PY
 
 python3 - "$tmp/old.yaml" "$tmp/off.yaml" "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/staging.yaml" "$tmp/cloudflared.yaml" "$tmp/s.yaml" "$tmp/d.yaml" "$tmp/n.yaml" <<'PY'
@@ -550,6 +596,8 @@ for ph, r in (("test", test), ("real", real)):
     for tool, guard in (("Read", "read-guard.mjs"), ("Glob", "read-guard.mjs"), ("Grep", "read-guard.mjs"), ("WebSearch", "web-guard.mjs"),
                         ("WebFetch", "web-guard.mjs"), ("mcp__docs__convert", "docs-grant.mjs")):
         if not any(guard in c for c in hooked(tool)): bad.append(f"{tag}: the {guard} hook is missing for {tool}")
+    for tool in ("Read", "Glob", "Grep"):   # Ruling 16: the runs read only their own origin channel's uploads
+        if hooked(tool) != ["node /config/read-guard.mjs --by-origin || exit 2"]: bad.append(f"Ruling 16: {tag}: the {tool} hooks are {hooked(tool)}, want the read guard with --by-origin")
     wroot = f"{val(ctr(r, 'harness'), 'VAULT_ROOT')}/Naila/Workspace"
     for tool in ("Write", "Edit", "NotebookEdit"):   # P18: the root on the command line
         if hooked(tool) != [f"node /config/harness-write-guard.mjs --root {wroot} || exit 2"]: bad.append(f"P18: {tag}: the {tool} hooks are {hooked(tool)}, want the write guard with --root {wroot}")
@@ -584,7 +632,12 @@ for ph, r in (("test", test), ("real", real)):
                      ("the docs hook in its old --only form", lambda x: [h.__setitem__("command", re.sub(r"--by-caps --uploads (\S+) --root (\S+)", r"--only \1:\2", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
                      ("the docs hook without --by-caps", lambda x: [h.__setitem__("command", h["command"].replace(" --by-caps", "")) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
                      ("the docs hook rooted elsewhere", lambda x: [h.__setitem__("command", re.sub(r"--root (\S+)", r"--root \1/x", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
-                     ("a second docs hook", lambda x: x["hooks"]["PreToolUse"].append({"matcher": "mcp__docs__convert", "hooks": [{"type": "command", "command": "true"}]}))):
+                     ("a second docs hook", lambda x: x["hooks"]["PreToolUse"].append({"matcher": "mcp__docs__convert", "hooks": [{"type": "command", "command": "true"}]})),
+                     # Ruling 16: Read, Glob and Grep go through the read guard narrowed to the run's origin
+                     ("no read guard", lambda x: x["hooks"].__setitem__("PreToolUse", [e for e in x["hooks"]["PreToolUse"] if "read-guard" not in json.dumps(e)])),
+                     ("the read guard without --by-origin", lambda x: [h.__setitem__("command", h["command"].replace(" --by-origin", "")) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "read-guard" in h["command"]]),
+                     ("the read guard on Read only", lambda x: [e.__setitem__("matcher", "Read") for e in x["hooks"]["PreToolUse"] if "read-guard" in json.dumps(e)]),
+                     ("a second Glob hook", lambda x: x["hooks"]["PreToolUse"].append({"matcher": "Glob", "hooks": [{"type": "command", "command": "true"}]}))):
         if run_check(weaken(w_)).returncode == 0: bad.append(f"{tag}: harness-start's check accepts {what}")
     # the static allow is core tools only: a harness-settings.json that allows anything else (and settings carrying it) fails
     hsj = json.loads(data["harness-settings.json"])

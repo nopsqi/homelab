@@ -34,6 +34,9 @@ root="$(git rev-parse --show-toplevel)"
 cd "$root"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+# The harness floor, verbatim from naila packages/harness/src/capabilities.ts FLOOR_DENY (Task 12, up to e248d5a): every run's settings and
+# the static settings deny all of it, whatever the switches. A change there changes this list.
+export FLOOR_DENY='["Bash","NotebookEdit","Agent","Task","Workflow","TaskStop","Monitor","CronCreate","CronDelete","CronList","ScheduleWakeup","RemoteTrigger","EnterWorktree","ExitWorktree","SendMessage","ListAgents","mcp__vault__workers_*","mcp__claude_ai_*","mcp__finance__add_transaction","mcp__finance__transfer","mcp__finance__update_transaction","mcp__finance__actual_write","mcp__finance-notes__write_note","mcp__finance-notes__edit_note","Read(//home/claude/.claude/.credentials.json)","Read(//home/claude/.claude/harness/**)","Read(//home/claude/.claude/agents/**)","Read(//home/claude/.claude/settings.json)","Read(//home/claude/.claude/.claude.json)","Read(//home/claude/.claude.json)","Read(//home/claude/.claude/projects/**/*.jsonl)","Read(//proc/**)","Read(//config/**)","Read(//naila/**)","Edit(//home/claude/.claude/.credentials.json)","Edit(//home/claude/.claude/harness/**)","Edit(//home/claude/.claude/agents/**)","Edit(//home/claude/.claude/settings.json)","Edit(//home/claude/.claude/.claude.json)","Edit(//home/claude/.claude.json)","Edit(//home/claude/.claude/projects/**/*.jsonl)","Edit(//proc/**)","Edit(//config/**)","Edit(//naila/**)","Write(//home/claude/.claude/.credentials.json)","Write(//home/claude/.claude/harness/**)","Write(//home/claude/.claude/agents/**)","Write(//home/claude/.claude/settings.json)","Write(//home/claude/.claude/.claude.json)","Write(//home/claude/.claude.json)","Write(//home/claude/.claude/projects/**/*.jsonl)","Write(//proc/**)","Write(//config/**)","Write(//naila/**)","Edit(//home/claude/.claude/**)","Write(//home/claude/.claude/**)"]'
 
 git archive "$ref" helm/assistant | tar -x -C "$tmp"
 # harness off: a ref that already has the harness pod compares like one that predates it
@@ -74,7 +77,7 @@ def keys(path):
 old, new = keys(sys.argv[1]), keys(sys.argv[2])
 RETIRED = "harness-test.sh"   # retired with RC mode; its removal is allowed (R9)
 # RC is retired (claude.rcLines false): these keys share their text with harness mode, so they may differ (plan 4 Global Constraints).
-RC_ALLOWED = {"agent-finance-bookkeeper.md", "agent-finance-advisor.md", "actual-handbook.md"}
+RC_ALLOWED = {"agent-finance-bookkeeper.md", "agent-finance-advisor.md", "actual-handbook.md", "web-guard.mjs"}
 def rcdiff(o, n):
     """Differences in the RC ConfigMap keys (every key but harness-*) other than the retired key's removal and RC_ALLOWED edits."""
     out = []
@@ -87,6 +90,9 @@ def rcdiff(o, n):
         if o.get(k) != n.get(k): out.append(f"RC key {k} differs (or is missing on one side)")
     return out
 bad = rcdiff(old, new)
+# web-guard.mjs follows the run's capabilities (plan 4 Task 13); nothing else joins RC_ALLOWED
+if RC_ALLOWED != {"agent-finance-bookkeeper.md", "agent-finance-advisor.md", "actual-handbook.md", "web-guard.mjs"}:
+    bad.append(f"the RC-identical check allows web-guard.mjs and nothing new beyond RC_ALLOWED: it is {sorted(RC_ALLOWED)}")
 # the check itself: the retired key's removal alone passes, any other difference fails
 gone = {k: v for k, v in old.items() if k != RETIRED}
 if rcdiff({**old, RETIRED: "x"}, gone): bad.append("rcdiff rejects the removal of the retired key")
@@ -125,11 +131,15 @@ if not re.search(r"round(?:ed|s)? up to (?:the next |whole )?Rp ?1\.000", new.ge
     bad.append("actual-handbook.md does not state the Rp1.000 round-up")
 WRITES = ["mcp__finance__add_transaction", "mcp__finance__transfer", "mcp__finance__update_transaction",
           "mcp__finance__actual_write", "mcp__finance-notes__write_note", "mcp__finance-notes__edit_note"]
-# every harness worker asks its colleagues (ask_worker) and reads a decision's outcome (decision_status); ops-oncall files nothing
+import json
+FLOOR_DENY = json.loads(os.environ["FLOOR_DENY"])
+STATIC_ALLOW = {"mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change"}
+# every harness worker asks its colleagues (ask_worker) and reads a decision's outcome (decision_status); ops-oncall's
+# propose_plan is in its ceiling (budget.write-plans applies to it) and stays off by its switch
 COLLEAGUE = {"mcp__core__ask_worker", "mcp__core__decision_status"}
 want = {"finance-bookkeeper": ({"mcp__core__propose_plan", "mcp__finance__find_duplicates"} | COLLEAGUE, set()),
         "finance-advisor": ({"mcp__core__propose_plan", "mcp__finance-read__find_duplicates"} | COLLEAGUE, set()),
-        "ops-oncall": (COLLEAGUE, {"mcp__core__propose_plan"})}
+        "ops-oncall": (COLLEAGUE, set())}
 for name, (has, hasnt) in want.items():
     k = f"harness-agent-{name}.md"
     m = re.search(r"^tools: (.*)$", new.get(k, ""), re.M)
@@ -142,6 +152,29 @@ import glob
 for f in sorted(glob.glob("helm/assistant/files/modes/harness/*.tools.md")):
     listed = set(open(f).read().strip().split(", "))
     for t in sorted(COLLEAGUE - listed): bad.append(f"every harness tools.md lists ask_worker and decision_status: {f} lacks {t}")
+# P19: each worker's tools.md (its agent file's tools list, the ceiling) contains every tool of each capability applicable to
+# it, so an approved switch has something to map to, plus the always-available core tools. Mirrors naila
+# packages/harness/src/capabilities.ts (CAPABILITIES, WORKER_SERVERS): an MCP tool counts for a worker only when the worker
+# has its server (budget.read: mcp__finance__* for the bookkeeper, mcp__finance-read__* for the advisor). Each later task
+# that adds a tool updates the ceiling and CEILING_CORE / CAPS here.
+BUDGET_READS = ["accounts", "categories", "recent", "spending_by_category", "payee_history", "actual_read", "find_duplicates"]
+CAPS = {"files.read": ["Read", "Glob", "Grep"], "files.write": ["Write", "Edit"], "web.search": ["WebSearch"], "web.fetch": ["WebFetch"],
+        "messaging.ask": ["mcp__core__ask_worker"], "budget.read": [f"mcp__{s}__{t}" for s in ("finance", "finance-read") for t in BUDGET_READS],
+        "budget.write-plans": ["mcp__core__propose_plan"], "vault.read": [f"mcp__vault__{t}" for t in ("tree", "grep", "read", "open_tasks")],
+        "vault.write": ["mcp__vault__write_inbox", "mcp__vault__append_daily"],
+        "cluster.read": [f"mcp__ops__{t}" for t in ("pods", "workloads", "describe", "logs", "events", "top", "argocd_apps", "alerts", "backups")],
+        "docs.convert": ["mcp__docs__convert"]}
+SERVERS = {"finance-bookkeeper": {"core", "vault", "docs", "finance"}, "finance-advisor": {"core", "vault", "docs", "finance-read", "finance-notes"},
+           "ops-oncall": {"core", "vault", "docs", "ops"}}
+CEILING_CORE = {"mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change"}
+def server(t): return t.split("__")[1] if t.startswith("mcp__") else None
+for w, srv in SERVERS.items():
+    f = f"helm/assistant/files/modes/harness/{w}.tools.md"
+    listed = set(open(f).read().strip().split(", ")) if os.path.exists(f) else set()
+    expect = CEILING_CORE | {t for ts in CAPS.values() for t in ts if server(t) is None or server(t) in srv}
+    for t in sorted(expect - listed): bad.append(f"P19: the {w} ceiling ({f}) lacks {t}")
+    m = re.search(r"^tools: (.*)$", new.get(f"harness-agent-{w}.md", ""), re.M)
+    if not m or set(m.group(1).split(", ")) != listed: bad.append(f"P19: harness-agent-{w}.md's tools line is not its tools.md")
 # The colleagues (any-to-any ask_worker), honest messaging and decision outcomes, in every harness worker's prompt.
 WORKERS = ["naila", "finance-bookkeeper", "finance-advisor", "ops-oncall"]
 NEVER_CLAIM = "Never say you told, asked or sent something to a colleague unless `ask_worker` returned their answer."
@@ -189,9 +222,17 @@ if hs is not None:
     deny, allow = set(hs.get("deny", [])), set(hs.get("allow", []))
     for t in set(WRITES) | {"SendMessage", "ListAgents", "Agent"}:
         if t not in deny: bad.append(f"harness-settings.json does not deny {t}")
-    for t in ("mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__core__decision_status", "mcp__finance__find_duplicates"):   # P1: dontAsk denies an unlisted tool
+    # the static floor: naila packages/harness/src/capabilities.ts FLOOR_DENY (Task 12, 82db432..5af8e9a), verbatim
+    for t in FLOOR_DENY:
+        if t not in deny: bad.append(f"harness-settings.json does not deny the floor entry {t}")
+    # the login's claude.ai connectors (Gmail, Calendar, Drive, ...) are offered to no run (naila e248d5a)
+    if "mcp__claude_ai_*" not in deny: bad.append("harness-settings.json does not deny mcp__claude_ai_* (the login's claude.ai connectors)")
+    # P24: the static Agent deny and ask_worker/propose_plan allows stay (a rollback is never less safe); P1: the core tools
+    for t in ("mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change"):   # dontAsk denies an unlisted tool
         if t not in allow: bad.append(f"harness-settings.json does not allow {t}")
     for t in allow & (set(WRITES) | {"SendMessage", "ListAgents", "Agent"}): bad.append(f"harness-settings.json allows {t}")
+    # P22, P28: every other allow comes per run from the capabilities
+    for t in sorted(allow - STATIC_ALLOW): bad.append(f"harness-settings.json allows {t}, outside the static core tools (it is the per-run settings' to allow)")
     if hs.get("defaultMode") != "dontAsk": bad.append("harness-settings.json: defaultMode is not dontAsk")
 def checksum(path):
     for d in yaml.safe_load_all(open(path)):
@@ -200,10 +241,71 @@ def checksum(path):
 base = checksum(sys.argv[2])
 if checksum(sys.argv[3]) != base: bad.append("a harness-only mode edit changes the RC checksum (would restart the RC lines)")
 if checksum(sys.argv[4]) == base: bad.append("an RC mode edit leaves the RC checksum unchanged")
+# The guards, run as rendered.
+import subprocess, tempfile
+gd = tempfile.mkdtemp()
+def hook(src, ev, args=(), env=None):
+    f = os.path.join(gd, f"g{abs(hash(src))}.mjs")
+    open(f, "w").write(src)
+    p = subprocess.run(["node", f, *args], input=ev if isinstance(ev, str) else json.dumps(ev), capture_output=True, text=True, env={"PATH": os.environ["PATH"], **(env or {})})
+    if p.returncode != 0: return f"exit {p.returncode}"
+    try: return json.loads(p.stdout)["hookSpecificOutput"]["permissionDecision"] if p.stdout.strip() else "none"
+    except ValueError: return f"bad output {p.stdout!r}"
+# web-guard: with HARNESS_CAPS, WebSearch iff web.search and WebFetch iff web.fetch (site rules unchanged); without it, as at the ref
+tag = "web-guard follows HARNESS_CAPS, and without it behaves as at the ref"
+wg, wg_old = new.get("web-guard.mjs", ""), old.get("web-guard.mjs", "")
+S = {"tool_name": "WebSearch", "tool_input": {"query": "BI rate"}}
+F = lambda u: {"tool_name": "WebFetch", "tool_input": {"url": u}}
+for caps, ev, want_ in (("web.search", S, "allow"), ("web.search", F("https://www.bi.go.id/id/"), "deny"), ("web.fetch", F("https://www.bi.go.id/id/"), "allow"),
+                        ("web.fetch", S, "deny"), ("web.search,web.fetch", F("https://evil.example/x"), "deny"), ("web.search,web.fetch", F("https://bi.go.id/" + "a" * 300), "deny"),
+                        ("", S, "deny"), ("messaging.ask", F("https://www.bi.go.id/"), "deny")):
+    for agent in ("finance-advisor", None):   # HARNESS_CAPS decides, whatever the agent
+        e = {**ev, **({"agent_type": agent} if agent else {})}
+        got = hook(wg, e, env={"HARNESS_CAPS": caps})
+        if got != want_: bad.append(f"{tag}: HARNESS_CAPS={caps!r} {ev['tool_name']} {ev['tool_input']} agent {agent}: {got}, want {want_}")
+for agent in ("finance-advisor", "finance-bookkeeper", None):
+    for ev in (S, F("https://www.bi.go.id/id/"), F("http://www.bi.go.id/"), F("https://evil.example/"), F("https://kontan.co.id/" + "a" * 300), {"tool_name": "Read", "tool_input": {}}):
+        e = {**ev, **({"agent_type": agent} if agent else {})}
+        if hook(wg, e) != hook(wg_old, e): bad.append(f"{tag}: without HARNESS_CAPS, {ev['tool_name']} for {agent}: {hook(wg, e)}, at the ref {hook(wg_old, e)}")
+# write-guard: only <root>/<HARNESS_WORKER>/, resolved; fails closed
+tag = "write-guard (run with --root) allows its own workspace and nothing else"
+wr = new.get("harness-write-guard.mjs", "")
+if not wr: bad.append(f"{tag}: no harness-write-guard.mjs key")
+else:
+    v = os.path.join(gd, "vault"); ws = os.path.join(v, "Naila", "Workspace")
+    for d in ("naila", "finance-advisor"): os.makedirs(os.path.join(ws, d))
+    open(os.path.join(v, "Naila", "Decisions.md"), "w").write("x")
+    os.symlink(os.path.join(v, "Naila"), os.path.join(ws, "naila", "out"))
+    open(os.path.join(ws, "naila", "old.md"), "w").write("x")
+    os.link(os.path.join(v, "Naila", "Decisions.md"), os.path.join(ws, "naila", "hard.md"))
+    W = lambda p, tool="Write": {"tool_name": tool, "tool_input": {"file_path": p, "content": "x"}}
+    R, N = ["--root", ws], {"HARNESS_WORKER": "naila"}
+    for what, ev, args, env_, want_ in (
+        ("<ws>/x.md for its own worker", W(f"{ws}/naila/x.md"), R, N, "none"),
+        ("<ws>/sub/new/x.md (folders not made yet)", W(f"{ws}/naila/sub/new/x.md"), R, N, "none"),
+        ("an Edit of an existing file", W(f"{ws}/naila/old.md", "Edit"), R, N, "none"),
+        ("another worker's workspace", W(f"{ws}/finance-advisor/x.md"), R, N, "deny"),
+        ("../", W(f"{ws}/naila/../finance-advisor/x.md"), R, N, "deny"),
+        ("a symlink out", W(f"{ws}/naila/out/Decisions.md"), R, N, "deny"),
+        ("a hardlink to a file outside", W(f"{ws}/naila/hard.md", "Edit"), R, N, "deny"),
+        ("/vault/Naila/Decisions.md", W(f"{v}/Naila/Decisions.md"), R, N, "deny"),
+        ("the workspace folder itself", W(f"{ws}/naila"), R, N, "deny"),
+        ("a relative path", W("naila/x.md"), R, N, "deny"),
+        ("a backslash in the path", W(f"{ws}/naila/a\\..\\x.md"), R, N, "deny"),
+        ("a control character in the path", W(f"{ws}/naila/x\x01.md"), R, N, "deny"),
+        ("a newline in the path", W(f"{ws}/naila/x\n.md"), R, N, "deny"),
+        ("NotebookEdit, even in its own workspace", {"tool_name": "NotebookEdit", "tool_input": {"notebook_path": f"{ws}/naila/x.ipynb", "new_source": "x"}}, R, N, "deny"),
+        ("a call without --root", W(f"{ws}/naila/x.md"), [], N, "deny"),
+        ("--root with no value", W(f"{ws}/naila/x.md"), ["--root"], N, "deny"),
+        ("a call without HARNESS_WORKER", W(f"{ws}/naila/x.md"), R, {}, "deny"),
+        ("a worker with no workspace", W(f"{ws}/ops-oncall/x.md"), R, {"HARNESS_WORKER": "ops-oncall"}, "deny"),
+        ("unreadable input", "{", R, N, "deny")):
+        got = hook(wr, ev, args, env_)
+        if got != want_: bad.append(f"{tag}: {what}: {got}, want {want_}")
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad))
     sys.exit(1)
-print("RC render identical; harness keys clean")
+print("RC render identical; harness keys clean; web-guard and write-guard behave")
 PY
 
 python3 - "$tmp/old.yaml" "$tmp/off.yaml" "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/staging.yaml" "$tmp/cloudflared.yaml" "$tmp/s.yaml" "$tmp/d.yaml" "$tmp/n.yaml" <<'PY'
@@ -211,6 +313,9 @@ import sys, yaml, re
 def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
 old, off, test, real, staging = (load(p) for p in sys.argv[1:6])
 bad = []
+import os, json
+FLOOR_DENY = json.loads(os.environ["FLOOR_DENY"])
+STATIC_ALLOW = {"mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change"}
 H = ("Deployment", "assistant-harness")
 
 # harness pod renders only when enabled
@@ -328,6 +433,59 @@ for ph, r in (("test", test), ("real", real)):
     if ph == "test" and "--exclude" in hook: bad.append(f"test phase: the docs hook excludes a folder: {hook}")
     want = "Harness-test" if ph == "real" else None
     if val(ctr(r, "harness"), "VAULT_EXCLUDE") != want: bad.append(f"{ph} phase: harness VAULT_EXCLUDE is {val(ctr(r, 'harness'), 'VAULT_EXCLUDE')!r}, want {want!r}")
+    # plan 4 Task 13: the static floor, the static allow and the hooks, in the settings harness-start.sh writes
+    pd, pa = s["permissions"]["deny"], s["permissions"]["allow"]
+    tag = f"the harness settings (harness-start run as rendered, {ph} phase)"
+    for t in FLOOR_DENY + ["Bash", "Agent"]:
+        if t not in pd: bad.append(f"{tag} deny every FLOOR_DENY entry and Bash: {t} is missing")
+    for t in ("Write", "Edit"):   # a bare static deny beats the per-run allow, so files.write could never work
+        if t in pd: bad.append(f"{tag}: the static deny holds bare {t}")
+    for t in ("mcp__core__ask_worker", "mcp__core__propose_plan"):   # P24
+        if t not in pa: bad.append(f"P24: {tag}: the merged settings do not allow {t}")
+    for t in pa:   # P22, P28: no blanket allow outside a switch
+        if t.startswith(("mcp__ops", "mcp__finance-read", "mcp__finance__")): bad.append(f"P22: {tag}: the merged static allow holds {t}")
+        if re.search(r"Finance|tool-results", t): bad.append(f"P28: {tag}: the merged static allow opens {t} to every run")
+        if t not in STATIC_ALLOW: bad.append(f"P22: {tag}: the merged static allow holds {t}, outside the static core tools")
+    pre = s.get("hooks", {}).get("PreToolUse", [])
+    def hooked(tool): return [h["command"] for e in pre if re.fullmatch(f"(?:{e.get('matcher', '')})", tool) for h in e["hooks"]]
+    for tool, guard in (("Read", "read-guard.mjs"), ("Glob", "read-guard.mjs"), ("Grep", "read-guard.mjs"), ("WebSearch", "web-guard.mjs"),
+                        ("WebFetch", "web-guard.mjs"), ("mcp__docs__convert", "docs-grant.mjs")):
+        if not any(guard in c for c in hooked(tool)): bad.append(f"{tag}: the {guard} hook is missing for {tool}")
+    wroot = f"{val(ctr(r, 'harness'), 'VAULT_ROOT')}/Naila/Workspace"
+    for tool in ("Write", "Edit", "NotebookEdit"):   # P18: the root on the command line
+        if hooked(tool) != [f"node /config/harness-write-guard.mjs --root {wroot} || exit 2"]: bad.append(f"P18: {tag}: the {tool} hooks are {hooked(tool)}, want the write guard with --root {wroot}")
+    # harness-start's own check, run as rendered: it passes these settings and fails each weakened copy
+    data = {**r[("ConfigMap", "assistant-claude")]["data"], **r[("ConfigMap", "assistant-harness")]["data"]}
+    ck = [x for x in re.finditer(r"^node -e '([^']*)' ([^\n]*)$", data["harness-start.sh"], re.M) if x.group(2).startswith('"$C/settings.json"')]
+    if len(ck) != 1: bad.append(f"{tag}: harness-start.sh has {len(ck)} settings checks"); continue
+    d = tempfile.mkdtemp()
+    open(os.path.join(d, "harness-settings.json"), "w").write(data["harness-settings.json"])
+    vars_ = {k: (e.get("value") or "") for k, e in env(ctr(r, "harness")).items()}
+    vars_.update(C=d, HARNESS_PHASE=ph)
+    def run_check(settings, floor_module=None):
+        open(os.path.join(d, "settings.json"), "w").write(json.dumps(settings))
+        args = [re.sub(r"\$\{(\w+)(?::-[^}]*)?\}|\$(\w+)", lambda x: vars_.get(x.group(1) or x.group(2), ""), a) for a in shlex.split(ck[0].group(2))]
+        args = [os.path.join(d, a[len("/config/"):]) if a.startswith("/config/") else (floor_module or os.path.join(d, "absent.js")) if a.startswith("/naila/") else a for a in args]
+        return subprocess.run(["node", "-e", ck[0].group(1), *args], capture_output=True, text=True)
+    p = run_check(s)
+    if p.returncode != 0: bad.append(f"{tag}: harness-start's check refuses the settings it wrote: {p.stderr.strip()}")
+    import copy
+    def weaken(f):
+        x = copy.deepcopy(s); f(x); return x
+    for what, w_ in (("a floor entry missing (Workflow)", lambda x: x["permissions"]["deny"].remove("Workflow")),
+                     ("Agent missing", lambda x: x["permissions"]["deny"].remove("Agent")),
+                     ("Bash missing", lambda x: [x["permissions"]["deny"].remove("Bash") for _ in range(x["permissions"]["deny"].count("Bash"))]),
+                     ("a blanket mcp__ops allow", lambda x: x["permissions"]["allow"].append("mcp__ops")),
+                     ("a static Finance read", lambda x: x["permissions"]["allow"].append("Read(//vault/Finance/**)")),
+                     ("no write guard", lambda x: x["hooks"].__setitem__("PreToolUse", [e for e in x["hooks"]["PreToolUse"] if "write-guard" not in json.dumps(e)])),
+                     ("the write guard without --root", lambda x: [h.__setitem__("command", "node /config/harness-write-guard.mjs || exit 2") for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "write-guard" in h["command"]]),
+                     ("the write guard rooted elsewhere", lambda x: [h.__setitem__("command", h["command"].replace("/Naila/Workspace", "")) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "write-guard" in h["command"]])):
+        if run_check(weaken(w_)).returncode == 0: bad.append(f"{tag}: harness-start's check accepts {what}")
+    fm = os.path.join(d, "caps.mjs")
+    open(fm, "w").write(f"export const FLOOR_DENY = {json.dumps(FLOOR_DENY + ['SomeNewTool'])}\n")
+    if run_check(s, fm).returncode == 0: bad.append(f"{tag}: harness-start's check accepts settings that lack an entry of the image's FLOOR_DENY")
+    open(fm, "w").write(f"export const FLOOR_DENY = {json.dumps(FLOOR_DENY)}\n")
+    if (p := run_check(s, fm)).returncode != 0: bad.append(f"{tag}: harness-start's check refuses the image's own floor: {p.stderr.strip()}")
 chk = re.search(r'^if \[ -n "\$\{VAULT_EXCLUDE:-\}" \] && ! grep -qF .*$', start, re.M)
 if not chk: bad.append("harness-start.sh: no check that the vault server honours VAULT_EXCLUDE")
 else:
@@ -589,13 +747,15 @@ for label, r in (("test", test), ("real", real), ("two channels", two)):
     for k in (("Service", "assistant-harness-login"), ("ServiceMonitor", "assistant-harness-login")):
         if r.get(k) != oldh.get(k): bad.append(f"{tag}: {k[0]}/{k[1]} differs from the ref (it must stay as it was)")
 
-    tag = f"the three alerts exist and no alert text names Discord ({label})"
+    tag = f"the core alerts exist and no alert text names Discord ({label})"
     rs = {x["alert"]: x for g in (r.get(("PrometheusRule", "assistant-harness-login")) or {"spec": {"groups": []}})["spec"]["groups"] for x in g["rules"]}
     # aggregated, so one problem raises one alert; the missing-metrics rule only while the login sidecar sees the core running
     # (NailaHarnessDown covers a stopped core, NailaHarnessLoginMetricsMissing a dead sidecar)
     want = {"NailaRunsFailing": ('sum by (namespace, outcome) (increase(naila_harness_runs_total{job="assistant-harness-core",outcome!~"ok|limit"}[30m])) > 0', "0m"),
             "NailaUsageLimit": ('sum by (namespace) (increase(naila_harness_runs_total{job="assistant-harness-core",outcome="limit"}[1h])) > 0', None),
-            "NailaCoreMetricsMissing": ('absent(naila_harness_up{job="assistant-harness-core"}) and on() (naila_remote_control_up{job="assistant-harness-login"} == 1)', "15m")}
+            "NailaCoreMetricsMissing": ('absent(naila_harness_up{job="assistant-harness-core"}) and on() (naila_remote_control_up{job="assistant-harness-login"} == 1)', "15m"),
+            # plan 4 Task 13: a run whose tools differ from its switches (killed when unexpected, logged when missing)
+            "NailaCapabilityMismatch": ('sum by (namespace, reason) (increase(naila_harness_capability_mismatch_total{job="assistant-harness-core"}[30m])) > 0', "0m")}
     for a, (expr, fr) in want.items():
         x = rs.get(a)
         if not x: bad.append(f"{tag}: no {a}"); continue
@@ -633,10 +793,22 @@ else:
 if "GATEWAY_DISCORD_SECRET" in start: bad.append(f"{tag}: harness-start.sh still names GATEWAY_DISCORD_SECRET")
 
 # P25: an asked run's write tools are removed with --disallowedTools; a CLI without it must fail closed at start
-tag = "harness-start.sh requires every CLI flag the Runner uses, --disallowedTools among them"
+tag = "harness-start.sh requires every CLI flag the Runner uses, --disallowedTools and --settings among them"
 flags = next((l for l in lines if l.startswith("for f in --tools ")), "")
-for f in ("--tools", "--permission-mode", "--strict-mcp-config", "--mcp-config", "--disallowedTools"):
+for f in ("--tools", "--permission-mode", "--strict-mcp-config", "--mcp-config", "--disallowedTools", "--settings"):
     if f not in flags.split(";")[0].split()[3:]: bad.append(f"{tag}: the flag check lacks {f}: {flags!r}")
+
+# The core's per-run files.read rule opens //home/claude/.claude/projects/<own slug>/*/tool-results/** (and the floor names
+# paths under /home/claude/.claude): the runs' CLAUDE_CONFIG_DIR, where Claude Code saves tool results, must be exactly that.
+tag = "the runs' CLAUDE_CONFIG_DIR is /home/claude/.claude (the core's tool-results and floor paths assume it)"
+for label, r in (("test", test), ("real", real)):
+    h = ctr(r, "harness") or {}
+    if "CLAUDE_CONFIG_DIR" in envmap(h): bad.append(f"{tag}: the harness container sets CLAUDE_CONFIG_DIR itself ({label})")
+    sets = [l for l in lines if re.search(r"\bCLAUDE_CONFIG_DIR=", l)]
+    cl = [l for l in lines if l.startswith("C=")]
+    if len(sets) != 1 or len(cl) != 1: bad.append(f"{tag}: harness-start.sh sets C {len(cl)} times and CLAUDE_CONFIG_DIR {len(sets)} times"); continue
+    p = subprocess.run(["bash", "-c", f'{cl[0]}; {sets[0]}; echo "$CLAUDE_CONFIG_DIR"'], env={"PATH": "/usr/bin:/bin", "HOME": val(h, "HOME") or ""}, capture_output=True, text=True)
+    if p.stdout.strip() != "/home/claude/.claude": bad.append(f"{tag}: it is {p.stdout.strip()!r} ({label})")
 
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)

@@ -955,13 +955,18 @@ for what, args, msg in (("a missing secretKey", ["--set", "harness.channels.disc
                         ("a gateway handed another channel's secretKey", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"GATEWAY_DISCORD_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X"),
                         ("a gateway handed a GATEWAY_*_SECRET key not its own", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"GATEWAY_OTHER_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X"),
                         ("a leftover gateway.uploads (the core owns uploads)", ["--set", "harness.channels.discord.gateway.uploads=true"], "harness.channels.discord.gateway.uploads"),
+                        ("DISCORD_CHANNELS without decisions", ["--set", "harness.channels.discord.gateway.env.DISCORD_CHANNELS=naila:1566334318752567368\\,legal-clerk:1566334318752567369"], "DISCORD_CHANNELS"),
+                        ("DISCORD_CHANNELS with an uppercase name", ["--set", "harness.channels.discord.gateway.env.DISCORD_CHANNELS=Naila:1566334318752567368\\,decisions:1566334318752567369"], "DISCORD_CHANNELS"),
                         ("a gateway handed CORE_TOOLS_SECRET", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"CORE_TOOLS_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X")):
     p = render("--set", "harness.phase=test", *args)
     if p.returncode == 0: bad.append(f"{tag}: {what} renders")
     elif msg not in p.stderr: bad.append(f"{tag}: {what} fails for another reason: {p.stderr.strip()[-300:]}")
 for what, args in (("a gateway handed its own channel's secretKey", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"GATEWAY_TG_SECRET"}}}']),
                    ("retainMs at 2^53-1", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"K","retainMs":9007199254740991}']),
-                   ("test with reject in the real phase", ["--set", "harness.phase=real", *T("reject")])):
+                   ("test with reject in the real phase", ["--set", "harness.phase=real", *T("reject")]),
+                   # no fixed roster (final review F1): any lowercase names, decisions required, in any order
+                   ("DISCORD_CHANNELS with a fifth worker", ["--set", "harness.channels.discord.gateway.env.DISCORD_CHANNELS=naila:1566334318752567368\\,legal-clerk:1566334318752567369\\,decisions:1566334318752567370"]),
+                   ("DISCORD_CHANNELS with decisions first and one worker", ["--set", "harness.channels.discord.gateway.env.DISCORD_CHANNELS=decisions:1566334318752567370\\,naila:1566334318752567368"])):
     p = render(*args)
     if p.returncode != 0: bad.append(f"{tag}: {what} does not render: {p.stderr.strip()[-300:]}")
 

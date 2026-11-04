@@ -47,7 +47,8 @@ harness:
       gateway:                            # absent: no container (a channel served from outside the pod, such as the tests')
         uid: 1002                         # its own uid (group 1000), never 0, 1000 (the core, login), 1001 (docs) or another gateway's
         # Plain env; "" leaves a variable out. Ids are not secret; quoted, they're too large for a YAML number.
-        # DISCORD_OWNER_ID: the only user whose messages and confirmations count. DISCORD_CHANNELS: name:id, in this order.
+        # DISCORD_OWNER_ID: the only user whose messages and confirmations count. DISCORD_CHANNELS: name:id pairs; decisions is the
+        # decision pool's channel, every other name a conversation of the core's directory (no fixed roster; others are logged).
         # DISCORD_AVATAR_BASE: webhook avatars, <base>/<speaker>.png (naila, finance-bookkeeper, finance-advisor, ops-oncall,
         # test); "" = Discord's default. The images live in this public repo under assets/naila/avatars.
         env: { DISCORD_OWNER_ID: "", DISCORD_GUILD_ID: "", DISCORD_CHANNELS: "", DISCORD_AVATAR_BASE: "https://raw.githubusercontent.com/nopsqi/homelab/prod/assets/naila/avatars" }
@@ -55,7 +56,8 @@ harness:
         check:                            # env name: regex; a mismatch fails the render
           DISCORD_OWNER_ID: "^[0-9]{17,20}$"
           DISCORD_GUILD_ID: "^[0-9]{17,20}$"
-          DISCORD_CHANNELS: "^naila:[0-9]{17,20},finance-bookkeeper:[0-9]{17,20},finance-advisor:[0-9]{17,20},ops-oncall:[0-9]{17,20},decisions:[0-9]{17,20}$"
+          # lowercase-name:snowflake pairs, decisions (the decision pool) required; the gateway refuses a name or id twice
+          DISCORD_CHANNELS: "^([a-z0-9][a-z0-9-]{0,63}:[0-9]{17,20},)*decisions:[0-9]{17,20}(,[a-z0-9][a-z0-9-]{0,63}:[0-9]{17,20})*$"
     # test: the unattended channel of the live checks (tests/live). It is served from outside the pod, so no gateway container.
     # Outside a test instance the core lets it only reject (or do nothing), and the render refuses settle approve.
     test:

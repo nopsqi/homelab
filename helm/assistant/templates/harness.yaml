@@ -145,15 +145,16 @@ spec:
         # The docs sidecar's bearer (Ruling 19): every container of the pod shares 127.0.0.1, the gateways facing the internet
         # included, so docs answers only `Authorization: Bearer <token>`. A fresh token at every pod start: 32 bytes from
         # /dev/urandom as 64 hex characters, mode 0440 (uid and group 1000: the core reads it as owner, docs through fsGroup
-        # 1000), in an in-memory emptyDir that only the core and docs mount. No Secret and nothing in git; nothing prints it. A
-        # token it can't make in full fails this container, and the pod with it. A rerun (the pod's sandbox recreated, the
-        # emptyDir kept) replaces the read-only file of the run before.
+        # 1000), in an in-memory emptyDir that only the core and docs mount. No Secret and nothing in git; nothing prints it.
+        # A short read fails this container, and the pod with it, rather than leave a weak token. A rerun (the pod's sandbox
+        # recreated, the emptyDir kept) replaces the read-only file of the run before. node, not busybox's od: no doubt about
+        # which applets and flags the image's busybox has.
         - name: docs-token
           image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
-          command: ["sh", "-c", "rm -f /run/docs-auth/token && umask 0337 && head -c 32 /dev/urandom | od -An -v -tx1 | tr -d ' \\n' > /run/docs-auth/token && chmod 0440 /run/docs-auth/token && [ \"$(wc -c < /run/docs-auth/token)\" -eq 64 ]"]
+          command: ["node", "-e", "const fs = require('fs'), f = '/run/docs-auth/token', b = Buffer.alloc(32), fd = fs.openSync('/dev/urandom', 'r'); if (fs.readSync(fd, b, 0, 32, null) !== 32) process.exit(1); fs.rmSync(f, { force: true }); fs.writeFileSync(f, b.toString('hex'), { mode: 0o440, flag: 'wx' }); fs.chmodSync(f, 0o440)"]
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
           volumeMounts: [{ name: docs-auth, mountPath: /run/docs-auth }]
-          resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { memory: 32Mi } }
+          resources: { requests: { cpu: 10m, memory: 32Mi }, limits: { memory: 128Mi } }   # a bare node start
       containers:
         - name: harness
           image: node:24-bookworm@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413

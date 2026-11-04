@@ -105,6 +105,10 @@ O=test expect deny  "$NA" naila "$v/Daily/into-uploads.pdf"                # a v
 expect allow "$NA" naila "$v/Daily/into-uploads.pdf"                       # ... which a discord-origin run converts
 O=test expect deny  "$NA" naila "$up/discord/sent.pdf" --by-caps --uploads "$up" --root "$tmp"   # a deny, not a missing grant:
 O=test expect allow "$NA" naila "$tmp/outside/plain.pdf" --by-caps --uploads "$up" --root "$tmp"   # a root holding uploads/ still can't open it
+# the deny reason names the folders without a doubled slash when --uploads or --root ends in /
+why="$(run "$BK" finance-bookkeeper "$v/Daily/x.md" --by-caps --uploads "$up/" --root "$v/")"
+case "$why" in *"$up/discord, $v/Finance, $v/Naila/Workspace/finance-bookkeeper "*) ;; *) echo "FAIL: the deny reason with a trailing / is: $why"; fail=1 ;; esac
+case "$why" in *//*) echo "FAIL: the deny reason has a doubled slash: $why"; fail=1 ;; esac
 # fails closed
 expect deny  - naila "$up/discord/sent.pdf"                                # no HARNESS_CAPS (an image older than the switches)
 expect deny  - naila "$v/Daily/x.md"

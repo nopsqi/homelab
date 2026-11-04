@@ -68,8 +68,9 @@ if (process.argv.includes('--by-caps')) {
         const roots = [...mine, ...(on.has('vault.read') ? [root] : []),
           ...(on.has('files.read') && FINANCE_WORKERS.includes(w) ? sub(root, 'Finance') : []),
           ...(on.has('files.read') ? sub(root, 'Naila', 'Workspace', w) : [])]
-        where = [...(origin ? [`${upArg}/${origin}`] : []), ...(on.has('vault.read') ? [rootArg] : []), ...(on.has('files.read') && FINANCE_WORKERS.includes(w) ? [`${rootArg}/Finance`] : []),
-          ...(on.has('files.read') ? [`${rootArg}/Naila/Workspace/${w}`] : [])].join(', ') || 'nowhere'
+        const u = upArg.replace(/\/+$/, ''), v = rootArg.replace(/\/+$/, '')   // as named, without a trailing / (no `//` below)
+        where = [...(origin ? [`${u}/${origin}`] : []), ...(on.has('vault.read') ? [v || '/'] : []), ...(on.has('files.read') && FINANCE_WORKERS.includes(w) ? [`${v}/Finance`] : []),
+          ...(on.has('files.read') ? [`${v}/Naila/Workspace/${w}`] : [])].join(', ') || 'nowhere'
         const real = realpathSync(p)
         const st = statSync(real)
         const under = (r) => r !== '/' && real.startsWith(r + '/')

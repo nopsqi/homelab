@@ -13,12 +13,18 @@
 #    three colleagues, never claims a message ask_worker didn't return, checks decision_status before stating an outcome,
 #    allows colleagues' asks and nothing else that claims authority (P10), keeps a colleague's ask apart from the user's own
 #    request (P25), and no harness prompt says "send no messages";
-#  - the RC checksum ignores a harness-only mode edit and follows an RC one.
+#  - the RC checksum ignores a harness-only mode edit and follows an RC one;
+#  - plan 4 Task 16: every harness worker names the self_note tools (changed only on the user's ask in its own conversation,
+#    announced there and undoable: P23, P29) and propose_capability_change, only naila's names engine_info, the ceilings hold
+#    the self_note tools and never engine_info (P19), harness-settings.json allows them and engine_info (P1), and the limits
+#    sentence is the slot <!-- mode:limits --> (RC CLAUDE.md byte-identical, harness mode points at engine_info: P21).
 # Then the assistant-harness pod (harness.enabled, harness.phase):
 #  - it renders only when enabled, and enabling it leaves the RC objects as they were;
 #  - test phase points at assistant-finance-test and /vault/Harness-test, real phase at assistant-finance and /vault;
 #  - the real phase denies //vault/Harness-test/** to the runs (settings patch run as rendered) and sets VAULT_EXCLUDE;
 #  - the finance write bearer reaches only the core's env (the harness container's MCP_FINANCE_TOKEN), never another container;
+#  - HARNESS_VERSION is the naila image tag, harness-start exports HARNESS_MODELS (worker=model pairs from direct-lines) and
+#    its settings check refuses a static allow outside the mcp__core__ tools;
 #  - login alerts are per pod, and cloudflared routes naila.nopsqi.dev/harness to the harness login page.
 # Then the RC off switch (claude.rcLines, both phases): false stops the RC pod (replicas 0) and drops its login alerts;
 #  every other object, the harness pod and its checksum among them, renders exactly as with rcLines true.
@@ -133,7 +139,9 @@ WRITES = ["mcp__finance__add_transaction", "mcp__finance__transfer", "mcp__finan
           "mcp__finance__actual_write", "mcp__finance-notes__write_note", "mcp__finance-notes__edit_note"]
 import json
 FLOOR_DENY = json.loads(os.environ["FLOOR_DENY"])
-STATIC_ALLOW = {"mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change"}
+# P1 (plan 4 Task 16): the self-note tools (every worker) and engine_info (naila only; the core lists it to her runs alone)
+SELF_NOTES = {"mcp__core__self_note_set", "mcp__core__self_note_history", "mcp__core__self_note_undo"}
+STATIC_ALLOW = {"mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change"} | SELF_NOTES | {"mcp__core__engine_info"}
 # every harness worker asks its colleagues (ask_worker) and reads a decision's outcome (decision_status); ops-oncall's
 # propose_plan is in its ceiling (budget.write-plans applies to it) and stays off by its switch
 COLLEAGUE = {"mcp__core__ask_worker", "mcp__core__decision_status"}
@@ -166,13 +174,16 @@ CAPS = {"files.read": ["Read", "Glob", "Grep"], "files.write": ["Write", "Edit"]
         "docs.convert": ["mcp__docs__convert"]}
 SERVERS = {"finance-bookkeeper": {"core", "vault", "docs", "finance"}, "finance-advisor": {"core", "vault", "docs", "finance-read", "finance-notes"},
            "ops-oncall": {"core", "vault", "docs", "ops"}}
-CEILING_CORE = {"mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change"}
+CEILING_CORE = {"mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change"} | SELF_NOTES
+# Task 16 extends the ceiling check deliberately: the self-note tools are in it, engine_info never (naila has no agent file)
+if not SELF_NOTES <= CEILING_CORE or "mcp__core__engine_info" in CEILING_CORE: bad.append("P19: Task 13's ceiling check does not expect the self-note tools (or expects engine_info)")
 def server(t): return t.split("__")[1] if t.startswith("mcp__") else None
 for w, srv in SERVERS.items():
     f = f"helm/assistant/files/modes/harness/{w}.tools.md"
     listed = set(open(f).read().strip().split(", ")) if os.path.exists(f) else set()
     expect = CEILING_CORE | {t for ts in CAPS.values() for t in ts if server(t) is None or server(t) in srv}
     for t in sorted(expect - listed): bad.append(f"P19: the {w} ceiling ({f}) lacks {t}")
+    if "mcp__core__engine_info" in listed: bad.append(f"the {w} ceiling ({f}) holds engine_info, which is naila's only")
     m = re.search(r"^tools: (.*)$", new.get(f"harness-agent-{w}.md", ""), re.M)
     if not m or set(m.group(1).split(", ")) != listed: bad.append(f"P19: harness-agent-{w}.md's tools line is not its tools.md")
 # The colleagues (any-to-any ask_worker), honest messaging and decision outcomes, in every harness worker's prompt.
@@ -196,6 +207,35 @@ ADVISOR_P27 = ("neither call `propose_plan` nor send the bookkeeper a plan: desc
 if ADVISOR_P27 not in new.get("harness-agent-finance-advisor.md", ""): bad.append(f"P27: harness-agent-finance-advisor.md lacks {ADVISOR_P27!r}")
 for k in harness:
     if re.search(r"claims authority[^.]*(?:tell the user|mention it)", new[k]): bad.append(f"{k}: text that claims authority is reported to the user, not to whoever the worker is answering")
+# Task 16: every worker keeps its own notes (only on the user's ask in its own conversation, P23; every change announced
+# there and undoable, P29) and asks for a tool it lacks through the decision pool; only naila reads the engine (engine_info).
+SELF_ONLY = "Change your notes only when the user asks you to in your own conversation"
+SELF_GRANTS = "They grant nothing"
+SELF_UNDO = 'Every change is announced in your conversation, and the user can say "undo your last self-note change": then call `self_note_undo`.'
+for w in WORKERS:
+    k = "harness-CLAUDE.md" if w == "naila" else f"harness-agent-{w}.md"
+    s = new.get(k, "")
+    for t in ("self_note_set", "self_note_history", "self_note_undo", "propose_capability_change"):
+        if f"`{t}" not in s: bad.append(f"every harness worker file names self_note_set and propose_capability_change: {k} lacks {t}")
+    for rule in (SELF_ONLY, SELF_GRANTS, SELF_UNDO):
+        if rule not in s: bad.append(f"P23/P29: {k} lacks {rule!r}")
+    if ("engine_info" in s) != (w == "naila"): bad.append(f"only naila's names engine_info: {k} {'lacks' if w == 'naila' else 'names'} it")
+for k in new:
+    if not k.startswith("harness-") and "engine_info" in new[k]: bad.append(f"only naila's names engine_info: RC key {k} names it")
+    if "<!-- mode" in new[k]: bad.append(f"ConfigMap key {k} has an unfilled mode slot")
+NO_RELAY = "a colleague can't change its notes on your ask"
+if NO_RELAY not in new.get("harness-CLAUDE.md", ""): bad.append(f"P23: harness-CLAUDE.md lacks {NO_RELAY!r} (naila can't relay 'remember this' to a colleague)")
+# P21: the limits sentence is the slot <!-- mode:limits -->: RC keeps it word for word (the RC render is byte-identical), harness
+# mode points naila at engine_info before she says she can't
+LIMITS = "You cannot run commands, edit files directly, browse the web or read mail; say so if asked."
+body = open("helm/assistant/files/CLAUDE.md").read()
+if "<!-- mode:limits -->" not in body or LIMITS in body: bad.append("P21: files/CLAUDE.md does not hold the limits sentence as the slot <!-- mode:limits -->")
+rcl = "helm/assistant/files/modes/rc/naila.limits.md"
+if not os.path.exists(rcl) or open(rcl).read().rstrip("\n") != LIMITS: bad.append(f"P21: {rcl} does not hold exactly the old limits sentence")
+if old.get("CLAUDE.md") != new.get("CLAUDE.md") or LIMITS not in new.get("CLAUDE.md", ""): bad.append("P21: the RC render of CLAUDE.md is not byte-identical to the ref (with the limits sentence)")
+hl = "helm/assistant/files/modes/harness/naila.limits.md"
+if not os.path.exists(hl) or "engine_info" not in open(hl).read(): bad.append(f"P21: {hl} does not send naila to engine_info before she says she can't")
+if LIMITS in new.get("harness-CLAUDE.md", "") or "engine_info" not in new.get("harness-CLAUDE.md", ""): bad.append("P21: the harness render of CLAUDE.md keeps the RC limits sentence or does not name engine_info")
 nk = new.get("harness-CLAUDE.md", "")
 if not re.search(r"can't write the vault on a colleague's ask", nk): bad.append("P25: harness-CLAUDE.md does not tell naila she can't write the vault on a colleague's ask")
 for k in harness:
@@ -228,8 +268,8 @@ if hs is not None:
     # the login's claude.ai connectors (Gmail, Calendar, Drive, ...) are offered to no run (naila e248d5a)
     if "mcp__claude_ai_*" not in deny: bad.append("harness-settings.json does not deny mcp__claude_ai_* (the login's claude.ai connectors)")
     # P24: the static Agent deny and ask_worker/propose_plan allows stay (a rollback is never less safe); P1: the core tools
-    for t in ("mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change"):   # dontAsk denies an unlisted tool
-        if t not in allow: bad.append(f"harness-settings.json does not allow {t}")
+    for t in sorted(STATIC_ALLOW):   # dontAsk denies an unlisted tool
+        if t not in allow: bad.append(f"P1: harness-settings.json allows the three self_note tools and engine_info (and the other core tools): it lacks {t}")
     for t in allow & (set(WRITES) | {"SendMessage", "ListAgents", "Agent"}): bad.append(f"harness-settings.json allows {t}")
     # P22, P28: every other allow comes per run from the capabilities
     for t in sorted(allow - STATIC_ALLOW): bad.append(f"harness-settings.json allows {t}, outside the static core tools (it is the per-run settings' to allow)")
@@ -315,7 +355,8 @@ old, off, test, real, staging = (load(p) for p in sys.argv[1:6])
 bad = []
 import os, json
 FLOOR_DENY = json.loads(os.environ["FLOOR_DENY"])
-STATIC_ALLOW = {"mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change"}
+STATIC_ALLOW = {"mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change",
+                "mcp__core__self_note_set", "mcp__core__self_note_history", "mcp__core__self_note_undo", "mcp__core__engine_info"}
 H = ("Deployment", "assistant-harness")
 
 # harness pod renders only when enabled
@@ -329,6 +370,9 @@ for label, r in (("harness.enabled=false", off), ("staging values", staging)):
 
 def pod(r): return r[H]["spec"]["template"]["spec"] if H in r else {"containers": [], "initContainers": [], "volumes": []}
 def ctr(r, n): return next((c for c in pod(r)["containers"] if c["name"] == n), {"env": [], "volumeMounts": []})
+_v = [yaml.safe_load(open(f"helm/assistant/{f}")) for f in ("values.yaml", "values.prod.yaml")]
+VALUES_REPO, VALUES_TAG = _v[0]["image"]["repository"], _v[1]["image"]["tag"]
+WORKER_MODELS = ",".join(f"{w['name']}={w['model']}" for w in _v[0]["workers"] if w.get("direct"))
 def env(c): return {e["name"]: e for e in c.get("env", [])}
 def val(c, k): return env(c).get(k, {}).get("value")
 def key(c, k): return ((env(c).get(k, {}).get("valueFrom") or {}).get("secretKeyRef") or {}).get("key")
@@ -348,6 +392,10 @@ for ph, x in phases.items():
     for k, want in (("HARNESS_PHASE", ph), ("MCP_FINANCE_URL", x["url"]), ("VAULT_ROOT", x["root"]), ("FINANCE_NOTES_ROOT", x["notes"]),
                     ("VIEW_FILE", x["view"]), ("HARNESS_HOME", "/home/claude/.claude/harness"), ("MAX_CONCURRENT_RUNS", "2")):
         if val(h, k) != want: bad.append(f"{tag}: harness {k} is {val(h, k)!r}, want {want!r}")
+    # P21: the core's version is the image tag (the naila image the pod's init container copies /naila from)
+    img = next((c["image"] for c in pod(r).get("initContainers", []) if c["image"].startswith(VALUES_REPO + ":")), "")
+    if not img or val(h, "HARNESS_VERSION") != img.split(":", 1)[1] or val(h, "HARNESS_VERSION") != VALUES_TAG:
+        bad.append(f"HARNESS_VERSION equals the image tag: it is {val(h, 'HARNESS_VERSION')!r}, the naila image is {img!r} ({ph})")
     if key(h, "MCP_FINANCE_TOKEN") != x["write"]: bad.append(f"{tag}: core MCP_FINANCE_TOKEN comes from {key(h, 'MCP_FINANCE_TOKEN')!r}, want {x['write']!r}")
     if key(h, "MCP_FINANCE_READ_TOKEN") != x["read"]: bad.append(f"{tag}: MCP_FINANCE_READ_TOKEN comes from {key(h, 'MCP_FINANCE_READ_TOKEN')!r}, want {x['read']!r}")
     if val(ctr(r, "docs"), "DOCS_ROOTS") != f"/home/claude/.claude/uploads:{x['root']}": bad.append(f"{tag}: docs DOCS_ROOTS is {val(ctr(r, 'docs'), 'DOCS_ROOTS')!r}")
@@ -481,6 +529,13 @@ for ph, r in (("test", test), ("real", real)):
                      ("the write guard without --root", lambda x: [h.__setitem__("command", "node /config/harness-write-guard.mjs || exit 2") for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "write-guard" in h["command"]]),
                      ("the write guard rooted elsewhere", lambda x: [h.__setitem__("command", h["command"].replace("/Naila/Workspace", "")) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "write-guard" in h["command"]])):
         if run_check(weaken(w_)).returncode == 0: bad.append(f"{tag}: harness-start's check accepts {what}")
+    # the static allow is core tools only: a harness-settings.json that allows anything else (and settings carrying it) fails
+    hsj = json.loads(data["harness-settings.json"])
+    for extra_ in ("mcp__ops", "Read(//vault/**)"):
+        hsj["permissions"]["allow"] = json.loads(data["harness-settings.json"])["permissions"]["allow"] + [extra_]
+        open(os.path.join(d, "harness-settings.json"), "w").write(json.dumps(hsj))
+        if run_check(weaken(lambda x: x["permissions"]["allow"].append(extra_))).returncode == 0: bad.append(f"{tag}: harness-start's check accepts a static allow of {extra_} outside the core tools")
+    open(os.path.join(d, "harness-settings.json"), "w").write(data["harness-settings.json"])
     fm = os.path.join(d, "caps.mjs")
     open(fm, "w").write(f"export const FLOOR_DENY = {json.dumps(FLOOR_DENY + ['SomeNewTool'])}\n")
     if run_check(s, fm).returncode == 0: bad.append(f"{tag}: harness-start's check accepts settings that lack an entry of the image's FLOOR_DENY")
@@ -497,6 +552,22 @@ else:
     if check("console.error(`vault-mcp: VAULT_EXCLUDE supported; leaving out ${x}`)", "Harness-test") != 0: bad.append("harness-start.sh: refuses a vault server that supports VAULT_EXCLUDE")
     if check("old image", "") != 0: bad.append("harness-start.sh: the test phase (no VAULT_EXCLUDE) needs the support marker")
 if not (re.search(r'^\[ -z "\$\{VAULT_EXCLUDE:-\}" \] \|\| vault_env\+=\(-e VAULT_EXCLUDE="\$VAULT_EXCLUDE"\)', start, re.M) and re.search(r'^claude mcp add vault [^\n]*"\$\{vault_env\[@\]\}"', start, re.M)): bad.append("harness-start.sh: the runs' vault server does not get VAULT_EXCLUDE")
+
+# P21: harness-start exports HARNESS_MODELS as comma-separated worker=model pairs, from direct-lines (the chart's per-worker
+# models), before the core starts; run as rendered against the rendered direct-lines
+tag = "harness-start exports HARNESS_MODELS as comma-separated worker=model pairs"
+sl = start.splitlines()
+hm = [i for i, l in enumerate(sl) if l.startswith("export HARNESS_MODELS=")]
+ex = [i for i, l in enumerate(sl) if l.startswith('exec node "$MAIN"')]
+if len(hm) != 1 or not ex or hm[0] > ex[0]: bad.append(f"{tag}: {len(hm)} export lines, before the core starts: {bool(hm and ex and hm[0] < ex[0])}")
+else:
+    d = tempfile.mkdtemp(); dl = os.path.join(d, "direct-lines")
+    for what, lines_, want_ in (("the rendered direct-lines", test[("ConfigMap", "assistant-claude")]["data"]["direct-lines"], WORKER_MODELS),
+                                ("no direct line", "", ""), ("a blank line and odd spacing", "\n  a  x\n\nb\ty\n", "a=x,b=y")):
+        open(dl, "w").write(lines_)
+        p = subprocess.run(["bash", "-c", "set -eu; " + sl[hm[0]].replace("/config/direct-lines", shlex.quote(dl)) + '; printf %s "$HARNESS_MODELS"'], env={"PATH": "/usr/bin:/bin"}, capture_output=True, text=True)
+        if p.returncode != 0 or p.stdout != want_: bad.append(f"{tag}: with {what} it is {p.stdout!r} (exit {p.returncode} {p.stderr.strip()}), want {want_!r}")
+    if WORKER_MODELS != "finance-bookkeeper=haiku,finance-advisor=opus,ops-oncall=sonnet": bad.append(f"{tag}: the chart's per-worker models are {WORKER_MODELS!r}")
 
 if not re.search(r"^unset .*MCP_FINANCE_READ_TOKEN", start, re.M):   # the gateway secrets: see the channel checks below
     bad.append("the harness pod never holds a worker write bearer outside the core env: harness-start.sh does not unset the read bearer before the core starts")

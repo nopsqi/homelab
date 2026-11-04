@@ -151,6 +151,7 @@ spec:
             - { name: TZ, value: {{ .Values.tz | quote }} }
             - { name: HARNESS_HOME, value: /home/claude/.claude/harness }
             - { name: HARNESS_PHASE, value: {{ $h.phase | quote }} }
+            - { name: HARNESS_VERSION, value: {{ .Values.image.tag | quote }} }   # engine_info's version: the naila image tag
             - { name: MAX_CONCURRENT_RUNS, value: "2" }   # each run is a claude process of a few hundred MiB
             - { name: HOST, value: 127.0.0.1 }
             - { name: PORT, value: "3100" }              # channel API, for the gateway containers

@@ -46,7 +46,6 @@ harness:
       secretKey: GATEWAY_DISCORD_SECRET   # key in assistant-harness-secret: the gateway's and the core's shared secret
       gateway:                            # absent: no container (a channel served from outside the pod, such as the tests')
         uid: 1002                         # its own uid (group 1000), never 0, 1000 (the core, login), 1001 (docs) or another gateway's
-        uploads: true                     # uploads/<name> (2770) and the uploads mount, HARNESS_UPLOADS
         # Plain env; "" leaves a variable out. Ids are not secret; quoted, they're too large for a YAML number.
         # DISCORD_OWNER_ID: the only user whose messages and confirmations count. DISCORD_CHANNELS: name:id, in this order.
         # DISCORD_AVATAR_BASE: webhook avatars, <base>/<speaker>.png (naila, finance-bookkeeper, finance-advisor, ops-oncall,

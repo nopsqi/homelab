@@ -44,6 +44,7 @@
 {{- $uid := int .uid }}
 {{- if has $uid $uids }}{{ fail (printf "%s.gateway.uid %d is taken (root, the core, docs or another gateway)" $at $uid) }}{{ end }}
 {{- $uids = append $uids $uid }}
+{{- if hasKey . "uploads" }}{{ fail (printf "%s.gateway.uploads is gone: the core owns uploads (Task 13), so no gateway mounts anything; drop the key" $at) }}{{ end }}
 {{- $names := list "CORE_URL" "GATEWAY_SECRET" "HARNESS_UPLOADS" }}
 {{- range $k, $_ := .env }}{{ if has $k $names }}{{ fail (printf "%s.gateway.env.%s is set by the chart or twice" $at $k) }}{{ end }}{{ $names = append $names $k }}{{ end }}
 {{- range $k, $v := .secretEnv }}
@@ -55,7 +56,7 @@
 {{- $v := toString (index $env $k | default "") }}
 {{- if not (regexMatch (toString $re) $v) }}{{ fail (printf "%s.gateway.env.%s must match %s, got %q" $at $k (toString $re) $v) }}{{ end }}
 {{- end }}
-{{- $_ := set $ch "gateway" (dict "uid" $uid "uploads" (.uploads | default false) "env" $env "secretEnv" (.secretEnv | default dict)) }}
+{{- $_ := set $ch "gateway" (dict "uid" $uid "env" $env "secretEnv" (.secretEnv | default dict)) }}
 {{- end }}
 {{- $chs = append $chs $ch }}
 {{- $specs = append $specs $spec }}
@@ -73,10 +74,8 @@
 {{- end }}{{ end }}
 {{- $gws := list }}
 {{- $up := "/home/claude/.claude/uploads" }}
-{{- $updirs := list }}
 {{- range $ch := $chs }}{{ with $ch.gateway }}
 {{- $gws = append $gws $ch.name }}
-{{- if .uploads }}{{ $updirs = append $updirs (printf "%s/%s" $up $ch.name) }}{{ end }}
 {{- end }}{{ end }}
 {{- $vaultRoot := ternary "/vault/Harness-test" "/vault" $test }}
 {{- $vaultSub := "" }}
@@ -127,13 +126,17 @@ spec:
       imagePullSecrets: [{ name: ghcr-pull }]
       securityContext: { runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
       initContainers:
-        # /naila from the naila image, and the uploads folders the gateways write into: uploads/ group-traversable (0750),
-        # uploads/<channel>/ setgid and group-writable (2770, group 1000) for each gateway with uploads, so the gateway (its own
-        # uid, group 1000) creates its per-message folders there and they stay in group 1000, readable by the runs (uid 1000)
-        # and the docs sidecar (group 1000).
+        # /naila from the naila image, and uploads/ group-traversable (0750) for the docs sidecar (group 1000). The core owns
+        # uploads (HARNESS_UPLOADS_ROOT): it makes uploads/<channel>/ itself (0750, its own uid) and the per-upload folders in it,
+        # so no channel folder is made here. A channel folder from before (uploads/discord was 2770 for the gateway) and
+        # uploads/ itself end 0750 with setgid cleared (GNU chmod keeps it on a directory); links are not followed, and nothing
+        # below a channel folder is touched. `-exec … ;` rather than `+`: busybox (the naila image is Alpine) always has it, and
+        # its failure only makes that test false, never find's exit code. On purpose: a channel folder not owned by uid 1000
+        # (chmod refused) keeps its mode, with chmod's error in the init log, instead of a crash-looping pod. The proof that the
+        # modes took is the deploy's live check, `stat -c '%a %u' ~/.claude/uploads ~/.claude/uploads/*` in the harness container.
         - name: naila-tools
           image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
-          command: ["sh", "-c", "cp -a /app/. /naila/ && mkdir -p {{ $up }}{{ range $updirs }} {{ . }}{{ end }} && chmod 750 {{ $up }}{{ with $updirs }} && chmod 2770 {{ join " " . }}{{ end }}"]
+          command: ["sh", "-c", "cp -a /app/. /naila/ && mkdir -p {{ $up }} && find {{ $up }} -maxdepth 1 -type d -exec chmod 750 {} \\; -exec chmod g-s {} \\;"]
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           volumeMounts:
             - { name: naila, mountPath: /naila }
@@ -150,6 +153,7 @@ spec:
             - { name: CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH, value: "1" }
             - { name: TZ, value: {{ .Values.tz | quote }} }
             - { name: HARNESS_HOME, value: /home/claude/.claude/harness }
+            - { name: HARNESS_UPLOADS_ROOT, value: {{ $up }} }   # uploads/<channel>/<id>/: the core's alone (Ruling 16)
             - { name: HARNESS_PHASE, value: {{ $h.phase | quote }} }
             - { name: HARNESS_VERSION, value: {{ .Values.image.tag | quote }} }   # engine_info's version: the naila image tag
             - { name: MAX_CONCURRENT_RUNS, value: "2" }   # each run is a claude process of a few hundred MiB
@@ -197,7 +201,11 @@ spec:
         # Gateway of the {{ $ch.name }} channel (packages/channels/{{ $ch.name }}): posts the core's outbox and relays the user's
         # messages and confirmations to the core on 127.0.0.1. Its own uid, not the core's: the pod shares one process namespace
         # (so login can restart the core), and only a different uid keeps /proc/<core pid>/{environ,root} (the write bearer, the
-        # login) closed to a process facing the outside.
+        # login) closed to a process facing the outside. It mounts no volume: files the user sends are streamed to the core
+        # (POST /api/v2/uploads), which alone writes them under uploads/<channel>/. That is no file isolation: the docs sidecar
+        # listens on 127.0.0.1:3002 with no bearer, and every container of the pod, this one included, shares that loopback, so
+        # it can ask docs to convert any upload or vault file docs reads. docs-grant.mjs (Ruling 16) governs only the runs' tool
+        # calls. A docs bearer is a separate task.
         - name: {{ $ch.name }}
           image: {{ $.Values.image.repository }}:{{ $.Values.image.tag }}
           command: ["node", "packages/channels/{{ $ch.name }}/dist/main.js"]
@@ -205,8 +213,15 @@ spec:
             - { name: CORE_URL, value: "http://127.0.0.1:3100" }
             - name: GATEWAY_SECRET
               valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: {{ $ch.secretKey | quote }} } }
-            {{- if .uploads }}
-            - { name: HARNESS_UPLOADS, value: {{ $up }}/{{ $ch.name }} }   # uploads/<name>/<uuid>/ (0750/0640, group 1000)
+            {{- if eq $ch.name "discord" }}
+            # Rollback leftover (P24), remove after 2026-11-19: HARNESS_UPLOADS, which a discord gateway older than naila 95dd7a2
+            # exits without ("missing env HARNESS_UPLOADS"); the gateway since 95dd7a2 ignores it. That older gateway on this
+            # chart has no mount, so the path doesn't exist in its read-only root: it stays up, and a message with files reaches
+            # the core as "Files not saved: storage error"; its core sets no HARNESS_ORIGIN, so runs read and convert no uploads
+            # (degraded, never wider). Roll back the chart and the image together (one revert of this chart change and the
+            # values.prod.yaml image.tag bump); if only one can go back, the image first: the older chart on the new image
+            # remounts uploads and opens every channel's to docs-grant.
+            - { name: HARNESS_UPLOADS, value: {{ $up }}/{{ $ch.name }} }   # remove after 2026-11-19
             {{- end }}
             {{- range $k, $v := .env }}{{ $s := ternary "" (toString $v) (kindIs "invalid" $v) }}{{ if ne $s "" }}
             - { name: {{ $k | quote }}, value: {{ $s | quote }} }
@@ -216,12 +231,6 @@ spec:
               valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: {{ $v | quote }} } }
             {{- end }}
           securityContext: { runAsUser: {{ .uid }}, runAsGroup: 1000, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
-          {{- if .uploads }}
-          # Never mount the whole home volume here: fsGroup makes the credentials group-readable (group 1000) on every pod
-          # start, so keeping the login from this container rests on mounting only the uploads subPath.
-          volumeMounts:
-            - { name: home, mountPath: {{ $up }}, subPath: .claude/uploads }
-          {{- end }}
           resources: { requests: { cpu: 10m, memory: 64Mi }, limits: { memory: 256Mi } }
         {{- end }}{{ end }}
         # MarkItDown, as in the RC pod, but it sees only uploads and this phase's vault.
@@ -236,7 +245,9 @@ spec:
           readinessProbe: { exec: { command: ["python", "-c", "import socket; socket.create_connection(('127.0.0.1', 3002), 2)"] }, periodSeconds: 15 }
           # Its own uid, as in the RC pod: the shared process namespace leaves other containers' /proc/<pid> open to the same uid.
           securityContext: { runAsUser: 1001, runAsGroup: 1001, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
-          # Never mount the whole home volume here (see the gateways): only the uploads subPath keeps the login out of reach.
+          # Never mount the whole home volume here: fsGroup makes the credentials group-readable (group 1000) on every pod start,
+          # so keeping the login from this container rests on mounting only the uploads subPath. It reads every channel's
+          # uploads through the group: docs-grant.mjs --by-caps denies a run any but its own origin channel's (Ruling 16).
           volumeMounts:
             - { name: naila, mountPath: /naila, readOnly: true }
             - { name: home, mountPath: /home/claude/.claude/uploads, subPath: .claude/uploads, readOnly: true }

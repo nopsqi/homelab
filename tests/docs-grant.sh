@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Usage: tests/docs-grant.sh
 # Runs helm/assistant/files/docs-grant.mjs --by-caps --uploads U --root R (the harness runs' mode) against files under a
-# temp vault and uploads folder, with HARNESS_CAPS and HARNESS_WORKER in the env as the core sets them per run:
-#  - docs.convert must be on, and uploads are always convertible;
+# temp vault and uploads folder, with HARNESS_CAPS, HARNESS_WORKER and HARNESS_ORIGIN in the env as the core sets them per run:
+#  - docs.convert must be on, and uploads are convertible only under uploads/<HARNESS_ORIGIN>/ (Ruling 16): another channel's
+#    upload is denied (also through a link, a channel folder that is a link, or a --root that holds uploads/), and a missing or
+#    malformed HARNESS_ORIGIN (not ^[a-z][a-z0-9-]{0,31}$) opens no upload at all;
 #  - the vault root only with vault.read; <root>/Finance/ only for a finance worker with files.read (P28); the worker's own
 #    <root>/Naila/Workspace/<worker>/ with files.read, never another worker's;
 #  - it fails closed: no HARNESS_CAPS, an unusable HARNESS_CAPS or HARNESS_WORKER, no --uploads or --root, or a relative one
@@ -19,14 +21,19 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 v="$tmp/vault" up="$tmp/uploads"
 mkdir -p "$v/Daily" "$v/Finance" "$v/Naila/Workspace/naila" "$v/Naila/Workspace/finance-bookkeeper" "$v/Naila/Workspace/ops-oncall" \
-  "$v/Harness-test/Naila" "$up/discord" "$tmp/outside"
+  "$v/Harness-test/Naila" "$up/discord" "$up/test" "$tmp/outside"
 echo a > "$v/Daily/x.md"
 echo a > "$v/Finance/statement.pdf"
 echo a > "$v/Naila/Workspace/naila/n.docx"
 echo a > "$v/Naila/Workspace/finance-bookkeeper/b.xlsx"
 echo a > "$v/Naila/Workspace/ops-oncall/o.docx"
 echo a > "$up/discord/sent.pdf"
+echo a > "$up/test/fixture.pdf"
+ln -s "$up/discord/sent.pdf" "$up/test/into-discord.pdf"   # a link from the test channel's folder to a Discord upload
+ln -s discord "$up/evil"                                   # a channel folder that is a link to another channel's
+ln -s "$up/discord/sent.pdf" "$v/Daily/into-uploads.pdf"   # a vault note that is a link to a Discord upload
 echo b > "$tmp/outside/secret.pdf"
+echo b > "$tmp/outside/plain.pdf"
 ln "$tmp/outside/secret.pdf" "$up/discord/linked.pdf"
 ln -s "$tmp/outside/secret.pdf" "$up/discord/sym.pdf"
 ln -s "$v/Finance/statement.pdf" "$up/discord/into-finance.pdf"
@@ -41,11 +48,13 @@ ln -s "$v/Daily" "$v2/Finance"
 fail=0
 BK="docs.convert,files.read,messaging.ask,budget.read,budget.write-plans"   # the bookkeeper's seed: vault.read off
 NA="docs.convert,files.read,messaging.ask,vault.read,vault.write"           # naila's seed
-run() {  # run CAPS WORKER PATH [hook args…]; CAPS or WORKER "-" leaves the variable unset
-  local caps="$1" w="$2" p="$3"; shift 3
-  local e=(env -u HARNESS_CAPS -u HARNESS_WORKER)
+run() {  # run CAPS WORKER PATH [hook args…]; CAPS or WORKER "-" leaves the variable unset; HARNESS_ORIGIN is $O (default
+  # discord, the channel of the uploads above; "-" leaves it unset)
+  local caps="$1" w="$2" p="$3" o="${O-discord}"; shift 3
+  local e=(env -u HARNESS_CAPS -u HARNESS_WORKER -u HARNESS_ORIGIN)
   [ "$caps" = - ] || e+=("HARNESS_CAPS=$caps")
   [ "$w" = - ] || e+=("HARNESS_WORKER=$w")
+  [ "$o" = - ] || e+=("HARNESS_ORIGIN=$o")
   node -e 'console.log(JSON.stringify({ tool_name: "mcp__docs__convert", tool_input: { path: process.argv[1] } }))' "$p" | "${e[@]}" node "$hook" "$@"
 }
 expect() {  # expect allow|deny CAPS WORKER PATH [hook args; default --by-caps --uploads $up --root $v; "rc" for none]
@@ -53,9 +62,9 @@ expect() {  # expect allow|deny CAPS WORKER PATH [hook args; default --by-caps -
   local args=("$@")
   if [ "${#args[@]}" -eq 0 ]; then args=(--by-caps --uploads "$up" --root "$v"); elif [ "${args[0]}" = rc ]; then args=(); fi
   local out rc=0; out="$(run "$caps" "$w" "$p" ${args[@]+"${args[@]}"})" || rc=$?
-  if [ "$rc" != 0 ]; then echo "FAIL: $p ($w, caps $caps): exit $rc"; fail=1; return; fi
-  if [ "$want" = allow ] && [ -n "$out" ]; then echo "FAIL: $p ($w, caps $caps) denied: $out"; fail=1; fi
-  if [ "$want" = deny ] && ! grep -q '"permissionDecision":"deny"' <<<"$out"; then echo "FAIL: $p ($w, caps $caps) not denied"; fail=1; fi
+  if [ "$rc" != 0 ]; then echo "FAIL: $p ($w, caps $caps, origin ${O-discord}): exit $rc"; fail=1; return; fi
+  if [ "$want" = allow ] && [ -n "$out" ]; then echo "FAIL: $p ($w, caps $caps, origin ${O-discord}) denied: $out"; fail=1; fi
+  if [ "$want" = deny ] && ! grep -q '"permissionDecision":"deny"' <<<"$out"; then echo "FAIL: $p ($w, caps $caps, origin ${O-discord}) not denied"; fail=1; fi
 }
 # the switches
 expect deny  "$BK" finance-bookkeeper "$v/Daily/x.md"                     # vault.read off: no vault file
@@ -76,6 +85,30 @@ expect deny  "files.read,vault.read" naila "$up/discord/sent.pdf"          # doc
 expect deny  "files.read,vault.read" naila "$v/Daily/x.md"
 expect allow "docs.convert" ops-oncall "$up/discord/sent.pdf"
 expect allow "$BK,vault.read" finance-bookkeeper "$v/Daily/x.md"           # switched on later: the vault opens
+# Ruling 16: uploads only under the run's own origin channel
+O=test expect deny  "$NA" naila "$up/discord/sent.pdf"                     # a test-origin run: not Discord's upload
+O=test expect allow "$NA" naila "$up/test/fixture.pdf"                     # its own
+expect allow "$BK" finance-bookkeeper "$up/discord/sent.pdf"               # a discord-origin run: its own
+expect deny  "$NA" naila "$up/test/fixture.pdf"                            # a discord-origin run: not the test fixture
+O=- expect deny  "$NA" naila "$up/discord/sent.pdf"                        # no origin (the scheduler's runs): no upload
+O=- expect deny  "$NA" naila "$up/test/fixture.pdf"
+O=- expect allow "$NA" naila "$v/Daily/x.md"                               # ... the rest as the switches say
+for o in "" Discord "../discord" "discord/x" "discord,test" " discord" "discord " "1discord" "-discord" "disc_ord" $'discord\n' \
+         "a$(printf '%032d' 0)"; do                                        # malformed (the last one 33 characters): no upload
+  O="$o" expect deny "$NA" naila "$up/discord/sent.pdf"
+done
+O="a$(printf '%031d' 0)" expect deny "$NA" naila "$up/discord/sent.pdf"   # well-formed (32), but not Discord
+O=test expect deny  "$NA" naila "$up/test/into-discord.pdf"                # a link from its own folder into another channel's
+O=evil expect deny  "$NA" naila "$up/evil/sent.pdf"                        # its channel folder is a link to Discord's
+O=evil expect deny  "$NA" naila "$up/discord/sent.pdf"
+O=test expect deny  "$NA" naila "$v/Daily/into-uploads.pdf"                # a vault link to a Discord upload (vault.read on)
+expect allow "$NA" naila "$v/Daily/into-uploads.pdf"                       # ... which a discord-origin run converts
+O=test expect deny  "$NA" naila "$up/discord/sent.pdf" --by-caps --uploads "$up" --root "$tmp"   # a deny, not a missing grant:
+O=test expect allow "$NA" naila "$tmp/outside/plain.pdf" --by-caps --uploads "$up" --root "$tmp"   # a root holding uploads/ still can't open it
+# the deny reason names the folders without a doubled slash when --uploads or --root ends in /
+why="$(run "$BK" finance-bookkeeper "$v/Daily/x.md" --by-caps --uploads "$up/" --root "$v/")"
+case "$why" in *"$up/discord, $v/Finance, $v/Naila/Workspace/finance-bookkeeper "*) ;; *) echo "FAIL: the deny reason with a trailing / is: $why"; fail=1 ;; esac
+case "$why" in *//*) echo "FAIL: the deny reason has a doubled slash: $why"; fail=1 ;; esac
 # fails closed
 expect deny  - naila "$up/discord/sent.pdf"                                # no HARNESS_CAPS (an image older than the switches)
 expect deny  - naila "$v/Daily/x.md"
@@ -116,9 +149,9 @@ expect deny  "$NA" naila "$v/Harness-test/Naila/test.pdf" --by-caps --uploads "$
 expect deny  "$NA" naila "$v/Daily/x.md" --by-caps --uploads "$up" --root "$v" --exclude "relative/dir"
 expect deny  "$NA" naila "$v/Daily/x.md" --by-caps --uploads "$up" --root "$v" --exclude ""
 # the RC lines' mode (no flags): nothing denied, whatever the env
-for p in "$v/Daily/x.md" "$tmp/outside/secret.pdf" "$up/discord/linked.pdf"; do
-  expect allow - - "$p" rc
-  expect allow "docs.convert" ops-oncall "$p" rc
+for p in "$v/Daily/x.md" "$tmp/outside/secret.pdf" "$up/discord/linked.pdf" "$up/test/fixture.pdf"; do
+  O=- expect allow - - "$p" rc
+  O=test expect allow "docs.convert" ops-oncall "$p" rc
 done
-[ "$fail" = 0 ] && echo "OK: docs-grant --by-caps (switches), --exclude, RC mode"
+[ "$fail" = 0 ] && echo "OK: docs-grant --by-caps (switches, own origin's uploads only), --exclude, RC mode"
 exit "$fail"

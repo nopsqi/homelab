@@ -5,12 +5,17 @@
 // with one link (a hardlink in uploads/ can be another name for a file outside it); the vault is already readable
 // and anything else is the sidecar's to refuse. Without flags (the RC lines) it decides nothing.
 // --by-caps --uploads DIR --root VAULT_ROOT (the harness runs): it follows the run's switches, from HARNESS_CAPS (the run's
-// capabilities that are on, comma-separated) and HARNESS_WORKER, both set by the core per run (as web-guard.mjs and the
-// write guard read them). It allows only a plain file with one link whose real path lies under one of:
-//   uploads (DIR), always;  the vault root, only with vault.read;  <root>/Finance/, only for a finance worker with
+// capabilities that are on, comma-separated), HARNESS_WORKER and HARNESS_ORIGIN (the channel the run's conversation came
+// from), all set by the core per run (as web-guard.mjs and the write guard read them). It allows only a plain file with one
+// link whose real path lies under one of:
+//   DIR/<HARNESS_ORIGIN>/, always (Ruling 16: a run converts only its own channel's uploads; that folder counts only when it
+//   is no link itself);  the vault root, only with vault.read;  <root>/Finance/, only for a finance worker with
 //   files.read (P28);  the worker's own <root>/Naila/Workspace/<worker>/, with files.read.
-// And only with docs.convert on. Every other path is denied. It fails closed: a missing or unusable HARNESS_CAPS or
-// HARNESS_WORKER (an image older than the switches sets neither, so its runs convert nothing), a missing or relative
+// And only with docs.convert on. Every other path is denied, and a file under DIR outside DIR/<HARNESS_ORIGIN>/ is denied
+// even when another root holds it: the docs sidecar reads every upload through its group, so this deny is the only thing
+// between a run and another channel's files. A missing or malformed HARNESS_ORIGIN (not ^[a-z][a-z0-9-]{0,31}$; the
+// scheduler's runs have none, and an image older than naila 95dd7a2 sets none) opens no upload at all. It fails closed: a
+// missing or unusable HARNESS_CAPS or HARNESS_WORKER (an image older than the switches sets neither, so its runs convert nothing), a missing or relative
 // --uploads or --root, a path with `..` or `.` segments, a backslash or a control character, a Finance or workspace folder
 // that is itself a link, or anything unreadable or unexpected is a deny (and the hook command adds `|| exit 2`, so a
 // crash blocks too).
@@ -47,7 +52,8 @@ if (ex >= 0) {
 if (process.argv.includes('--by-caps')) {
   let ok = false, where = 'nowhere'
   try {
-    const caps = process.env.HARNESS_CAPS, w = process.env.HARNESS_WORKER ?? ''
+    const caps = process.env.HARNESS_CAPS, w = process.env.HARNESS_WORKER ?? '', o = process.env.HARNESS_ORIGIN
+    const origin = typeof o === 'string' && /^[a-z][a-z0-9-]{0,31}$/.test(o) ? o : undefined   // as the core's CHANNEL_NAME
     const upArg = argOf('--uploads'), rootArg = argOf('--root')
     // exactly what the core writes: on capabilities joined by commas, no spaces, no empty entries (an empty string is none on)
     const usable = typeof caps === 'string' && /^(?:[a-z][a-z-]*\.[a-z][a-z-]*(?:,[a-z][a-z-]*\.[a-z][a-z-]*)*)?$/.test(caps)
@@ -56,17 +62,22 @@ if (process.argv.includes('--by-caps')) {
       const p = JSON.parse(input).tool_input?.path
       if (on.has('docs.convert') && plain(p)) {
         const up = realpathSync(upArg.replace(/\/+$/, '') || '/'), root = realpathSync(rootArg.replace(/\/+$/, '') || '/')
-        // a folder under the vault root counts only when it is no link itself (its real path is where it says)
-        const sub = (...parts) => { const d = posix.join(root, ...parts); try { return realpathSync(d) === d ? [d] : [] } catch { return [] } }
-        const roots = [up, ...(on.has('vault.read') ? [root] : []),
-          ...(on.has('files.read') && FINANCE_WORKERS.includes(w) ? sub('Finance') : []),
-          ...(on.has('files.read') ? sub('Naila', 'Workspace', w) : [])]
-        where = [upArg, ...(on.has('vault.read') ? [rootArg] : []), ...(on.has('files.read') && FINANCE_WORKERS.includes(w) ? [`${rootArg}/Finance`] : []),
-          ...(on.has('files.read') ? [`${rootArg}/Naila/Workspace/${w}`] : [])].join(', ')
+        // a folder under a root counts only when it is no link itself (its real path is where it says)
+        const sub = (base, ...parts) => { const d = posix.join(base, ...parts); try { return realpathSync(d) === d ? [d] : [] } catch { return [] } }
+        const mine = origin ? sub(up, origin) : []
+        const roots = [...mine, ...(on.has('vault.read') ? [root] : []),
+          ...(on.has('files.read') && FINANCE_WORKERS.includes(w) ? sub(root, 'Finance') : []),
+          ...(on.has('files.read') ? sub(root, 'Naila', 'Workspace', w) : [])]
+        const u = upArg.replace(/\/+$/, ''), v = rootArg.replace(/\/+$/, '')   // as named, without a trailing / (no `//` below)
+        where = [...(origin ? [`${u}/${origin}`] : []), ...(on.has('vault.read') ? [v || '/'] : []), ...(on.has('files.read') && FINANCE_WORKERS.includes(w) ? [`${v}/Finance`] : []),
+          ...(on.has('files.read') ? [`${v}/Naila/Workspace/${w}`] : [])].join(', ') || 'nowhere'
         const real = realpathSync(p)
         const st = statSync(real)
+        const under = (r) => r !== '/' && real.startsWith(r + '/')
+        // Ruling 16: another channel's upload is denied, whichever root would hold it
+        const foreign = (real === up || under(up)) && !mine.some(under)
         // one link only: a second hard link would make a file outside the roots convertible under a name inside them
-        ok = roots.some((r) => r !== '/' && real.startsWith(r + '/')) && st.isFile() && st.nlink === 1
+        ok = !foreign && roots.some(under) && st.isFile() && st.nlink === 1
       }
     }
   } catch { ok = false }

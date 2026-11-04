@@ -3,11 +3,22 @@
 // Everything else there, and ~/.claude.json, is refused: the login, the workers' keys, test copies, transcripts.
 // Paths are resolved first (.., symlinks), so a link inside uploads can't point back at the login.
 // Anywhere else it decides nothing and the normal permission rules apply.
+// --by-origin (the harness runs, Ruling 16): of the uploads only uploads/<HARNESS_ORIGIN>/ may be read, the folder of the
+// channel the run's conversation came from (the core sets HARNESS_ORIGIN per run). A missing or malformed HARNESS_ORIGIN (not
+// ^[a-z][a-z0-9-]{0,31}$: the scheduler's runs, an image older than naila 95dd7a2) opens no upload at all. The run's own
+// Read allow is narrowed the same way by the core; this is the defence in depth. Without flags (the RC lines) as before.
 import { realpathSync } from 'node:fs'
 import { dirname, isAbsolute, resolve } from 'node:path'
 
 const CLAUDE = '/home/claude/.claude'
-const OK = [/^\/home\/claude\/\.claude\/uploads(\/|$)/, /^\/home\/claude\/\.claude\/projects\/[^/]+\/[^/]+\/tool-results\//]
+const byOrigin = process.argv.includes('--by-origin')
+const o = process.env.HARNESS_ORIGIN
+const origin = typeof o === 'string' && /^[a-z][a-z0-9-]{0,31}$/.test(o) ? o : undefined   // as the core's CHANNEL_NAME
+const UPLOADS = !byOrigin ? /^\/home\/claude\/\.claude\/uploads(\/|$)/ : origin ? new RegExp(`^/home/claude/\\.claude/uploads/${origin}(/|$)`) : undefined
+const OK = [UPLOADS, /^\/home\/claude\/\.claude\/projects\/[^/]+\/[^/]+\/tool-results\//].filter(Boolean)
+const why = !byOrigin ? 'Under ~/.claude only uploads/ (files the user sent) and tool-results/ may be read.'
+  : origin ? `Under ~/.claude only uploads/${origin}/ (files sent in this conversation's channel) and tool-results/ may be read.`
+  : 'Under ~/.claude only tool-results/ may be read: this run came from no channel, so no uploads are open to it.'
 
 /** The real path of p, or of its nearest existing ancestor (globs and files that don't exist yet). */
 const real = (p) => {
@@ -40,5 +51,5 @@ const deny = (why) => console.log(JSON.stringify({ hookSpecificOutput: { hookEve
 const pats = [e.tool_name === 'Glob' ? i.pattern : undefined, e.tool_name === 'Grep' ? i.glob : undefined].filter((p) => typeof p === 'string')
 const sneaky = pats.some((p) => /[{}[\]\\]/.test(p) || p.includes('..'))
 if (sneaky) deny('Use plain wildcards only (*, ?, **) in file patterns: no {braces}, [classes], backslashes or `..`. Search twice instead of using braces.')
-else if (!e.tool_name || paths.some(inside) || raw.some(wild)) deny('Under ~/.claude only uploads/ (files the user sent) and tool-results/ may be read.')
+else if (!e.tool_name || paths.some(inside) || raw.some(wild)) deny(why)
 else if (paths.some(above)) deny('That search would include ~/.claude: search a narrower folder (the vault, an upload folder, your own folder).')

@@ -83,7 +83,7 @@ def keys(path):
 old, new = keys(sys.argv[1]), keys(sys.argv[2])
 RETIRED = "harness-test.sh"   # retired with RC mode; its removal is allowed (R9)
 # RC is retired (claude.rcLines false): these keys share their text with harness mode, so they may differ (plan 4 Global Constraints).
-RC_ALLOWED = {"agent-finance-bookkeeper.md", "agent-finance-advisor.md", "actual-handbook.md", "web-guard.mjs", "docs-grant.mjs"}
+RC_ALLOWED = {"agent-finance-bookkeeper.md", "agent-finance-advisor.md", "actual-handbook.md", "web-guard.mjs", "docs-grant.mjs", "read-guard.mjs"}
 def rcdiff(o, n):
     """Differences in the RC ConfigMap keys (every key but harness-*) other than the retired key's removal and RC_ALLOWED edits."""
     out = []
@@ -96,10 +96,10 @@ def rcdiff(o, n):
         if o.get(k) != n.get(k): out.append(f"RC key {k} differs (or is missing on one side)")
     return out
 bad = rcdiff(old, new)
-# web-guard.mjs (plan 4 Task 13) and docs-grant.mjs (final fix I1) follow the run's capabilities, and without them behave as at
-# the ref (checked below); nothing else joins RC_ALLOWED
-if RC_ALLOWED != {"agent-finance-bookkeeper.md", "agent-finance-advisor.md", "actual-handbook.md", "web-guard.mjs", "docs-grant.mjs"}:
-    bad.append(f"the RC-identical check allows web-guard.mjs, docs-grant.mjs and nothing new beyond RC_ALLOWED: it is {sorted(RC_ALLOWED)}")
+# web-guard.mjs (plan 4 Task 13) and docs-grant.mjs (final fix I1) follow the run's capabilities, read-guard.mjs (Ruling 16) the
+# run's origin with --by-origin, and without them behave as at the ref (checked below); nothing else joins RC_ALLOWED
+if RC_ALLOWED != {"agent-finance-bookkeeper.md", "agent-finance-advisor.md", "actual-handbook.md", "web-guard.mjs", "docs-grant.mjs", "read-guard.mjs"}:
+    bad.append(f"the RC-identical check allows web-guard.mjs, docs-grant.mjs, read-guard.mjs and nothing new beyond RC_ALLOWED: it is {sorted(RC_ALLOWED)}")
 # the check itself: the retired key's removal alone passes, any other difference fails
 gone = {k: v for k, v in old.items() if k != RETIRED}
 if rcdiff({**old, RETIRED: "x"}, gone): bad.append("rcdiff rejects the removal of the retired key")
@@ -351,40 +351,105 @@ else:
         ("unreadable input", "{", R, N, "deny")):
         got = hook(wr, ev, args, env_)
         if got != want_: bad.append(f"{tag}: {what}: {got}, want {want_}")
-# docs-grant (final fix I1): with --by-caps it follows HARNESS_CAPS/HARNESS_WORKER under --uploads and --root; without flags
-# (the RC lines) it denies nothing, as at the ref. tests/docs-grant.sh has the full matrix; these run the rendered key.
-tag = "docs-grant follows the switches with --by-caps, and without flags behaves as at the ref"
+# docs-grant (final fix I1): with --by-caps it follows HARNESS_CAPS/HARNESS_WORKER under --uploads and --root, and opens only
+# uploads/<HARNESS_ORIGIN>/ (Ruling 16: none without a well-formed origin); without flags (the RC lines) it denies nothing, as
+# at the ref. tests/docs-grant.sh has the full matrix; these run the rendered key.
+tag = "docs-grant follows the switches and the run's origin with --by-caps, and without flags behaves as at the ref"
 dg, dg_old = new.get("docs-grant.mjs", ""), old.get("docs-grant.mjs", "")
 v = os.path.join(gd, "dvault"); up = os.path.join(gd, "duploads")
 for d in ("Daily", "Finance", "Naila/Workspace/finance-bookkeeper"): os.makedirs(os.path.join(v, d))
-os.makedirs(up)
+for d in ("discord", "test"): os.makedirs(os.path.join(up, d))
 for f in ("Daily/x.md", "Finance/s.pdf", "Naila/Workspace/finance-bookkeeper/b.xlsx"): open(os.path.join(v, f), "w").write("x")
-open(os.path.join(up, "u.pdf"), "w").write("x")
+for f in ("discord/u.pdf", "test/t.pdf"): open(os.path.join(up, f), "w").write("x")
 C = lambda p: {"tool_name": "mcp__docs__convert", "tool_input": {"path": p}}
 BC = ["--by-caps", "--uploads", up, "--root", v]
 BK = "docs.convert,files.read,messaging.ask,budget.read,budget.write-plans"
-for what, p, caps, w, want_ in (
+for what, p, caps, w, want_, *o_ in (   # o_: HARNESS_ORIGIN (default discord, the uploads' channel; None leaves it unset)
     ("the bookkeeper with vault.read off, a vault note", f"{v}/Daily/x.md", BK, "finance-bookkeeper", "deny"),
-    ("the bookkeeper, an upload", f"{up}/u.pdf", BK, "finance-bookkeeper", "none"),
+    ("the bookkeeper, an upload of its run's channel", f"{up}/discord/u.pdf", BK, "finance-bookkeeper", "none"),
+    ("the bookkeeper, an upload of another channel", f"{up}/test/t.pdf", BK, "finance-bookkeeper", "deny"),
     ("naila with vault.read on, a vault note", f"{v}/Daily/x.md", "docs.convert,files.read,vault.read", "naila", "none"),
     ("the bookkeeper with files.read, Finance", f"{v}/Finance/s.pdf", BK, "finance-bookkeeper", "none"),
     ("ops-oncall with files.read, Finance", f"{v}/Finance/s.pdf", "docs.convert,files.read", "ops-oncall", "deny"),
     ("the bookkeeper, its own workspace", f"{v}/Naila/Workspace/finance-bookkeeper/b.xlsx", BK, "finance-bookkeeper", "none"),
     ("naila with files.read, the bookkeeper's workspace", f"{v}/Naila/Workspace/finance-bookkeeper/b.xlsx", "docs.convert,files.read,vault.read", "naila", "none"),
     ("ops-oncall without vault.read, the bookkeeper's workspace", f"{v}/Naila/Workspace/finance-bookkeeper/b.xlsx", "docs.convert,files.read", "ops-oncall", "deny"),
-    ("docs.convert off, an upload", f"{up}/u.pdf", "files.read,vault.read", "naila", "deny"),
-    ("no HARNESS_CAPS (an older image), an upload", f"{up}/u.pdf", None, "naila", "deny"),
-    ("no HARNESS_WORKER, an upload", f"{up}/u.pdf", BK, None, "deny")):
-    env_ = {**({"HARNESS_CAPS": caps} if caps is not None else {}), **({"HARNESS_WORKER": w} if w else {})}
+    ("docs.convert off, an upload", f"{up}/discord/u.pdf", "files.read,vault.read", "naila", "deny"),
+    ("no HARNESS_CAPS (an older image), an upload", f"{up}/discord/u.pdf", None, "naila", "deny"),
+    ("no HARNESS_WORKER, an upload", f"{up}/discord/u.pdf", BK, None, "deny"),
+    ("a test-origin run, a Discord upload", f"{up}/discord/u.pdf", BK, "finance-bookkeeper", "deny", "test"),
+    ("a test-origin run, its own upload", f"{up}/test/t.pdf", BK, "finance-bookkeeper", "none", "test"),
+    ("no HARNESS_ORIGIN (the scheduler, an image older than naila 95dd7a2), an upload", f"{up}/discord/u.pdf", BK, "finance-bookkeeper", "deny", None),
+    ("no HARNESS_ORIGIN, a vault note with vault.read", f"{v}/Daily/x.md", "docs.convert,vault.read", "naila", "none", None),
+    ("a malformed HARNESS_ORIGIN, an upload", f"{up}/discord/u.pdf", BK, "finance-bookkeeper", "deny", "Discord"),
+    ("a HARNESS_ORIGIN with a slash, an upload", f"{up}/discord/u.pdf", BK, "finance-bookkeeper", "deny", "discord/.")):
+    o_ = o_[0] if o_ else "discord"
+    env_ = {**({"HARNESS_CAPS": caps} if caps is not None else {}), **({"HARNESS_WORKER": w} if w else {}), **({"HARNESS_ORIGIN": o_} if o_ is not None else {})}
     got = hook(dg, C(p), BC, env_)
     if got != want_: bad.append(f"{tag}: {what}: {got}, want {want_}")
-for p in (f"{v}/Daily/x.md", f"{up}/u.pdf", "/etc/hostname"):
-    for env_ in ({}, {"HARNESS_CAPS": "docs.convert", "HARNESS_WORKER": "ops-oncall"}):
+for p in (f"{v}/Daily/x.md", f"{up}/discord/u.pdf", "/etc/hostname"):
+    for env_ in ({}, {"HARNESS_CAPS": "docs.convert", "HARNESS_WORKER": "ops-oncall"}, {"HARNESS_CAPS": "docs.convert", "HARNESS_WORKER": "ops-oncall", "HARNESS_ORIGIN": "test"}):
         if hook(dg, C(p), [], env_) != hook(dg_old, C(p), [], env_): bad.append(f"{tag}: without flags, {p} with {env_}: {hook(dg, C(p), [], env_)}, at the ref {hook(dg_old, C(p), [], env_)}")
+# read-guard (Ruling 16): with --by-origin (the harness runs) the only uploads readable are uploads/<HARNESS_ORIGIN>/, none
+# without a well-formed origin, judged by real paths; tool-results/ and the rest as before. Without flags (the RC lines) it
+# behaves as at the ref, whatever HARNESS_ORIGIN says. The hook's paths are literal (/home/claude) and /home may be a link on
+# the machine running this, so both keys run with a temp dir in its place.
+tag = "read-guard --by-origin opens only the run's own channel's uploads, and without flags behaves as at the ref"
+hc = os.path.realpath(tempfile.mkdtemp())
+at = lambda src: src.replace("\\/home\\/claude", hc.replace("/", "\\/")).replace("/home/claude", hc)
+rg, rg_old = at(new.get("read-guard.mjs", "")), at(old.get("read-guard.mjs", ""))
+cl = f"{hc}/.claude"
+for d in ("uploads/discord/id1", "uploads/test/id2", "projects/p/s/tool-results"): os.makedirs(f"{cl}/{d}")
+for f in ("uploads/discord/id1/u.pdf", "uploads/test/id2/t.pdf", "projects/p/s/tool-results/r.txt", ".credentials.json"): open(f"{cl}/{f}", "w").write("x")
+os.symlink(f"{cl}/uploads/discord/id1/u.pdf", f"{cl}/uploads/test/id2/into-discord.pdf")
+os.symlink("discord", f"{cl}/uploads/evil")
+Rd = lambda p: {"tool_name": "Read", "tool_input": {"file_path": p}}
+Gl = lambda path, pat: {"tool_name": "Glob", "tool_input": {"path": path, "pattern": pat}}
+Gr = lambda path: {"tool_name": "Grep", "tool_input": {"path": path, "pattern": "x"}}
+Ga = lambda pat: {"tool_name": "Glob", "tool_input": {"pattern": pat}}   # an absolute pattern, no path
+BO = ["--by-origin"]
+for what, ev, o_, want_ in (
+    ("a discord-origin run, its own upload", Rd(f"{cl}/uploads/discord/id1/u.pdf"), "discord", "none"),
+    ("a test-origin run, a Discord upload", Rd(f"{cl}/uploads/discord/id1/u.pdf"), "test", "deny"),
+    ("a test-origin run, its own upload", Rd(f"{cl}/uploads/test/id2/t.pdf"), "test", "none"),
+    ("a discord-origin run, a test upload", Rd(f"{cl}/uploads/test/id2/t.pdf"), "discord", "deny"),
+    ("no origin, an upload", Rd(f"{cl}/uploads/discord/id1/u.pdf"), None, "deny"),
+    ("a malformed origin, an upload", Rd(f"{cl}/uploads/discord/id1/u.pdf"), "Discord", "deny"),
+    ("an origin with a slash, an upload", Rd(f"{cl}/uploads/discord/id1/u.pdf"), "discord/id1", "deny"),
+    ("an empty origin, an upload", Rd(f"{cl}/uploads/discord/id1/u.pdf"), "", "deny"),
+    ("a test-origin run, a link from its folder to a Discord upload", Rd(f"{cl}/uploads/test/id2/into-discord.pdf"), "test", "deny"),
+    ("its channel folder a link to Discord's", Rd(f"{cl}/uploads/evil/id1/u.pdf"), "evil", "deny"),
+    ("a Glob over all uploads", Gl(f"{cl}/uploads", "**/*.pdf"), "discord", "deny"),
+    ("a Glob in its own folder", Gl(f"{cl}/uploads/discord", "**/*.pdf"), "discord", "none"),
+    ("a Glob with a wildcard in the channel name", Ga(f"{cl}/uploads/disc*/**"), "discord", "deny"),
+    ("a Glob with a wildcard after the channel name", Ga(f"{cl}/uploads/discord*/**"), "discord", "deny"),
+    ("a Glob of its own folder by absolute pattern", Ga(f"{cl}/uploads/discord/**"), "discord", "none"),
+    ("a Grep over all uploads", Gr(f"{cl}/uploads"), "discord", "deny"),
+    ("a Grep in its own folder", Gr(f"{cl}/uploads/discord"), "discord", "none"),
+    ("tool-results with an origin", Rd(f"{cl}/projects/p/s/tool-results/r.txt"), "discord", "none"),
+    ("tool-results without an origin", Rd(f"{cl}/projects/p/s/tool-results/r.txt"), None, "none"),
+    ("the login", Rd(f"{cl}/.credentials.json"), "discord", "deny"),
+    ("a file outside ~/.claude", Rd("/etc/hostname"), None, "none")):
+    got = hook(rg, ev, BO, {"HARNESS_ORIGIN": o_} if o_ is not None else {})
+    if got != want_: bad.append(f"{tag}: {what}: {got}, want {want_}")
+# the deny reason says what is readable: the run's own uploads folder, or (no origin) tool-results/ alone and why
+def reason(src, ev, args, env_):
+    f = os.path.join(gd, f"r{abs(hash(src))}.mjs"); open(f, "w").write(src)
+    out = subprocess.run(["node", f, *args], input=json.dumps(ev), capture_output=True, text=True, env={"PATH": os.environ["PATH"], **env_}).stdout
+    try: return json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]
+    except ValueError: return out
+for o_, want_ in (("test", "Under ~/.claude only uploads/test/ (files sent in this conversation's channel) and tool-results/ may be read."),
+                  (None, "Under ~/.claude only tool-results/ may be read: this run came from no channel, so no uploads are open to it.")):
+    got = reason(rg, Rd(f"{cl}/uploads/discord/id1/u.pdf"), BO, {"HARNESS_ORIGIN": o_} if o_ else {}).replace(hc, "/home/claude")
+    if got != want_: bad.append(f"{tag}: the deny reason with origin {o_!r} is {got!r}, want {want_!r}")
+for ev in (Rd(f"{cl}/uploads/discord/id1/u.pdf"), Rd(f"{cl}/uploads/test/id2/t.pdf"), Gl(f"{cl}/uploads", "**"), Gr(f"{cl}/uploads"),
+           Rd(f"{cl}/projects/p/s/tool-results/r.txt"), Rd(f"{cl}/.credentials.json"), Rd("/etc/hostname"), Ga(f"{cl}/uploads/disc*/**"), Ga(f"{cl}/uploads/discord/**")):
+    for env_ in ({}, {"HARNESS_ORIGIN": "test"}, {"HARNESS_ORIGIN": "Bad"}):
+        if hook(rg, ev, [], env_) != hook(rg_old, ev, [], env_): bad.append(f"{tag}: without flags, {ev} with {env_}: {hook(rg, ev, [], env_)}, at the ref {hook(rg_old, ev, [], env_)}")
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad))
     sys.exit(1)
-print("RC render identical; harness keys clean; web-guard, write-guard and docs-grant behave")
+print("RC render identical; harness keys clean; web-guard, write-guard, docs-grant and read-guard behave")
 PY
 
 python3 - "$tmp/old.yaml" "$tmp/off.yaml" "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/staging.yaml" "$tmp/cloudflared.yaml" "$tmp/s.yaml" "$tmp/d.yaml" "$tmp/n.yaml" <<'PY'
@@ -469,16 +534,53 @@ for ph, x in phases.items():
     if "discord:$(GATEWAY_DISCORD_SECRET)" not in (val(h, "GATEWAY_SECRETS") or "").split(","): bad.append(f"{tag}: GATEWAY_SECRETS is {val(h, 'GATEWAY_SECRETS')!r}")
     if key(ctr(r, "discord"), "GATEWAY_SECRET") != "GATEWAY_DISCORD_SECRET": bad.append(f"{tag}: discord GATEWAY_SECRET from {key(ctr(r, 'discord'), 'GATEWAY_SECRET')!r}")
     # uids: the shared process namespace opens /proc/<pid>/{environ,root} to the same uid, so only harness and login run as 1000
-    # (init containers finish before any of them start); the gateway is 1002 in group 1000, writing into a setgid 2770 folder.
+    # (init containers finish before any of them start); the gateway is 1002 in group 1000.
     psc = pod(r).get("securityContext", {})
     uid = lambda c: c.get("securityContext", {}).get("runAsUser", psc.get("runAsUser"))
     dsc = ctr(r, "discord").get("securityContext", {})
     if (dsc.get("runAsUser"), dsc.get("runAsGroup")) != (1002, 1000): bad.append(f"discord container runs as {dsc.get('runAsUser')}:{dsc.get('runAsGroup')}, want 1002:1000 ({ph})")
     for c in pod(r)["containers"]:
         if c["name"] not in ("harness", "login") and uid(c) == 1000: bad.append(f"{c['name']} runs as uid 1000, the core's uid ({ph})")
-    init = " ".join(" ".join(c.get("command", [])) for c in pod(r).get("initContainers", []))
-    if "chmod 2770 /home/claude/.claude/uploads/discord" not in init or "chmod 750 /home/claude/.claude/uploads " not in init:
-        bad.append(f"uploads/discord is not created setgid group-writable (2770) under a group-traversable uploads/ (750) ({ph})")
+    # Task 13: the core owns uploads (it makes uploads/<channel> itself, 0750, and its <id> folders). The init container, run as
+    # rendered on a temp home: uploads/ ends 0750 and no per-channel folder is made; an existing channel folder (uploads/discord
+    # was 2770 for the gateway) ends 0750, setgid cleared; nothing below a channel folder and nothing behind a link is touched.
+    tag = f"the init container creates no per-channel uploads folder ({ph})"
+    inits = pod(r).get("initContainers", [])
+    sh = (inits[0].get("command") or [None, None, ""])[2] if len(inits) == 1 else ""
+    if "2770" in sh or re.search(r"mkdir[^&;]*/uploads/", sh): bad.append(f"{tag}: the init command is {sh!r}")
+    import stat as st_, tempfile as tf_, subprocess as sp_
+    def run_init(prepare):
+        t = os.path.realpath(tf_.mkdtemp()); hc, app, nl = f"{t}/home", f"{t}/app", f"{t}/naila"
+        for d in (hc, app, nl): os.makedirs(d)
+        open(f"{app}/x", "w").write("x")
+        prepare(hc, t)
+        p = sp_.run(["sh", "-c", sh.replace("/home/claude", hc).replace("/app/.", f"{app}/.").replace("/naila/", f"{nl}/")], capture_output=True, text=True)
+        return p, hc, t
+    mode = lambda p: st_.S_IMODE(os.lstat(p).st_mode) if os.path.lexists(p) else None
+    p, hc, t = run_init(lambda hc, t: None)
+    up = f"{hc}/.claude/uploads"
+    if p.returncode != 0 or not os.path.isdir(up) or mode(up) != 0o750 or os.listdir(up) or not os.path.exists(f"{t}/naila/x"):
+        bad.append(f"{tag}: on a fresh home: exit {p.returncode} {p.stderr.strip()[-200:]!r}, uploads {oct(mode(up) or 0) if os.path.isdir(up) else 'missing'}, holding {os.listdir(up) if os.path.isdir(up) else []}")
+    def before(hc, t):
+        u = f"{hc}/.claude/uploads"
+        for d in ("discord/id1", "test/id2"): os.makedirs(f"{u}/{d}")
+        open(f"{u}/discord/id1/f.pdf", "w").write("x")
+        os.makedirs(f"{t}/outside")
+        os.symlink(f"{t}/outside", f"{u}/link")
+        for d, m in (("", 0o2770), ("discord", 0o2770), ("discord/id1", 0o2750), ("test", 0o750), ("test/id2", 0o750)): os.chmod(f"{u}/{d}".rstrip("/"), m)
+        os.chmod(f"{u}/discord/id1/f.pdf", 0o640); os.chmod(f"{t}/outside", 0o2777)
+    p, hc, t = run_init(before)
+    up = f"{hc}/.claude/uploads"
+    o8 = lambda m: None if m is None else oct(m)
+    got = {d: o8(mode(f"{up}/{d}".rstrip("/"))) for d in ("", "discord", "discord/id1", "discord/id1/f.pdf", "test", "test/id2")} | {"outside": o8(mode(f"{t}/outside"))}
+    want = {"": "0o750", "discord": "0o750", "discord/id1": "0o2750", "discord/id1/f.pdf": "0o640", "test": "0o750", "test/id2": "0o750", "outside": "0o2777"}
+    if p.returncode != 0 or got != want or sorted(os.listdir(up)) != ["discord", "link", "test"]:
+        bad.append(f"{tag}: on a home from before: exit {p.returncode} {p.stderr.strip()[-200:]!r}, modes {got}, want {want}, uploads holds {sorted(os.listdir(up))}")
+    tag = f"the core's HARNESS_UPLOADS_ROOT is /home/claude/.claude/uploads and docs still reads uploads ({ph})"
+    if val(h, "HARNESS_UPLOADS_ROOT") != "/home/claude/.claude/uploads": bad.append(f"{tag}: HARNESS_UPLOADS_ROOT is {val(h, 'HARNESS_UPLOADS_ROOT')!r}")
+    dm = [m for m in ctr(r, "docs").get("volumeMounts", []) if m["name"] == "home"]
+    if dm != [{"name": "home", "mountPath": "/home/claude/.claude/uploads", "subPath": ".claude/uploads", "readOnly": True}]: bad.append(f"{tag}: docs mounts the home volume as {dm!r}")
+    if not (val(ctr(r, "docs"), "DOCS_ROOTS") or "").startswith("/home/claude/.claude/uploads:"): bad.append(f"{tag}: docs DOCS_ROOTS is {val(ctr(r, 'docs'), 'DOCS_ROOTS')!r}")
     lg = ctr(r, "login")
     for k, want in (("BASE_PATH", "/harness"), ("POD_ROLE", "harness"), ("RESTART_MATCH", "harness/dist/main.js")):
         if val(lg, k) != want: bad.append(f"login sidecar {k} is {val(lg, k)!r}, want {want!r} ({ph})")
@@ -509,7 +611,14 @@ def patched_settings(r, ph):
     if p.returncode != 0: return None, f"settings patch failed ({ph}): {p.stderr.strip()}"
     return json.loads(open(out).read()), None
 import json
+import copy
 for ph, r in (("test", test), ("real", real)):
+    # the settings patch refuses a base PreToolUse entry with no matcher, "" or "*": it would hook the guarded tools as well
+    for m_ in (None, "", "*"):
+        r2 = copy.deepcopy(r); cm = r2[("ConfigMap", "assistant-claude")]["data"]
+        b = json.loads(cm["settings.json"]); b["hooks"]["PreToolUse"].append({**({} if m_ is None else {"matcher": m_}), "hooks": [{"type": "command", "command": "true"}]})
+        cm["settings.json"] = json.dumps(b)
+        if patched_settings(r2, ph)[1] is None: bad.append(f"{ph} phase: the settings patch accepts a base PreToolUse entry with matcher {m_!r} (every tool)")
     s, err = patched_settings(r, ph)
     if err: bad.append(err); continue
     denied = "Read(//vault/Harness-test/**)" in s["permissions"]["deny"]
@@ -537,10 +646,12 @@ for ph, r in (("test", test), ("real", real)):
         if re.search(r"Finance|tool-results", t): bad.append(f"P28: {tag}: the merged static allow opens {t} to every run")
         if t not in STATIC_ALLOW: bad.append(f"P22: {tag}: the merged static allow holds {t}, outside the static core tools")
     pre = s.get("hooks", {}).get("PreToolUse", [])
-    def hooked(tool): return [h["command"] for e in pre if re.fullmatch(f"(?:{e.get('matcher', '')})", tool) for h in e["hooks"]]
+    def hooked(tool): return [h["command"] for e in pre if e.get("matcher") in (None, "", "*") or re.fullmatch(f"(?:{e['matcher']})", tool) for h in e["hooks"]]   # no, "" or "*" matcher: every tool
     for tool, guard in (("Read", "read-guard.mjs"), ("Glob", "read-guard.mjs"), ("Grep", "read-guard.mjs"), ("WebSearch", "web-guard.mjs"),
                         ("WebFetch", "web-guard.mjs"), ("mcp__docs__convert", "docs-grant.mjs")):
         if not any(guard in c for c in hooked(tool)): bad.append(f"{tag}: the {guard} hook is missing for {tool}")
+    for tool in ("Read", "Glob", "Grep"):   # Ruling 16: the runs read only their own origin channel's uploads
+        if hooked(tool) != ["node /config/read-guard.mjs --by-origin || exit 2"]: bad.append(f"Ruling 16: {tag}: the {tool} hooks are {hooked(tool)}, want the read guard with --by-origin")
     wroot = f"{val(ctr(r, 'harness'), 'VAULT_ROOT')}/Naila/Workspace"
     for tool in ("Write", "Edit", "NotebookEdit"):   # P18: the root on the command line
         if hooked(tool) != [f"node /config/harness-write-guard.mjs --root {wroot} || exit 2"]: bad.append(f"P18: {tag}: the {tool} hooks are {hooked(tool)}, want the write guard with --root {wroot}")
@@ -575,7 +686,16 @@ for ph, r in (("test", test), ("real", real)):
                      ("the docs hook in its old --only form", lambda x: [h.__setitem__("command", re.sub(r"--by-caps --uploads (\S+) --root (\S+)", r"--only \1:\2", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
                      ("the docs hook without --by-caps", lambda x: [h.__setitem__("command", h["command"].replace(" --by-caps", "")) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
                      ("the docs hook rooted elsewhere", lambda x: [h.__setitem__("command", re.sub(r"--root (\S+)", r"--root \1/x", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
-                     ("a second docs hook", lambda x: x["hooks"]["PreToolUse"].append({"matcher": "mcp__docs__convert", "hooks": [{"type": "command", "command": "true"}]}))):
+                     ("a second docs hook", lambda x: x["hooks"]["PreToolUse"].append({"matcher": "mcp__docs__convert", "hooks": [{"type": "command", "command": "true"}]})),
+                     # Ruling 16: Read, Glob and Grep go through the read guard narrowed to the run's origin
+                     ("no read guard", lambda x: x["hooks"].__setitem__("PreToolUse", [e for e in x["hooks"]["PreToolUse"] if "read-guard" not in json.dumps(e)])),
+                     ("the read guard without --by-origin", lambda x: [h.__setitem__("command", h["command"].replace(" --by-origin", "")) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "read-guard" in h["command"]]),
+                     ("the read guard on Read only", lambda x: [e.__setitem__("matcher", "Read") for e in x["hooks"]["PreToolUse"] if "read-guard" in json.dumps(e)]),
+                     ("a second Glob hook", lambda x: x["hooks"]["PreToolUse"].append({"matcher": "Glob", "hooks": [{"type": "command", "command": "true"}]})),
+                     # Claude Code runs an entry with no matcher, "" or "*" for every tool: it counts as a second hook
+                     ("a hook with no matcher", lambda x: x["hooks"]["PreToolUse"].append({"hooks": [{"type": "command", "command": "true"}]})),
+                     ("a hook with matcher \"\"", lambda x: x["hooks"]["PreToolUse"].append({"matcher": "", "hooks": [{"type": "command", "command": "true"}]})),
+                     ("a hook with matcher \"*\"", lambda x: x["hooks"]["PreToolUse"].append({"matcher": "*", "hooks": [{"type": "command", "command": "true"}]}))):
         if run_check(weaken(w_)).returncode == 0: bad.append(f"{tag}: harness-start's check accepts {what}")
     # the static allow is core tools only: a harness-settings.json that allows anything else (and settings carrying it) fails
     hsj = json.loads(data["harness-settings.json"])
@@ -719,13 +839,38 @@ def channels(c):
     return v if isinstance(v, list) else None
 def compact(d): return json.dumps(d, separators=(",", ":"))
 
-tag = f"channel loop: the discord container renders as at {ref}"
+# Task 13 (R9): as at the ref but for the mount, which is gone. HARNESS_UPLOADS stays one release as a rollback leftover (P24:
+# a gateway image older than naila 95dd7a2 exits without it); the new gateway ignores it. So the env is compared minus
+# HARNESS_UPLOADS, which may only be the leftover, checked below.
+tag = f"channel loop: the discord container renders as at {ref}, without its volume mount"
 o, n = ctr(oldh, "discord"), ctr(test, "discord")
 if o is None or n is None: bad.append(f"{tag}: no discord container ({'at the ref' if o is None else 'now'})")
 else:
-    if envset(o) != envset(n): bad.append(f"{tag}: env differs: only at the ref {sorted(envset(o) - envset(n))}, only now {sorted(envset(n) - envset(o))}")
-    for k in ("volumeMounts", "securityContext", "command"):
+    drop = lambda c: {x for x in envset(c) if x[0] != "HARNESS_UPLOADS"}
+    if drop(o) != drop(n): bad.append(f"{tag}: env differs: only at the ref {sorted(drop(o) - drop(n))}, only now {sorted(drop(n) - drop(o))}")
+    for k in ("securityContext", "command"):
         if o.get(k) != n.get(k): bad.append(f"{tag}: {k} is {n.get(k)!r}, was {o.get(k)!r}")
+tag = "no gateway container mounts a volume"
+for label, r in (("test", test), ("real", real), ("two channels", two)):
+    gws = [c for c in pod(r)["containers"] if (c.get("command") or [None, ""])[1:2] and str(c["command"][1]).startswith("packages/channels/")]
+    if {c["name"] for c in gws} != ({"discord", "telegram"} if label == "two channels" else {"discord"}): bad.append(f"{tag}: the gateways are {[c['name'] for c in gws]} ({label})")
+    for c in gws:
+        if c.get("volumeMounts"): bad.append(f"{tag}: {c['name']} mounts {c['volumeMounts']!r} ({label})")
+tag = "HARNESS_UPLOADS is only the discord gateway's rollback leftover, marked for removal"
+LEFT = "/home/claude/.claude/uploads/discord"
+for label, r in (("test", test), ("real", real), ("two channels", two)):
+    for c in pod(r)["containers"] + pod(r).get("initContainers", []):
+        has = "HARNESS_UPLOADS" in envmap(c)
+        if c["name"] == "discord" and (not has or val(c, "HARNESS_UPLOADS") != LEFT): bad.append(f"{tag}: discord HARNESS_UPLOADS is {val(c, 'HARNESS_UPLOADS')!r}, want the leftover {LEFT!r} ({label})")
+        if c["name"] != "discord" and has: bad.append(f"{tag}: {c['name']} has HARNESS_UPLOADS ({label})")
+tpl = open("helm/assistant/templates/harness.yaml").read()
+if not re.search(r"HARNESS_UPLOADS[^\n]*remove after 2026-11-19", tpl): bad.append(f"{tag}: the template's HARNESS_UPLOADS line does not say \"remove after 2026-11-19\"")
+import datetime
+today = os.environ.get("RENDER_MODES_TODAY") or datetime.date.today().isoformat()   # set it to test the deadline
+if today > "2026-11-19" and any("HARNESS_UPLOADS" in envmap(c) for r in (test, real, two) for c in pod(r)["containers"]):   # rendered, not the reserved name
+    bad.append(f"{tag}: it is {today}, past 2026-11-19: remove the HARNESS_UPLOADS leftover from the discord gateway (and turn this check into \"no HARNESS_UPLOADS anywhere\")")
+for f in ("values.yaml", "values.prod.yaml", "values.staging.yaml"):
+    if re.search(r"^\s+uploads:", open(f"helm/assistant/{f}").read(), re.M): bad.append(f"{tag}: helm/assistant/{f} still sets gateway.uploads")
 
 tag = f"channel loop: the core env holds every variable it held at {ref} with the same value, except GATEWAY_SECRETS, which contains the entry discord:$(GATEWAY_DISCORD_SECRET)"
 oe, ne = envmap(ctr(oldh, "harness")), envmap(ctr(test, "harness"))
@@ -799,6 +944,7 @@ for what, args, msg in (("a missing secretKey", ["--set", "harness.channels.disc
                         ("two channels sharing a secretKey", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_DISCORD_SECRET"}'], "harness.channels.tg.secretKey"),
                         ("a gateway handed another channel's secretKey", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"GATEWAY_DISCORD_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X"),
                         ("a gateway handed a GATEWAY_*_SECRET key not its own", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"GATEWAY_OTHER_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X"),
+                        ("a leftover gateway.uploads (the core owns uploads)", ["--set", "harness.channels.discord.gateway.uploads=true"], "harness.channels.discord.gateway.uploads"),
                         ("a gateway handed CORE_TOOLS_SECRET", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"CORE_TOOLS_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X")):
     p = render("--set", "harness.phase=test", *args)
     if p.returncode == 0: bad.append(f"{tag}: {what} renders")

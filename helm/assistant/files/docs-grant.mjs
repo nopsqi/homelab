@@ -3,19 +3,29 @@
 // conversion, this grants group read on that one file and group access to its folders up to uploads/: the owner
 // (claude) can change the mode, the sidecar can't. Only real files under uploads/ after resolving symlinks and `..`,
 // with one link (a hardlink in uploads/ can be another name for a file outside it); the vault is already readable
-// and anything else is the sidecar's to refuse. It decides nothing, except with --only ROOT[:ROOT…] (test runs): then it
-// denies every path that isn't, after resolving symlinks and `..`, a file with one link under one of the roots. That mode fails closed:
-// anything unreadable or unexpected is a deny (and the hook command adds `|| exit 2`, so a crash blocks too).
+// and anything else is the sidecar's to refuse. Without flags (the RC lines) it decides nothing.
+// --by-caps --uploads DIR --root VAULT_ROOT (the harness runs): it follows the run's switches, from HARNESS_CAPS (the run's
+// capabilities that are on, comma-separated) and HARNESS_WORKER, both set by the core per run (as web-guard.mjs and the
+// write guard read them). It allows only a plain file with one link whose real path lies under one of:
+//   uploads (DIR), always;  the vault root, only with vault.read;  <root>/Finance/, only for a finance worker with
+//   files.read (P28);  the worker's own <root>/Naila/Workspace/<worker>/, with files.read.
+// And only with docs.convert on. Every other path is denied. It fails closed: a missing or unusable HARNESS_CAPS or
+// HARNESS_WORKER (an image older than the switches sets neither, so its runs convert nothing), a missing or relative
+// --uploads or --root, a path with `..` or `.` segments, a backslash or a control character, a Finance or workspace folder
+// that is itself a link, or anything unreadable or unexpected is a deny (and the hook command adds `|| exit 2`, so a
+// crash blocks too).
 // --exclude DIR[,DIR…] (the real phase: /vault/Harness-test) denies every path that is, after resolving symlinks and `..`,
 // under one of those dirs, compared case-insensitively (the vault may be a case-insensitive share). It fails closed too: an
 // empty or relative entry, or a path that can't be resolved, is a deny.
 import { chmodSync, realpathSync, statSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { dirname, posix } from 'node:path'
 
 const UPLOADS = '/home/claude/.claude/uploads'
-const at = process.argv.indexOf('--only')
-const only = at < 0 ? undefined : (process.argv[at + 1] ?? '').split(':').filter((r) => r.startsWith('/'))
+const FINANCE_WORKERS = ['finance-bookkeeper', 'finance-advisor']   // as naila's capabilities.ts FINANCE_READERS
 const deny = (why) => { console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: why } })); process.exit(0) }
+const argOf = (f) => { const i = process.argv.indexOf(f); return i < 0 ? undefined : process.argv[i + 1] }
+// an absolute path with no `..` or `.` segment, no backslash, no control character (NUL, newline, …), as the write guard
+const plain = (p) => typeof p === 'string' && p.startsWith('/') && !/[\\\x00-\x1f\x7f]/.test(p) && !p.split('/').some((s) => s === '..' || s === '.')
 
 let input = ''
 for await (const chunk of process.stdin) input += chunk
@@ -34,17 +44,33 @@ if (ex >= 0) {
   } catch { ok = false }
   if (!ok) deny(`Documents in ${process.argv[ex + 1] ?? '(none)'} can't be converted here.`)
 }
-if (only) {
-  let ok = false
+if (process.argv.includes('--by-caps')) {
+  let ok = false, where = 'nowhere'
   try {
-    const p = JSON.parse(input).tool_input?.path
-    const real = typeof p === 'string' && p.startsWith('/') ? realpathSync(p) : ''
-    const roots = only.flatMap((r) => { try { return [realpathSync(r)] } catch { return [] } })
-    const st = real ? statSync(real) : undefined
-    // one link only: a second hard link would make a file outside the roots convertible under a name inside them
-    ok = !!st && roots.some((r) => real.startsWith(r + '/')) && st.isFile() && st.nlink === 1
+    const caps = process.env.HARNESS_CAPS, w = process.env.HARNESS_WORKER ?? ''
+    const upArg = argOf('--uploads'), rootArg = argOf('--root')
+    // exactly what the core writes: on capabilities joined by commas, no spaces, no empty entries (an empty string is none on)
+    const usable = typeof caps === 'string' && /^(?:[a-z][a-z-]*\.[a-z][a-z-]*(?:,[a-z][a-z-]*\.[a-z][a-z-]*)*)?$/.test(caps)
+    if (usable && /^[a-z][a-z0-9-]*$/.test(w) && plain(upArg) && plain(rootArg)) {
+      const on = new Set(caps.split(',').filter(Boolean))
+      const p = JSON.parse(input).tool_input?.path
+      if (on.has('docs.convert') && plain(p)) {
+        const up = realpathSync(upArg.replace(/\/+$/, '') || '/'), root = realpathSync(rootArg.replace(/\/+$/, '') || '/')
+        // a folder under the vault root counts only when it is no link itself (its real path is where it says)
+        const sub = (...parts) => { const d = posix.join(root, ...parts); try { return realpathSync(d) === d ? [d] : [] } catch { return [] } }
+        const roots = [up, ...(on.has('vault.read') ? [root] : []),
+          ...(on.has('files.read') && FINANCE_WORKERS.includes(w) ? sub('Finance') : []),
+          ...(on.has('files.read') ? sub('Naila', 'Workspace', w) : [])]
+        where = [upArg, ...(on.has('vault.read') ? [rootArg] : []), ...(on.has('files.read') && FINANCE_WORKERS.includes(w) ? [`${rootArg}/Finance`] : []),
+          ...(on.has('files.read') ? [`${rootArg}/Naila/Workspace/${w}`] : [])].join(', ')
+        const real = realpathSync(p)
+        const st = statSync(real)
+        // one link only: a second hard link would make a file outside the roots convertible under a name inside them
+        ok = roots.some((r) => r !== '/' && real.startsWith(r + '/')) && st.isFile() && st.nlink === 1
+      }
+    }
   } catch { ok = false }
-  if (!ok) deny(`In this test run documents can be converted only from ${only.join(' or ')}.`)
+  if (!ok) deny(`You may convert only a plain file in ${where} (your capabilities decide which; docs.convert must be on).`)
 }
 try {
   const p = JSON.parse(input).tool_input?.path

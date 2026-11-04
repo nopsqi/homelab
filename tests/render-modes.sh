@@ -1225,5 +1225,5 @@ for label, path in zip(("test", "real", "two channels", "real, RC off"), sys.arg
 
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
-print("docs bearer and socket: an in-memory emptyDir filled by docs-token, mounted by the core and docs only; no port 3002; probes need the socket; the runs' settings deny it; harness-start follows the image")
+print("docs bearer and socket: docs-token (filled by the init, read-only to the core and docs) and docs-sock (writable by docs alone), mounted by no one else; no port 3002; probes need the socket; the runs' settings deny it; harness-start follows the image")
 PY

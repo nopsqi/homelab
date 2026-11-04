@@ -101,7 +101,8 @@ fs.writeFileSync(dst, JSON.stringify(s, null, 2))' /config/settings.json /config
 # The check, failing startup: no test-phase rule reaches the real vault; docs conversion is limited to the phase roots; the
 # deny holds the whole static floor (harness-settings.json, Agent and Bash among it) and, when the image has the capability
 # registry, the image's own FLOOR_DENY (a chart older than the image's floor fails closed); the allow holds nothing beyond the
-# static core tools; Write and Edit go through the write guard rooted at this phase's workspace root.
+# static core tools (harness-settings.json's allow, mcp__core__ tools only: propose_plan, ask_worker, decision_status,
+# propose_capability_change, the self_note tools and engine_info); Write and Edit go through the write guard rooted at this phase's workspace root.
 node -e '
 const fs = require("fs"), [f, phase, root, patch, capsjs] = process.argv.slice(1)
 const fail = (m) => { console.error(`harness-start: ${m}`); process.exit(2) }
@@ -127,7 +128,7 @@ if (fs.existsSync(capsjs)) {
 }
 const missing = [...new Set(floor.filter((r) => !deny.includes(r)))]
 if (missing.length) fail(`the runs\x27 settings do not deny the floor: ${missing.join(", ")}`)
-const extra = allow.filter((r) => !h.allow.includes(r))
+const extra = allow.filter((r) => !h.allow.includes(r) || !/^mcp__core__[a-z_]+$/.test(r))
 if (extra.length) fail(`the static allow holds more than the core tools: ${extra.join(", ")}`)
 const guard = `node /config/harness-write-guard.mjs --root ${root}/Naila/Workspace || exit 2`
 for (const t of ["Write", "Edit", "NotebookEdit"]) { const c = hooked(t); if (c.length !== 1 || c[0] !== guard) fail(`${t} does not go through the write guard rooted at ${root}/Naila/Workspace`) }
@@ -146,6 +147,8 @@ while read -r n m; do
   printf '{"agent": "%s", "model": "%s"}\n' "$n" "$m" > "$W/$n/.claude/settings.json"
   dirs+=("$W/$n")
 done < /config/direct-lines
+# engine_info's models (naila 3ae8cbb): the chart's per-worker model of each direct line, as comma-separated worker=model pairs
+export HARNESS_MODELS="$(awk 'NF >= 2 { printf "%s%s=%s", (n++ ? "," : ""), $1, $2 }' /config/direct-lines)"
 
 # User-scope MCP: only vault (rooted at this phase's vault) and docs; projects: only the trusted work dirs. Written to
 # ~/.claude.json and copied to ~/.claude/.claude.json, where Claude Code looks once CLAUDE_CONFIG_DIR is set.

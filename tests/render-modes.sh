@@ -16,14 +16,15 @@
 #  - the RC checksum ignores a harness-only mode edit and follows an RC one;
 #  - plan 4 Task 16: every harness worker names the self_note tools (changed only on the user's ask in its own conversation,
 #    announced there and undoable: P23, P29) and propose_capability_change, only naila's names engine_info, the ceilings hold
-#    the self_note tools and never engine_info (P19), harness-settings.json allows them and engine_info (P1), and the limits
+#    the self_note tools and never engine_info (P19), harness-settings.json allows them (P1), and the limits
 #    sentence is the slot <!-- mode:limits --> (RC CLAUDE.md byte-identical, harness mode points at engine_info: P21).
 #  - plan 5 Task 4: the advisor works by its method (snapshot and Profile.md first, rupiah impact, Rp50.000, verify before
 #    asserting, new evidence) and does the monthly review (one write_note for Finance/Reviews/); "Reply short" is gone; naila,
 #    the bookkeeper and ops-oncall each verify before asserting; snapshot is a budget read in both finance ceilings (P19).
 #  - plan 6 Task 4: naila names vault_edit_line, vault_tick_task and undo_vault_change (undo only on the user's ask in her own
 #    conversation) and not on a colleague's ask; every ceiling holds the two direct tools (vault.write) and none holds
-#    undo_vault_change (naila's only, P19); harness-settings.json allows undo_vault_change.
+#    undo_vault_change (naila's only, P19); neither harness-settings.json nor the merged static settings allow engine_info or
+#    undo_vault_change (the core allows them per run in naila's runs alone; security review).
 # Then the assistant-harness pod (harness.enabled, harness.phase):
 #  - it renders only when enabled, and enabling it leaves the RC objects as they were;
 #  - test phase points at assistant-finance-test and /vault/Harness-test, real phase at assistant-finance and /vault;
@@ -165,8 +166,10 @@ import json
 FLOOR_DENY = json.loads(os.environ["FLOOR_DENY"])
 # P1 (plan 4 Task 16): the self-note tools (every worker) and engine_info (naila only; the core lists it to her runs alone)
 SELF_NOTES = {"mcp__core__self_note_set", "mcp__core__self_note_history", "mcp__core__self_note_undo"}
-STATIC_ALLOW = {"mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change"} | SELF_NOTES | {"mcp__core__engine_info"} \
-    | {"mcp__core__undo_vault_change"}   # plan 6 Task 4: naila's undo, in no switch (the core lists it to her runs alone)
+STATIC_ALLOW = {"mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change"} | SELF_NOTES
+# plan 6 Task 4 (security review): naila's own core tools are allowed per run in her runs alone (naila capabilities.ts
+# NAILA_CORE_TOOLS), never in the static settings every worker's run gets
+NAILA_CORE = {"mcp__core__engine_info", "mcp__core__undo_vault_change"}
 # every harness worker asks its colleagues (ask_worker) and reads a decision's outcome (decision_status); ops-oncall's
 # propose_plan is in its ceiling (budget.write-plans applies to it) and stays off by its switch
 COLLEAGUE = {"mcp__core__ask_worker", "mcp__core__decision_status"}
@@ -360,7 +363,8 @@ if hs is not None:
     if "mcp__claude_ai_*" not in deny: bad.append("harness-settings.json does not deny mcp__claude_ai_* (the login's claude.ai connectors)")
     # P24: the static Agent deny and ask_worker/propose_plan allows stay (a rollback is never less safe); P1: the core tools
     for t in sorted(STATIC_ALLOW):   # dontAsk denies an unlisted tool
-        if t not in allow: bad.append(f"P1: harness-settings.json allows the three self_note tools and engine_info (and the other core tools): it lacks {t}")
+        if t not in allow: bad.append(f"P1: harness-settings.json allows the three self_note tools (and the other core tools): it lacks {t}")
+    for t in sorted(allow & NAILA_CORE): bad.append(f"plan 6: harness-settings.json statically allows {t}, which only naila's runs may get (per run)")
     for t in allow & (set(WRITES) | {"SendMessage", "ListAgents", "Agent"}): bad.append(f"harness-settings.json allows {t}")
     # P22, P28: every other allow comes per run from the capabilities
     for t in sorted(allow - STATIC_ALLOW): bad.append(f"harness-settings.json allows {t}, outside the static core tools (it is the per-run settings' to allow)")
@@ -542,8 +546,7 @@ bad = []
 import os, json
 FLOOR_DENY = json.loads(os.environ["FLOOR_DENY"])
 STATIC_ALLOW = {"mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change",
-                "mcp__core__self_note_set", "mcp__core__self_note_history", "mcp__core__self_note_undo", "mcp__core__engine_info",
-                "mcp__core__undo_vault_change"}   # plan 6 Task 4
+                "mcp__core__self_note_set", "mcp__core__self_note_history", "mcp__core__self_note_undo"}   # plan 6: engine_info and the undo are per run
 H = ("Deployment", "assistant-harness")
 
 # harness pod renders only when enabled
@@ -729,6 +732,7 @@ for ph, r in (("test", test), ("real", real)):
         if t.startswith(("mcp__ops", "mcp__finance-read", "mcp__finance__")): bad.append(f"P22: {tag}: the merged static allow holds {t}")
         if re.search(r"Finance|tool-results", t): bad.append(f"P28: {tag}: the merged static allow opens {t} to every run")
         if t not in STATIC_ALLOW: bad.append(f"P22: {tag}: the merged static allow holds {t}, outside the static core tools")
+        if t in ("mcp__core__engine_info", "mcp__core__undo_vault_change"): bad.append(f"plan 6: {tag}: the merged static allow holds {t}, which only naila's runs may get (per run)")
     pre = s.get("hooks", {}).get("PreToolUse", [])
     def hooked(tool): return [h["command"] for e in pre if e.get("matcher") in (None, "", "*") or re.fullmatch(f"(?:{e['matcher']})", tool) for h in e["hooks"]]   # no, "" or "*" matcher: every tool
     for tool, guard in (("Read", "read-guard.mjs"), ("Glob", "read-guard.mjs"), ("Grep", "read-guard.mjs"), ("WebSearch", "web-guard.mjs"),

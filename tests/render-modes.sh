@@ -28,6 +28,8 @@
 #  - plan 6 Task 5: naila files vault plans (vault-plans: move_note, delete_note into Naila/Trash/, edit_note) on the user's
 #    request, approved in the decision pool, and no budget plans; no other worker names vault-plans; never Naila/Trash/ or
 #    Harness-test/, a trashed note back only through undo_vault_change, trash_as without the prefix, and never on a colleague's ask.
+#  - plan 6 final fix: naila never ticks or unticks a 🔁 task with any tool or plan, and the direct-writes bullet points at
+#    workspace_delete for her own workspace.
 #  - plan 6 Task 6: naila's limits say the core names the workspace at the start of a run while files.write is on, and every
 #    ceiling holds workspace_delete (files.write's core tool, P19); naila deletes in another worker's workspace only on the
 #    user's own request, never on a colleague's ask.
@@ -336,9 +338,11 @@ ask = next((line for line in nk.splitlines() if "can't write the vault on a coll
 for t in ("vault_edit_line", "vault_tick_task"):
     if t not in ask: bad.append(f"plan 6: harness-CLAUDE.md's colleague's-ask rule does not name {t} among the writes not available then")
 for t in ("Finance/", "Workers/", "one line per call",
-          "A recurring task (🔁) is the user's to tick in Obsidian: never tick or untick it, with either tool.",   # fix round 1
+          "A recurring task (🔁) is the user's to tick in Obsidian: never tick or untick it, with any tool or plan.",   # fix round 1; final fix M-c
+          "workspace folders (clean up your own with `workspace_delete`, below)",   # final fix: the direct-writes bullet points at workspace_delete
           "Naila/Vault changes.md lists the latest changes"):
     if t not in nk: bad.append(f"plan 6: harness-CLAUDE.md's direct vault rule lacks {t!r}")
+if "with either tool" in nk: bad.append("plan 6 final fix M-c: harness-CLAUDE.md's 🔁 rule names two tools; a vault plan's edit_note can't tick one either")
 if "lists every change" in nk: bad.append("plan 6: harness-CLAUDE.md says Vault changes.md lists every change (it lists the latest)")
 # plan 6 Task 5: naila's vault plans (vault.organize; the core lists propose_plan to her with vault-plans alone)
 for t in ("`vault-plans`", "`move_note`", "`delete_note`", "`edit_note`", "Naila/Trash/", "`trash_as`", "decision pool", "stop at the first failure",

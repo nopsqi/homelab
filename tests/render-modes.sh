@@ -16,11 +16,15 @@
 #  - the RC checksum ignores a harness-only mode edit and follows an RC one;
 #  - plan 4 Task 16: every harness worker names the self_note tools (changed only on the user's ask in its own conversation,
 #    announced there and undoable: P23, P29) and propose_capability_change, only naila's names engine_info, the ceilings hold
-#    the self_note tools and never engine_info (P19), harness-settings.json allows them and engine_info (P1), and the limits
+#    the self_note tools and never engine_info (P19), harness-settings.json allows them (P1), and the limits
 #    sentence is the slot <!-- mode:limits --> (RC CLAUDE.md byte-identical, harness mode points at engine_info: P21).
 #  - plan 5 Task 4: the advisor works by its method (snapshot and Profile.md first, rupiah impact, Rp50.000, verify before
 #    asserting, new evidence) and does the monthly review (one write_note for Finance/Reviews/); "Reply short" is gone; naila,
 #    the bookkeeper and ops-oncall each verify before asserting; snapshot is a budget read in both finance ceilings (P19).
+#  - plan 6 Task 4: naila names vault_edit_line, vault_tick_task and undo_vault_change (undo only on the user's ask in her own
+#    conversation) and not on a colleague's ask; every ceiling holds the two direct tools (vault.write) and none holds
+#    undo_vault_change (naila's only, P19); neither harness-settings.json nor the merged static settings allow engine_info or
+#    undo_vault_change (the core allows them per run in naila's runs alone; security review).
 # Then the assistant-harness pod (harness.enabled, harness.phase):
 #  - it renders only when enabled, and enabling it leaves the RC objects as they were;
 #  - test phase points at assistant-finance-test and /vault/Harness-test, real phase at assistant-finance and /vault;
@@ -162,7 +166,10 @@ import json
 FLOOR_DENY = json.loads(os.environ["FLOOR_DENY"])
 # P1 (plan 4 Task 16): the self-note tools (every worker) and engine_info (naila only; the core lists it to her runs alone)
 SELF_NOTES = {"mcp__core__self_note_set", "mcp__core__self_note_history", "mcp__core__self_note_undo"}
-STATIC_ALLOW = {"mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change"} | SELF_NOTES | {"mcp__core__engine_info"}
+STATIC_ALLOW = {"mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change"} | SELF_NOTES
+# plan 6 Task 4 (security review): naila's own core tools are allowed per run in her runs alone (naila capabilities.ts
+# NAILA_CORE_TOOLS), never in the static settings every worker's run gets
+NAILA_CORE = {"mcp__core__engine_info", "mcp__core__undo_vault_change"}
 # every harness worker asks its colleagues (ask_worker) and reads a decision's outcome (decision_status); ops-oncall's
 # propose_plan is in its ceiling (budget.write-plans applies to it) and stays off by its switch
 COLLEAGUE = {"mcp__core__ask_worker", "mcp__core__decision_status"}
@@ -190,7 +197,7 @@ BUDGET_READS = ["accounts", "categories", "recent", "spending_by_category", "pay
 CAPS = {"files.read": ["Read", "Glob", "Grep"], "files.write": ["Write", "Edit"], "web.search": ["WebSearch"], "web.fetch": ["WebFetch"],
         "messaging.ask": ["mcp__core__ask_worker"], "budget.read": [f"mcp__{s}__{t}" for s in ("finance", "finance-read") for t in BUDGET_READS],
         "budget.write-plans": ["mcp__core__propose_plan"], "vault.read": [f"mcp__vault__{t}" for t in ("tree", "grep", "read", "open_tasks")],
-        "vault.write": ["mcp__vault__write_inbox", "mcp__vault__append_daily"],
+        "vault.write": ["mcp__vault__write_inbox", "mcp__vault__append_daily", "mcp__core__vault_edit_line", "mcp__core__vault_tick_task"],
         "cluster.read": [f"mcp__ops__{t}" for t in ("pods", "workloads", "describe", "logs", "events", "top", "argocd_apps", "alerts", "backups")],
         "docs.convert": ["mcp__docs__convert"]}
 SERVERS = {"finance-bookkeeper": {"core", "vault", "docs", "finance"}, "finance-advisor": {"core", "vault", "docs", "finance-read", "finance-notes"},
@@ -203,6 +210,7 @@ for w, srv in SERVERS.items():
     expect = CEILING_CORE | {t for ts in CAPS.values() for t in ts if server(t) is None or server(t) in srv}
     for t in sorted(expect - listed): bad.append(f"P19: the {w} ceiling ({f}) lacks {t}")
     if "mcp__core__engine_info" in listed: bad.append(f"the {w} ceiling ({f}) holds engine_info, which is naila's only")
+    if "mcp__core__undo_vault_change" in listed: bad.append(f"the {w} ceiling ({f}) holds undo_vault_change, which is naila's only")
     m = re.search(r"^tools: (.*)$", new.get(f"harness-agent-{w}.md", ""), re.M)
     if not m or set(m.group(1).split(", ")) != listed: bad.append(f"P19: harness-agent-{w}.md's tools line is not its tools.md")
 # The colleagues (any-to-any ask_worker), honest messaging and decision outcomes, in every harness worker's prompt.
@@ -304,6 +312,29 @@ if not os.path.exists(hl) or "engine_info" not in open(hl).read(): bad.append(f"
 if LIMITS in new.get("harness-CLAUDE.md", "") or "engine_info" not in new.get("harness-CLAUDE.md", ""): bad.append("P21: the harness render of CLAUDE.md keeps the RC limits sentence or does not name engine_info")
 nk = new.get("harness-CLAUDE.md", "")
 if not re.search(r"can't write the vault on a colleague's ask", nk): bad.append("P25: harness-CLAUDE.md does not tell naila she can't write the vault on a colleague's ask")
+# plan 6 Task 4: naila's direct vault tools and her undo (only on the user's ask in her own conversation); no other worker
+# names them, every ceiling holds the two direct tools and none the undo
+for t in ("vault_edit_line", "vault_tick_task", "undo_vault_change"):
+    if f"`{t}" not in nk: bad.append(f"plan 6: harness-CLAUDE.md does not name `{t}`")
+for k in harness:
+    if k != "harness-CLAUDE.md" and "undo_vault_change" in new[k]: bad.append(f"plan 6: {k} names undo_vault_change, which is naila's only")
+undo = [sent for line in nk.splitlines() for sent in re.split(r"(?<=[.!?])\s+", line) if "`undo_vault_change" in sent]
+if not any("your own conversation" in sent for sent in undo): bad.append("plan 6: harness-CLAUDE.md does not limit undo_vault_change to the user's ask in your own conversation")
+ask = next((line for line in nk.splitlines() if "can't write the vault on a colleague's ask" in line), "")
+for t in ("vault_edit_line", "vault_tick_task"):
+    if t not in ask: bad.append(f"plan 6: harness-CLAUDE.md's colleague's-ask rule does not name {t} among the writes not available then")
+for t in ("Finance/", "Workers/", "one line per call",
+          "A recurring task (🔁) is the user's to tick in Obsidian: never tick or untick it, with either tool.",   # fix round 1
+          "Naila/Vault changes.md lists the latest changes"):
+    if t not in nk: bad.append(f"plan 6: harness-CLAUDE.md's direct vault rule lacks {t!r}")
+if "lists every change" in nk: bad.append("plan 6: harness-CLAUDE.md says Vault changes.md lists every change (it lists the latest)")
+for f in sorted(glob.glob("helm/assistant/files/modes/harness/*.tools.md")):
+    listed = open(f).read().strip().split(", ")
+    for t in ("mcp__core__vault_edit_line", "mcp__core__vault_tick_task"):
+        if t not in listed: bad.append(f"plan 6: the ceiling {f} lacks {t}")
+    if "mcp__core__undo_vault_change" in listed: bad.append(f"plan 6 (P19): the ceiling {f} holds undo_vault_change")
+    if "mcp__vault__append_daily" in listed and listed[listed.index("mcp__vault__append_daily") + 1:][:2] != ["mcp__core__vault_edit_line", "mcp__core__vault_tick_task"]:
+        bad.append(f"plan 6: in {f} the two direct tools don't follow mcp__vault__append_daily")
 for k in harness:
     if re.search(r"send no messages", new[k], re.I): bad.append(f"no harness file says \"send no messages\": {k} does")
     for line in new[k].splitlines():
@@ -335,7 +366,8 @@ if hs is not None:
     if "mcp__claude_ai_*" not in deny: bad.append("harness-settings.json does not deny mcp__claude_ai_* (the login's claude.ai connectors)")
     # P24: the static Agent deny and ask_worker/propose_plan allows stay (a rollback is never less safe); P1: the core tools
     for t in sorted(STATIC_ALLOW):   # dontAsk denies an unlisted tool
-        if t not in allow: bad.append(f"P1: harness-settings.json allows the three self_note tools and engine_info (and the other core tools): it lacks {t}")
+        if t not in allow: bad.append(f"P1: harness-settings.json allows the three self_note tools (and the other core tools): it lacks {t}")
+    for t in sorted(allow & NAILA_CORE): bad.append(f"plan 6: harness-settings.json statically allows {t}, which only naila's runs may get (per run)")
     for t in allow & (set(WRITES) | {"SendMessage", "ListAgents", "Agent"}): bad.append(f"harness-settings.json allows {t}")
     # P22, P28: every other allow comes per run from the capabilities
     for t in sorted(allow - STATIC_ALLOW): bad.append(f"harness-settings.json allows {t}, outside the static core tools (it is the per-run settings' to allow)")
@@ -517,7 +549,7 @@ bad = []
 import os, json
 FLOOR_DENY = json.loads(os.environ["FLOOR_DENY"])
 STATIC_ALLOW = {"mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change",
-                "mcp__core__self_note_set", "mcp__core__self_note_history", "mcp__core__self_note_undo", "mcp__core__engine_info"}
+                "mcp__core__self_note_set", "mcp__core__self_note_history", "mcp__core__self_note_undo"}   # plan 6: engine_info and the undo are per run
 H = ("Deployment", "assistant-harness")
 
 # harness pod renders only when enabled
@@ -703,6 +735,7 @@ for ph, r in (("test", test), ("real", real)):
         if t.startswith(("mcp__ops", "mcp__finance-read", "mcp__finance__")): bad.append(f"P22: {tag}: the merged static allow holds {t}")
         if re.search(r"Finance|tool-results", t): bad.append(f"P28: {tag}: the merged static allow opens {t} to every run")
         if t not in STATIC_ALLOW: bad.append(f"P22: {tag}: the merged static allow holds {t}, outside the static core tools")
+        if t in ("mcp__core__engine_info", "mcp__core__undo_vault_change"): bad.append(f"plan 6: {tag}: the merged static allow holds {t}, which only naila's runs may get (per run)")
     pre = s.get("hooks", {}).get("PreToolUse", [])
     def hooked(tool): return [h["command"] for e in pre if e.get("matcher") in (None, "", "*") or re.fullmatch(f"(?:{e['matcher']})", tool) for h in e["hooks"]]   # no, "" or "*" matcher: every tool
     for tool, guard in (("Read", "read-guard.mjs"), ("Glob", "read-guard.mjs"), ("Grep", "read-guard.mjs"), ("WebSearch", "web-guard.mjs"),

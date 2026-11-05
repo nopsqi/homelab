@@ -28,6 +28,8 @@
 #  - plan 6 Task 5: naila files vault plans (vault-plans: move_note, delete_note into Naila/Trash/, edit_note) on the user's
 #    request, approved in the decision pool, and no budget plans; no other worker names vault-plans; never Naila/Trash/ or
 #    Harness-test/, a trashed note back only through undo_vault_change, trash_as without the prefix, and never on a colleague's ask.
+#  - plan 6 Task 6: naila's limits say the core names the workspace at the start of a run while files.write is on, and every
+#    ceiling holds workspace_delete (files.write's core tool, P19).
 # Then the assistant-harness pod (harness.enabled, harness.phase):
 #  - it renders only when enabled, and enabling it leaves the RC objects as they were;
 #  - test phase points at assistant-finance-test and /vault/Harness-test, real phase at assistant-finance and /vault;
@@ -197,7 +199,7 @@ for f in sorted(glob.glob("helm/assistant/files/modes/harness/*.tools.md")):
 # has its server (budget.read: mcp__finance__* for the bookkeeper, mcp__finance-read__* for the advisor). Each later task
 # that adds a tool updates the ceiling and CEILING_CORE / CAPS here.
 BUDGET_READS = ["accounts", "categories", "recent", "spending_by_category", "payee_history", "actual_read", "find_duplicates", "snapshot"]
-CAPS = {"files.read": ["Read", "Glob", "Grep"], "files.write": ["Write", "Edit"], "web.search": ["WebSearch"], "web.fetch": ["WebFetch"],
+CAPS = {"files.read": ["Read", "Glob", "Grep"], "files.write": ["Write", "Edit", "mcp__core__workspace_delete"], "web.search": ["WebSearch"], "web.fetch": ["WebFetch"],
         "messaging.ask": ["mcp__core__ask_worker"], "budget.read": [f"mcp__{s}__{t}" for s in ("finance", "finance-read") for t in BUDGET_READS],
         "budget.write-plans": ["mcp__core__propose_plan"], "vault.read": [f"mcp__vault__{t}" for t in ("tree", "grep", "read", "open_tasks")],
         "vault.write": ["mcp__vault__write_inbox", "mcp__vault__append_daily", "mcp__core__vault_edit_line", "mcp__core__vault_tick_task"],
@@ -313,6 +315,9 @@ if old.get("CLAUDE.md") != new.get("CLAUDE.md") or LIMITS not in new.get("CLAUDE
 hl = "helm/assistant/files/modes/harness/naila.limits.md"
 if not os.path.exists(hl) or "engine_info" not in open(hl).read(): bad.append(f"P21: {hl} does not send naila to engine_info before she says she can't")
 if LIMITS in new.get("harness-CLAUDE.md", "") or "engine_info" not in new.get("harness-CLAUDE.md", ""): bad.append("P21: the harness render of CLAUDE.md keeps the RC limits sentence or does not name engine_info")
+# plan 6 Task 6: the core names the workspace at the start of a run while files.write is on; naila's limits point there
+WS_LIMITS = "read or write files in your workspace; the core names its folder at the start of a run while files.write is on)"
+if not os.path.exists(hl) or WS_LIMITS not in open(hl).read() or WS_LIMITS not in new.get("harness-CLAUDE.md", ""): bad.append(f"plan 6 Task 6: {hl} and the harness render of CLAUDE.md lack {WS_LIMITS!r}")
 nk = new.get("harness-CLAUDE.md", "")
 if not re.search(r"can't write the vault on a colleague's ask", nk): bad.append("P25: harness-CLAUDE.md does not tell naila she can't write the vault on a colleague's ask")
 # plan 6 Task 4: naila's direct vault tools and her undo (only on the user's ask in her own conversation); no other worker

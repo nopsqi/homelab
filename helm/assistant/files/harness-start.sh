@@ -112,7 +112,7 @@ fs.writeFileSync(dst, JSON.stringify(s, null, 2))' /config/settings.json /config
 # phase's roots (docs-grant.mjs --by-caps --root VAULT_ROOT); the deny holds the whole static floor (harness-settings.json, Agent and Bash among it) and, when the image has the capability
 # registry, the image's own FLOOR_DENY (a chart older than the image's floor fails closed); the allow holds nothing beyond the
 # static core tools (harness-settings.json's allow, mcp__core__ tools only: propose_plan, ask_worker, decision_status,
-# propose_capability_change, the self_note tools and engine_info); Write and Edit go through the write guard rooted at this phase's workspace root;
+# propose_capability_change, the self_note tools, engine_info and undo_vault_change); Write and Edit go through the write guard rooted at this phase's workspace root;
 # Read, Glob and Grep through the read guard narrowed to the run's origin channel (--by-origin, Ruling 16).
 node -e '
 const fs = require("fs"), [f, phase, root, patch, capsjs] = process.argv.slice(1)

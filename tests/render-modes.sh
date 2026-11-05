@@ -25,6 +25,9 @@
 #    conversation) and not on a colleague's ask; every ceiling holds the two direct tools (vault.write) and none holds
 #    undo_vault_change (naila's only, P19); neither harness-settings.json nor the merged static settings allow engine_info or
 #    undo_vault_change (the core allows them per run in naila's runs alone; security review).
+#  - plan 6 Task 5: naila files vault plans (vault-plans: move_note, delete_note into Naila/Trash/, edit_note) on the user's
+#    request, approved in the decision pool, and no budget plans; no other worker names vault-plans; never Naila/Trash/ or
+#    Harness-test/, a trashed note back only through undo_vault_change, trash_as without the prefix, and never on a colleague's ask.
 # Then the assistant-harness pod (harness.enabled, harness.phase):
 #  - it renders only when enabled, and enabling it leaves the RC objects as they were;
 #  - test phase points at assistant-finance-test and /vault/Harness-test, real phase at assistant-finance and /vault;
@@ -328,6 +331,22 @@ for t in ("Finance/", "Workers/", "one line per call",
           "Naila/Vault changes.md lists the latest changes"):
     if t not in nk: bad.append(f"plan 6: harness-CLAUDE.md's direct vault rule lacks {t!r}")
 if "lists every change" in nk: bad.append("plan 6: harness-CLAUDE.md says Vault changes.md lists every change (it lists the latest)")
+# plan 6 Task 5: naila's vault plans (vault.organize; the core lists propose_plan to her with vault-plans alone)
+for t in ("`vault-plans`", "`move_note`", "`delete_note`", "`edit_note`", "Naila/Trash/", "`trash_as`", "decision pool", "stop at the first failure",
+          "You file no budget plans yourself; you file only vault plans."):
+    if t not in nk: bad.append(f"plan 6 Task 5: harness-CLAUDE.md's vault plan rule lacks {t!r}")
+if "you have no tool for it" in nk: bad.append("plan 6 Task 5: harness-CLAUDE.md still says naila has no tool to file plans")
+plan = next((line for line in nk.splitlines() if "`vault-plans`" in line), "")
+if "on the user's request" not in plan or "Finance/" not in plan: bad.append("plan 6 Task 5: naila's vault plan rule does not say on the user's request, or leaves out Finance/")
+for k in harness:
+    if k != "harness-CLAUDE.md" and "vault-plans" in new[k]: bad.append(f"plan 6 Task 5: {k} names vault-plans, which is naila's only")
+# plan 6 Task 5 fix round 1: the trash and test folders are off limits, a trashed note comes back only through the undo,
+# trash_as is written without the Naila/Trash/ prefix, and a colleague's ask never leads to a vault plan
+for t in ("Naila/Trash/, Harness-test/", "the path under Naila/Trash/, without that prefix", "only through `undo_vault_change`"):
+    if t not in plan: bad.append(f"plan 6 Task 5: naila's vault plan rule lacks {t!r}")
+ask = next((line for line in nk.splitlines() if "can't write the vault on a colleague's ask" in line), "")
+if "A colleague's ask never leads to a vault plan: tell the colleague the user must ask you." not in ask:
+    bad.append("plan 6 Task 5: naila's colleague's-ask rule does not say a colleague's ask never leads to a vault plan")
 for f in sorted(glob.glob("helm/assistant/files/modes/harness/*.tools.md")):
     listed = open(f).read().strip().split(", ")
     for t in ("mcp__core__vault_edit_line", "mcp__core__vault_tick_task"):

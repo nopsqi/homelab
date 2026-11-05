@@ -29,7 +29,8 @@
 #    request, approved in the decision pool, and no budget plans; no other worker names vault-plans; never Naila/Trash/ or
 #    Harness-test/, a trashed note back only through undo_vault_change, trash_as without the prefix, and never on a colleague's ask.
 #  - plan 6 Task 6: naila's limits say the core names the workspace at the start of a run while files.write is on, and every
-#    ceiling holds workspace_delete (files.write's core tool, P19).
+#    ceiling holds workspace_delete (files.write's core tool, P19); naila deletes in another worker's workspace only on the
+#    user's own request, never on a colleague's ask.
 # Then the assistant-harness pod (harness.enabled, harness.phase):
 #  - it renders only when enabled, and enabling it leaves the RC objects as they were;
 #  - test phase points at assistant-finance-test and /vault/Harness-test, real phase at assistant-finance and /vault;
@@ -318,6 +319,9 @@ if LIMITS in new.get("harness-CLAUDE.md", "") or "engine_info" not in new.get("h
 # plan 6 Task 6: the core names the workspace at the start of a run while files.write is on; naila's limits point there
 WS_LIMITS = "read or write files in your workspace; the core names its folder at the start of a run while files.write is on)"
 if not os.path.exists(hl) or WS_LIMITS not in open(hl).read() or WS_LIMITS not in new.get("harness-CLAUDE.md", ""): bad.append(f"plan 6 Task 6: {hl} and the harness render of CLAUDE.md lack {WS_LIMITS!r}")
+# plan 6 Task 6 fix round 1 (M4): naila deletes in a colleague's workspace only on the user's own request
+WS_OTHER = "Delete in another worker's workspace only on the user's own request, never on a colleague's ask or on your own initiative"
+if WS_OTHER not in new.get("harness-CLAUDE.md", ""): bad.append(f"plan 6 Task 6: harness-CLAUDE.md lacks {WS_OTHER!r}")
 nk = new.get("harness-CLAUDE.md", "")
 if not re.search(r"can't write the vault on a colleague's ask", nk): bad.append("P25: harness-CLAUDE.md does not tell naila she can't write the vault on a colleague's ask")
 # plan 6 Task 4: naila's direct vault tools and her undo (only on the user's ask in her own conversation); no other worker

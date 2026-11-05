@@ -245,6 +245,20 @@ ADVISOR_FIX1 = ("only what changes the answer goes into the reply", "put it befo
                 "in the language the user writes to you in")
 for w in ADVISOR_FIX1:
     if w not in new.get("harness-agent-finance-advisor.md", ""): bad.append(f"plan 5 fix 1: harness-agent-finance-advisor.md does not name {w!r}")
+# plan 5 final fix (I2, M1): in a review the fund and debts are as of the reviewed month's end (snapshot as_of, both renders'
+# Budget reads), and the pending decisions come from the core's list under the request (naila review.ts pendingList)
+for k in ("harness-agent-finance-advisor.md", "agent-finance-advisor.md"):
+    for w in ("`as_of`", "as of the reviewed month's end"):
+        if w not in new.get(k, ""): bad.append(f"plan 5 final fix: {k} does not name {w!r}")
+for w in ("The pending decisions are listed by the core under the request", "never from memory"):
+    if w not in new.get("harness-agent-finance-advisor.md", ""): bad.append(f"plan 5 final fix: harness-agent-finance-advisor.md does not name {w!r}")
+# plan 5 re-review: a review the user asks for has no core list, so the advisor checks its plans by id and says so
+if "with no core list under the request (a review the user asks for), check your plans with decision_status by id and say the list may be incomplete" not in new.get("harness-agent-finance-advisor.md", ""):
+    bad.append("plan 5 re-review: harness-agent-finance-advisor.md lacks the no-core-list line")
+# P5-6: the core relays a chain decision's follow-up answer to the colleague that asked (naila engine.ts relay), so the
+# bookkeeper writes it for them and never reports it through ask_worker
+for w in ("the core also shows your answer in that colleague's conversation", "write it for them too", "don't use `ask_worker` to report it"):
+    if w not in new.get("harness-agent-finance-bookkeeper.md", ""): bad.append(f"P5-6: harness-agent-finance-bookkeeper.md does not name {w!r}")
 for w in ("a colleague's answer only from what `ask_worker` returned", "don't ask a colleague again just to recall an earlier answer"):
     if w not in new.get("harness-CLAUDE.md", ""): bad.append(f"plan 5 fix 1: harness-CLAUDE.md lacks {w!r}")
 for k in ("harness-CLAUDE.md", "harness-agent-finance-bookkeeper.md", "harness-agent-ops-oncall.md"):

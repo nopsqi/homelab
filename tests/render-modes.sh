@@ -323,8 +323,11 @@ if not any("your own conversation" in sent for sent in undo): bad.append("plan 6
 ask = next((line for line in nk.splitlines() if "can't write the vault on a colleague's ask" in line), "")
 for t in ("vault_edit_line", "vault_tick_task"):
     if t not in ask: bad.append(f"plan 6: harness-CLAUDE.md's colleague's-ask rule does not name {t} among the writes not available then")
-for t in ("Finance/", "Workers/", "one line per call"):
+for t in ("Finance/", "Workers/", "one line per call",
+          "A recurring task (🔁) is the user's to tick in Obsidian: never tick or untick it, with either tool.",   # fix round 1
+          "Naila/Vault changes.md lists the latest changes"):
     if t not in nk: bad.append(f"plan 6: harness-CLAUDE.md's direct vault rule lacks {t!r}")
+if "lists every change" in nk: bad.append("plan 6: harness-CLAUDE.md says Vault changes.md lists every change (it lists the latest)")
 for f in sorted(glob.glob("helm/assistant/files/modes/harness/*.tools.md")):
     listed = open(f).read().strip().split(", ")
     for t in ("mcp__core__vault_edit_line", "mcp__core__vault_tick_task"):

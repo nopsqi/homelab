@@ -1,12 +1,12 @@
 image:
-  tag: sha-ee608c1
+  tag: sha-cee40f0
 
 networkPolicy:
   enabled: true
 
 gateway:
   image:
-    tag: sha-ee608c1
+    tag: sha-cee40f0
   # One WhatsApp session, one gateway: prod owns it. Staging runs the web app and Postgres only.
   channels: []
 

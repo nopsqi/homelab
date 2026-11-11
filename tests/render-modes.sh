@@ -41,6 +41,12 @@
 #  - HARNESS_VERSION is the naila image tag, harness-start runs the claude-code adapter's prepare.js on the worker spec (its
 #    exit status and an empty dir list fail the start), exports HARNESS_WORKER_SPEC, and its settings check refuses a static
 #    allow outside the mcp__core__ tools;
+#  - phase 2 (provider-neutral core): the runs' vault server gets VAULT_WORKERS_WRITE=0, harness-start dies unless the image's
+#    vault server and notes server log their VAULT_WORKERS_WRITE / NOTES_READONLY phrases (an older image dies, never starts
+#    weaker), its settings check imports the image's CLAUDE_STATIC_LAYER (dist/providers/claude-code/compile.js; missing:
+#    the start fails) and refuses settings without every layer deny or with a layer hook's tools not hooked by exactly one
+#    matching command; the advisor's finance-notes server env has NOTES_READONLY "1", and no container env names it (the
+#    core's own finance-notes executor never gets it);
 #  - login alerts are per pod, and cloudflared routes naila.nopsqi.dev/harness to the harness login page.
 # Then the RC off switch (claude.rcLines, both phases): false stops the RC pod (replicas 0) and drops its login alerts;
 #  every other object, the harness pod and its checksum among them, renders exactly as with rcLines true.
@@ -56,9 +62,12 @@
 #  notes root follow the phase, no server names the finance write bearer, and the harness body keys hold no frontmatter (nor,
 #  in the test phase, the real finance host or notes root). The byte-identity oracle: the agent files the pod writes (rebuilt
 #  from the spec and the body keys in the claude-code adapter's format, plus the test phase's TEST COPY note) equal, byte for
-#  byte, those the pod wrote from ORACLE_REF (default 2a6ccab, the prod chart before the spec: its harness-agent keys through
-#  the old start script's sed; a ref that has a spec is rebuilt from it the same way), with placeholder bearers; with
-#  NAILA_WORKTREE, the adapter's real prepare (run with tsx) writes those same files, work-dir settings, CLAUDE.md and dirs.
+#  byte, those the pod wrote from ORACLE_REF, with placeholder bearers, except for exactly one line: the advisor's
+#  finance-notes env gains `        NOTES_READONLY: "1"` (phase 2) when the ref's lacks it. ORACLE_REF defaults to b68dc7e
+#  (origin/prod with phase 1 live; helm/assistant as at 39540bd): a ref with a spec is rebuilt from its own
+#  harness-workers.json through the same port; a ref without one (2a6ccab, the prod chart before the spec) from its
+#  harness-agent keys through the old start script's sed. With NAILA_WORKTREE, the adapter's real prepare (run with tsx)
+#  writes those same files, work-dir settings, CLAUDE.md and dirs.
 # Then the docs bearer and socket (Rulings 19, 21; both phases, two channels, RC off): one init container (docs-token, run as
 #  rendered) writes a fresh 64-hex-character token, mode 0440, into the emptyDir docs-token (medium Memory); docs makes its
 #  socket in another, docs-sock (Ruling 22); the core mounts both read-only, docs docs-token read-only and docs-sock writable,
@@ -78,6 +87,10 @@ export TMPDIR="$tmp"   # the checks' own temp dirs (Python tempfile) go with it
 # The harness floor, verbatim from naila packages/harness/src/capabilities.ts FLOOR_DENY (Task 12, up to e248d5a): every run's settings and
 # the static settings deny all of it, whatever the switches. A change there changes this list.
 export FLOOR_DENY='["Bash","NotebookEdit","Agent","Task","Workflow","TaskStop","Monitor","CronCreate","CronDelete","CronList","ScheduleWakeup","RemoteTrigger","EnterWorktree","ExitWorktree","SendMessage","ListAgents","mcp__vault__workers_*","mcp__claude_ai_*","mcp__finance__add_transaction","mcp__finance__transfer","mcp__finance__update_transaction","mcp__finance__actual_write","mcp__finance-notes__write_note","mcp__finance-notes__edit_note","Read(//home/claude/.claude/.credentials.json)","Read(//home/claude/.claude/harness/**)","Read(//home/claude/.claude/agents/**)","Read(//home/claude/.claude/settings.json)","Read(//home/claude/.claude/.claude.json)","Read(//home/claude/.claude.json)","Read(//home/claude/.claude/projects/**/*.jsonl)","Read(//proc/**)","Read(//config/**)","Read(//naila/**)","Edit(//home/claude/.claude/.credentials.json)","Edit(//home/claude/.claude/harness/**)","Edit(//home/claude/.claude/agents/**)","Edit(//home/claude/.claude/settings.json)","Edit(//home/claude/.claude/.claude.json)","Edit(//home/claude/.claude.json)","Edit(//home/claude/.claude/projects/**/*.jsonl)","Edit(//proc/**)","Edit(//config/**)","Edit(//naila/**)","Write(//home/claude/.claude/.credentials.json)","Write(//home/claude/.claude/harness/**)","Write(//home/claude/.claude/agents/**)","Write(//home/claude/.claude/settings.json)","Write(//home/claude/.claude/.claude.json)","Write(//home/claude/.claude.json)","Write(//home/claude/.claude/projects/**/*.jsonl)","Write(//proc/**)","Write(//config/**)","Write(//naila/**)","Edit(//home/claude/.claude/**)","Write(//home/claude/.claude/**)"]'
+# The claude-code adapter's static layer, verbatim from naila packages/harness/src/providers/claude-code/compile.ts
+# CLAUDE_STATIC_LAYER (Task 7, up to e48bb3f): the denies and the guard hooks (matcher, command regex source) harness-start's
+# settings check takes from the image. With NAILA_WORKTREE the built dist export must equal it. A change there changes this.
+export CLAUDE_STATIC_LAYER='{"deny":["Read(//run/docs-token/**)","Edit(//run/docs-token/**)","Write(//run/docs-token/**)","Read(//run/docs-sock/**)","Edit(//run/docs-sock/**)","Write(//run/docs-sock/**)"],"hooks":[{"matcher":"Read|Glob|Grep","command":"^node \\/config\\/read-guard\\.mjs --by-origin \\|\\| exit 2$"},{"matcher":"Write|Edit|NotebookEdit","command":"harness-write-guard\\.mjs --root \\S+\\/Naila\\/Workspace \\|\\| exit 2$"},{"matcher":"mcp__docs__convert","command":"docs-grant\\.mjs --by-caps "},{"matcher":"WebFetch|WebSearch","command":"web-guard\\.mjs$"}]}'
 
 git archive "$ref" helm/assistant | tar -x -C "$tmp"
 # harness off: a ref that already has the harness pod compares like one that predates it
@@ -98,7 +111,7 @@ helm template helm/assistant "${P[@]}" --set harness.phase=real --set claude.rcL
 helm template helm/assistant -f helm/assistant/values.yaml -f helm/assistant/values.staging.yaml > "$tmp/staging.yaml"
 helm template helm/cloudflared -f helm/cloudflared/values.yaml > "$tmp/cloudflared.yaml"
 # The worker spec's byte-identity oracle (R20): the agent files as the pod wrote them from ORACLE_REF, both phases.
-oref="${ORACLE_REF:-2a6ccab}"
+oref="${ORACLE_REF:-b68dc7e}"
 mkdir -p "$tmp/oracle" && git archive "$oref" helm/assistant | tar -x -C "$tmp/oracle"
 for ph in test real; do
   helm template "$tmp/oracle/helm/assistant" -f "$tmp/oracle/helm/assistant/values.yaml" -f "$tmp/oracle/helm/assistant/values.prod.yaml" --set harness.enabled=true --set harness.phase=$ph --set claude.rcLines=true > "$tmp/oracle-$ph.yaml"
@@ -106,7 +119,8 @@ done
 # The channels: the ref with the harness on (as the working tree's test-phase render), and a second channel next to discord.
 helm template "$tmp/helm/assistant" -f "$tmp/helm/assistant/values.yaml" -f "$tmp/helm/assistant/values.prod.yaml" --set harness.phase=test --set claude.rcLines=true > "$tmp/old-harness.yaml"
 helm template helm/assistant "${P[@]}" --set-json 'harness.channels.telegram={"enabled":true,"label":"Telegram","settle":"reject","secretKey":"GATEWAY_TELEGRAM_SECRET","gateway":{"uid":1003,"env":{"TELEGRAM_CHAT":"-100123"},"secretEnv":{"TELEGRAM_TOKEN":"TELEGRAM_TOKEN"}}}' > "$tmp/two.yaml"
-# The harness checksum follows what harness-start.sh takes from the RC ConfigMap: settings.json, direct-lines, finance-test-note.
+# The harness checksum follows what harness-start.sh takes from the RC ConfigMap (settings.json, finance-test-note), not a
+# direct-lines-only edit (phase 2: the worker spec replaced it at the harness pod's start).
 cp -a helm/assistant "$tmp/s" && sed -i 's/"mcp__claude_ai_Gmail"/"mcp__claude_ai_GmailX"/' "$tmp/s/templates/claude.yaml"
 cp -a helm/assistant "$tmp/d" && sed -i 's/^    {{ .name }} {{ .model }}$/    {{ .name }}  {{ .model }}/' "$tmp/d/templates/claude.yaml"
 cp -a helm/assistant "$tmp/n" && sed -i 's/made for this\./made for this, really./' "$tmp/n/templates/claude.yaml"
@@ -815,10 +829,19 @@ for ph, r in (("test", test), ("real", real)):
     open(os.path.join(d, "harness-settings.json"), "w").write(data["harness-settings.json"])
     vars_ = {k: (e.get("value") or "") for k, e in env(ctr(r, "harness")).items()}
     vars_.update(C=d, HARNESS_PHASE=ph)
-    def run_check(settings, floor_module=None):
+    # phase 2: the check takes the static layer from the image (compile.js); by default a module with this file's verbatim copy
+    LAYER_JS = "/naila/packages/harness/dist/providers/claude-code/compile.js"
+    if LAYER_JS not in shlex.split(ck[0].group(2)): bad.append(f"{tag}: harness-start's settings check is not given {LAYER_JS}")
+    if "CLAUDE_STATIC_LAYER" not in ck[0].group(1): bad.append(f"{tag}: harness-start's settings check does not name CLAUDE_STATIC_LAYER")
+    def layer_file(body):
+        f = tempfile.NamedTemporaryFile("w", suffix=".mjs", dir=d, delete=False); f.write(body); f.close(); return f.name
+    LAYER = json.loads(os.environ["CLAUDE_STATIC_LAYER"])
+    layer_default = layer_file(f"export const CLAUDE_STATIC_LAYER = {json.dumps(LAYER)}\n")
+    def run_check(settings, floor_module=None, layer_module=None):
         open(os.path.join(d, "settings.json"), "w").write(json.dumps(settings))
         args = [re.sub(r"\$\{(\w+)(?::-[^}]*)?\}|\$(\w+)", lambda x: vars_.get(x.group(1) or x.group(2), ""), a) for a in shlex.split(ck[0].group(2))]
-        args = [os.path.join(d, a[len("/config/"):]) if a.startswith("/config/") else (floor_module or os.path.join(d, "absent.js")) if a.startswith("/naila/") else a for a in args]
+        args = [os.path.join(d, a[len("/config/"):]) if a.startswith("/config/") else (layer_module or layer_default) if a == LAYER_JS
+                else (floor_module or os.path.join(d, "absent.js")) if a.startswith("/naila/") else a for a in args]
         return subprocess.run(["node", "-e", ck[0].group(1), *args], capture_output=True, text=True)
     p = run_check(s)
     if p.returncode != 0: bad.append(f"{tag}: harness-start's check refuses the settings it wrote: {p.stderr.strip()}")
@@ -861,6 +884,31 @@ for ph, r in (("test", test), ("real", real)):
     if run_check(s, fm).returncode == 0: bad.append(f"{tag}: harness-start's check accepts settings that lack an entry of the image's FLOOR_DENY")
     open(fm, "w").write(f"export const FLOOR_DENY = {json.dumps(FLOOR_DENY)}\n")
     if (p := run_check(s, fm)).returncode != 0: bad.append(f"{tag}: harness-start's check refuses the image's own floor: {p.stderr.strip()}")
+    # phase 2: CLAUDE_STATIC_LAYER. An image without it (older than the chart) fails the start, as does a layer the settings
+    # don't hold: a deny entry missing, or a layer hook's tool hooked by anything but one command matching its regex.
+    tag2 = f"{tag}: CLAUDE_STATIC_LAYER"
+    for what, body in (("an image without compile.js", None), ("a compile.js without CLAUDE_STATIC_LAYER", "export const other = 1\n"),
+                       ("a layer with no deny", f"export const CLAUDE_STATIC_LAYER = {json.dumps({**LAYER, 'deny': []})}\n"),
+                       ("a layer with no hooks", f"export const CLAUDE_STATIC_LAYER = {json.dumps({**LAYER, 'hooks': []})}\n"),
+                       ("a layer hook without a command", f"export const CLAUDE_STATIC_LAYER = {json.dumps({**LAYER, 'hooks': [{'matcher': 'Read'}]})}\n"),
+                       ("a layer deny entry the settings lack", f"export const CLAUDE_STATIC_LAYER = {json.dumps({**LAYER, 'deny': [*LAYER['deny'], 'Read(//run/new/**)']})}\n"),
+                       ("a layer hook no command matches", f"export const CLAUDE_STATIC_LAYER = {json.dumps({**LAYER, 'hooks': [*LAYER['hooks'], {'matcher': 'Read|Glob|Grep', 'command': 'read-guard\\.mjs --strict'}]})}\n"),
+                       ("a layer hook on a tool nothing hooks", f"export const CLAUDE_STATIC_LAYER = {json.dumps({**LAYER, 'hooks': [*LAYER['hooks'], {'matcher': 'Skill', 'command': 'skill-guard'}]})}\n")):
+        lm = os.path.join(d, "absent-compile.js") if body is None else layer_file(body)
+        p = run_check(s, None, lm)
+        if p.returncode == 0: bad.append(f"{tag2}: harness-start's check accepts {what}")
+        elif body is None and "older" not in p.stderr: bad.append(f"{tag2}: an image without compile.js fails the start without naming the image as too old: {p.stderr.strip()}")
+    for what, w_ in (("a layer deny entry missing (Read(//run/docs-token/**))", lambda x: [x["permissions"]["deny"].remove(LAYER["deny"][0]) for _ in range(x["permissions"]["deny"].count(LAYER["deny"][0]))]),
+                     ("a second WebFetch hook", lambda x: x["hooks"]["PreToolUse"].append({"matcher": "WebFetch", "hooks": [{"type": "command", "command": "true"}]})),
+                     ("no web guard", lambda x: x["hooks"].__setitem__("PreToolUse", [e for e in x["hooks"]["PreToolUse"] if "web-guard" not in json.dumps(e)])),
+                     ("the web guard on WebFetch only", lambda x: [e.__setitem__("matcher", "WebFetch") for e in x["hooks"]["PreToolUse"] if "web-guard" in json.dumps(e)])):
+        if run_check(weaken(w_)).returncode == 0: bad.append(f"{tag2}: harness-start's check accepts {what}")
+    nw_ = os.environ.get("NAILA_WORKTREE", "")
+    real_layer = f"{nw_}/packages/harness/dist/providers/claude-code/compile.js"
+    if nw_ and os.path.isfile(real_layer):
+        p = subprocess.run(["node", "--input-type=module", "-e", f"const m = await import({json.dumps(real_layer)}); process.stdout.write(JSON.stringify(m.CLAUDE_STATIC_LAYER))"], capture_output=True, text=True)
+        if p.returncode != 0 or json.loads(p.stdout or "null") != LAYER: bad.append(f"{tag2}: the built naila CLAUDE_STATIC_LAYER ({nw_}) differs from this file's copy: {(p.stdout or p.stderr)[:300]}")
+        if (p := run_check(s, None, real_layer)).returncode != 0: bad.append(f"{tag2}: harness-start's check refuses the settings it wrote against naila's built layer: {p.stderr.strip()}")
 chk = re.search(r'^if \[ -n "\$\{VAULT_EXCLUDE:-\}" \] && ! grep -qF .*$', start, re.M)
 if not chk: bad.append("harness-start.sh: no check that the vault server honours VAULT_EXCLUDE")
 else:
@@ -872,6 +920,40 @@ else:
     if check("console.error(`vault-mcp: VAULT_EXCLUDE supported; leaving out ${x}`)", "Harness-test") != 0: bad.append("harness-start.sh: refuses a vault server that supports VAULT_EXCLUDE")
     if check("old image", "") != 0: bad.append("harness-start.sh: the test phase (no VAULT_EXCLUDE) needs the support marker")
 if not (re.search(r'^\[ -z "\$\{VAULT_EXCLUDE:-\}" \] \|\| vault_env\+=\(-e VAULT_EXCLUDE="\$VAULT_EXCLUDE"\)', start, re.M) and re.search(r'^claude mcp add vault [^\n]*"\$\{vault_env\[@\]\}"', start, re.M)): bad.append("harness-start.sh: the runs' vault server does not get VAULT_EXCLUDE")
+# phase 2: the runs' vault server never registers workers_write (VAULT_WORKERS_WRITE=0, unconditionally, before it is added),
+# and harness-start dies unless the image's vault server and notes server log their support phrases: an older image (the
+# phrases missing, or the notes server absent) dies naming the image as too old, never starts with weaker rules. Run as rendered.
+import shutil
+tag = "phase 2: harness-start.sh gives the runs' vault server VAULT_WORKERS_WRITE=0 and needs the image's phrases"
+sl = start.splitlines()
+vw = [i for i, l in enumerate(sl) if re.fullmatch(r"vault_env\+=\(-e VAULT_WORKERS_WRITE=0\)(\s+#.*)?", l)]
+va = [i for i, l in enumerate(sl) if re.match(r'^claude mcp add vault [^\n]*"\$\{vault_env\[@\]\}"', l)]
+v0 = [i for i, l in enumerate(sl) if l.startswith("vault_env=(")]
+if len(vw) != 1 or len(va) != 1 or len(v0) != 1 or not v0[0] < vw[0] < va[0]: bad.append(f"{tag}: want one unconditional vault_env+=(-e VAULT_WORKERS_WRITE=0) between vault_env=( and claude mcp add vault")
+if "NOTES_SERVER=/naila/packages/vault-mcp/dist/notes-server.js" not in sl: bad.append(f"{tag}: harness-start does not set NOTES_SERVER=/naila/packages/vault-mcp/dist/notes-server.js")
+PHRASES = {"VAULT_SERVER": "vault-mcp: VAULT_WORKERS_WRITE supported", "NOTES_SERVER": "finance-notes: NOTES_READONLY supported"}
+pl = [l for l in sl if not l.lstrip().startswith("#") and any(f"'{ph_}'" in l for ph_ in PHRASES.values())]
+if len(pl) != 2 or not all(any(f"grep -qF '{ph_}' \"${v_}\"" in l for l in pl) for v_, ph_ in PHRASES.items()): bad.append(f"{tag}: want one grep -qF line per phrase on its server: {pl}")
+else:
+    d = tempfile.mkdtemp()
+    def phrases(vault_body, notes_body):
+        for f, b in (("server.js", vault_body), ("notes-server.js", notes_body)):
+            if os.path.exists(os.path.join(d, f)): os.remove(os.path.join(d, f))
+            if b is not None: open(os.path.join(d, f), "w").write(b)
+        return subprocess.run(["bash", "-c", 'set -eu; die() { echo "harness-start: $*" >&2; exit 2; }; VAULT_SERVER=$1; NOTES_SERVER=$2\n' + "\n".join(pl), "x", f"{d}/server.js", f"{d}/notes-server.js"], capture_output=True, text=True)
+    ok_v, ok_n = f"console.error('{PHRASES['VAULT_SERVER']}; workers_write off')", f"console.error('{PHRASES['NOTES_SERVER']}; read-only')"
+    if (p := phrases(ok_v, ok_n)).returncode != 0: bad.append(f"{tag}: refuses an image whose servers log both phrases: {p.stderr.strip()}")
+    for what, vb, nb in (("a vault server without the phrase", "console.error('vault-mcp: VAULT_EXCLUDE supported')", ok_n), ("a notes server without the phrase", ok_v, "old notes server"),
+                         ("no notes server", ok_v, None), ("no vault server", None, ok_n)):
+        p = phrases(vb, nb)
+        if p.returncode != 2 or "older" not in p.stderr: bad.append(f"{tag}: with {what} it exits {p.returncode} ({p.stderr.strip()!r}); want 2 naming the image as older")
+    shutil.rmtree(d)
+# NOTES_READONLY is the advisor's per-run finance-notes server's alone: no container of the harness pod has it in its env (the
+# core's own finance-notes executor, which runs the approved plans, must never be read-only), and harness-start never sets it.
+for ph, r in (("test", test), ("real", real)):
+    for cn, e in allenv(r):
+        if e["name"] in ("NOTES_READONLY", "VAULT_WORKERS_WRITE"): bad.append(f"phase 2 ({ph}): {cn} env has {e['name']} (only the runs' servers get it)")
+if any(re.search(r"NOTES_READONLY\s*=|-e\s+NOTES_READONLY|export\b.*NOTES_READONLY", l) for l in sl if not l.lstrip().startswith("#")): bad.append("phase 2: harness-start.sh sets NOTES_READONLY (the core's executor must never get it)")
 
 # The worker spec replaces the sed loop, direct-lines and HARNESS_MODELS: harness-start refuses an image without the claude-code
 # adapter's prepare.js and a chart without the spec, runs prepare.js on /config/harness-workers.json (its exit status and an empty
@@ -934,7 +1016,9 @@ for label, r in (("test", test), ("real", real)):
             if label == "test" and off[k] != r[k]: bad.append(f"RC render identical: {k[0]}/{k[1]} changes when the harness is on (test)")
         elif k not in changes and off[k] != r.get(k): bad.append(f"RC render identical: {k[0]}/{k[1]} changes when the harness is on ({label})")
 
-# the RC ConfigMap keys harness-start.sh reads are unchanged from the ref, and the harness checksum follows each of them
+# the RC ConfigMap keys harness-start.sh reads are unchanged from the ref, and the harness checksum follows each of them;
+# direct-lines (the RC lines' roster) is no longer read at the harness pod's start (the worker spec replaced it; workers[]
+# still moves the checksum through toJson .Values.workers), so a direct-lines-only edit leaves the harness checksum alone
 for k in ("settings.json", "direct-lines", "finance-test-note"):
     if old[("ConfigMap", "assistant-claude")]["data"].get(k) != off[("ConfigMap", "assistant-claude")]["data"].get(k): bad.append(f"RC render identical: ConfigMap key {k} differs from the ref render")
 hsum = lambda r: r[H]["spec"]["template"]["metadata"]["annotations"]["checksum/config"] if H in r else None
@@ -942,7 +1026,9 @@ csum = lambda r: r[("Deployment", "assistant-claude")]["spec"]["template"]["meta
 for path, what in zip(sys.argv[7:10], ("settings.json", "direct-lines", "finance-test-note")):
     e = load(path)
     if e[("ConfigMap", "assistant-claude")]["data"].get(what) == test[("ConfigMap", "assistant-claude")]["data"].get(what): bad.append(f"checksum test: the {what} edit did not change the key")
-    if hsum(e) == hsum(test): bad.append(f"the harness checksum ignores a {what} edit (the core would keep the old config)")
+    if what == "direct-lines":
+        if hsum(e) != hsum(test): bad.append("the harness checksum follows a direct-lines-only edit (nothing in the harness pod reads it at start)")
+    elif hsum(e) == hsum(test): bad.append(f"the harness checksum ignores a {what} edit (the core would keep the old config)")
 # the harness pod's 443 egress skips private, tailnet (CGNAT) and link-local ranges
 np = test.get(("NetworkPolicy", "assistant-harness"))
 exc = {x for rule in (np or {"spec": {}})["spec"].get("egress", []) for t in rule.get("to", []) for x in t.get("ipBlock", {}).get("except", [])}
@@ -1040,6 +1126,22 @@ def pod_files(cfg, ph):
     return test_copy(files, cfg, ph)
 def first_diff(a, b):
     return " | ".join(list(difflib.unified_diff(a.splitlines(), b.splitlines(), "oracle", "now", n=0, lineterm=""))[2:6])
+NOTES_RO = '        NOTES_READONLY: "1"'
+def phase2(files):
+    """The ref's agent files as this chart must write them: the advisor's finance-notes env gains exactly one line,
+    NOTES_RO, right before its VAULT_ROOT (the spec's env keys in Helm's toJson order, sorted), when the ref's lacks it;
+    every other file and line as at the ref."""
+    out = dict(files)
+    lines = files["finance-advisor"].splitlines(keepends=True)
+    if NOTES_RO + "\n" in lines: return out
+    at = [i for i, l in enumerate(lines) if l.startswith("        VAULT_ROOT: ") and any(x == "  - finance-notes:\n" for x in lines[:i])]
+    if len(at) != 1: raise ValueError(f"the ref's advisor file has {len(at)} finance-notes VAULT_ROOT lines")
+    out["finance-advisor"] = "".join(lines[:at[0]] + [NOTES_RO + "\n"] + lines[at[0]:])
+    return out
+def one_line(ref, now):
+    """Exactly the extra NOTES_RO line in the advisor file vs the ref (or nothing, when the ref has it), nothing else."""
+    d = [l for l in difflib.ndiff(ref.splitlines(), now.splitlines()) if l[:1] in "+-?"]
+    return d in ([], ["+ " + NOTES_RO]) and (d or NOTES_RO in ref.splitlines())
 
 specs = {}
 for ph in ("test", "real"):
@@ -1083,16 +1185,25 @@ for ph in ("test", "real"):
     if ph == "test" and "//assistant-finance:" in raw: bad.append(f"{tag}: harness-workers.json names the real finance server")
     notes = [s for s in ws["finance-advisor"].get("servers", []) if s.get("name") == "finance-notes"]
     if len(notes) != 1 or notes[0].get("env", {}).get("VAULT_ROOT") != NOTES[ph]: bad.append(f"{tag}: finance-notes VAULT_ROOT is not {NOTES[ph]}")
+    # phase 2: the advisor's notes server is read-only (its write tools are floor-denied and outside its ceiling anyway); no other
+    # server of the spec gets NOTES_READONLY
+    if len(notes) != 1 or notes[0].get("env") != {"VAULT_ROOT": NOTES[ph], "NOTES_READONLY": "1"}: bad.append(f"{tag}: the advisor's finance-notes env is {notes[0].get('env') if notes else None!r}, want VAULT_ROOT {NOTES[ph]} and NOTES_READONLY \"1\"")
+    for w in WORKERS:
+        for srv in ws[w].get("servers", []):
+            if "NOTES_READONLY" in srv.get("env", {}) and not (w == "finance-advisor" and srv.get("name") == "finance-notes"): bad.append(f"{tag}: {w}'s server {srv.get('name')} has NOTES_READONLY")
+    if any(t.startswith("mcp__finance-notes__") for t in ws["finance-advisor"].get("ceiling", [])): bad.append(f"{tag}: the advisor's ceiling holds a finance-notes tool")
     if [s.get("bearer") for s in ws["finance-bookkeeper"].get("servers", [])] != ["MCP_FINANCE_READ_TOKEN"]: bad.append(f"{tag}: the bookkeeper's finance bearer is not MCP_FINANCE_READ_TOKEN")
 
     # The byte-identity oracle: the pod's agent files from this spec equal those it wrote from ORACLE_REF.
     tag = f"byte-identity with {oref} ({ph} phase)"
     try: got = pod_files(cfg, ph)
     except (KeyError, TypeError, ValueError) as e: bad.append(f"{tag}: the agent files can't be rebuilt from the spec: {e!r}"); continue
-    try: want = pod_files(orc[ph], ph)
+    try: ref_files = pod_files(orc[ph], ph); want = phase2(ref_files)
     except (KeyError, TypeError, ValueError) as e: bad.append(f"{tag}: the agent files can't be rebuilt from {oref}: {e!r}"); continue
     for w in AGENTS:
-        if got[w] != want[w]: bad.append(f"{tag}: {w}.md differs: {first_diff(want[w], got[w])}")
+        if got[w] != want[w]: bad.append(f"{tag}: {w}.md differs beyond the advisor's NOTES_READONLY line: {first_diff(want[w], got[w])}")
+        elif w != "finance-advisor" and got[w] != ref_files[w]: bad.append(f"{tag}: {w}.md differs from the ref")
+    if not one_line(ref_files["finance-advisor"], got["finance-advisor"]): bad.append(f"{tag}: the advisor file is not the ref's plus exactly the line {NOTES_RO!r}: {first_diff(ref_files['finance-advisor'], got['finance-advisor'])}")
     if ph == "test" and "TEST COPY" not in got["finance-bookkeeper"]: bad.append(f"{tag}: the bookkeeper is not told its budget is a TEST COPY")
     if cfg.get("harness-CLAUDE.md") != orc[ph].get("harness-CLAUDE.md"): bad.append(f"{tag}: the lead's instructions (harness-CLAUDE.md) differ from the CLAUDE.md the pod copied")
 if specs.get("test") and specs.get("real"):
@@ -1119,9 +1230,9 @@ else:
         if p.stdout.splitlines() != [f"{d}/w/{x}" for x in ("naila", "_summary", *AGENTS)]: bad.append(f"{tag}: prepare printed {p.stdout.splitlines()}")
         if sorted(os.listdir(f"{d}/c/agents")) != sorted(f"{w}.md" for w in AGENTS): bad.append(f"{tag}: agents/ holds {sorted(os.listdir(f'{d}/c/agents'))}")
         got = test_copy({w: open(f"{d}/c/agents/{w}.md").read() for w in AGENTS}, new[ph], ph)
-        want = pod_files(orc[ph], ph)
+        want = phase2(pod_files(orc[ph], ph))
         for w in AGENTS:
-            if got[w] != want[w]: bad.append(f"{tag}: prepare's {w}.md differs from {oref}'s: {first_diff(want[w], got[w])}")
+            if got[w] != want[w]: bad.append(f"{tag}: prepare's {w}.md differs from {oref}'s (plus the advisor's NOTES_READONLY line): {first_diff(want[w], got[w])}")
         for l in orc[ph]["direct-lines"].splitlines():
             if not l.strip(): continue
             n, m = l.split()
@@ -1137,7 +1248,7 @@ else:
     if specs: print(f"naila's validator accepts the rendered spec and prepare writes the same agent files as {oref} ({', '.join(specs)} phases)")
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
-print(f"worker spec: one source per value, phase-resolved, no marker; the pod's agent files are byte-identical to {oref}'s (test and real)")
+print(f"worker spec: one source per value, phase-resolved, no marker; the pod's agent files are {oref}'s plus exactly the advisor's NOTES_READONLY line (test and real)")
 PY
 
 python3 - "$tmp/new.yaml" "$tmp/test-rcoff.yaml" "$tmp/real.yaml" "$tmp/real-rcoff.yaml" <<'PY'

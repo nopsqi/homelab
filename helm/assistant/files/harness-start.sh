@@ -26,6 +26,12 @@ fi
 # chart): fail closed. The phrase is the one the server logs at startup when VAULT_EXCLUDE is set.
 VAULT_SERVER=/naila/packages/vault-mcp/dist/server.js
 if [ -n "${VAULT_EXCLUDE:-}" ] && ! grep -qF 'vault-mcp: VAULT_EXCLUDE supported' "$VAULT_SERVER"; then die "VAULT_EXCLUDE is set but $VAULT_SERVER doesn't support it: this naila image is older than the chart"; fi
+# Phase 2 (provider-neutral core): the runs' vault server is started without workers_write (VAULT_WORKERS_WRITE=0, below), and
+# the advisor's notes server is read-only (NOTES_READONLY in its worker spec env). An image whose servers predate either would
+# silently ignore the variable: fail closed. The phrases are the ones the servers log at startup (roll the chart back with it).
+NOTES_SERVER=/naila/packages/vault-mcp/dist/notes-server.js
+grep -qF 'vault-mcp: VAULT_WORKERS_WRITE supported' "$VAULT_SERVER" || die "$VAULT_SERVER doesn't support VAULT_WORKERS_WRITE: this naila image is older than the chart"
+grep -qF 'finance-notes: NOTES_READONLY supported' "$NOTES_SERVER" || die "$NOTES_SERVER doesn't support NOTES_READONLY: this naila image is older than the chart"
 for k in harness-CLAUDE.md harness-agent-finance-bookkeeper.md harness-settings.json harness-write-guard.mjs settings.json docs-grant.mjs; do
   [ -f "/config/$k" ] || die "/config/$k is missing: this chart predates harness mode"
 done
@@ -116,9 +122,12 @@ fs.writeFileSync(dst, JSON.stringify(s, null, 2))' /config/settings.json /config
 # registry, the image's own FLOOR_DENY (a chart older than the image's floor fails closed); the allow holds nothing beyond the
 # static core tools (harness-settings.json's allow, mcp__core__ tools only: propose_plan, ask_worker, decision_status,
 # propose_capability_change and the self_note tools; engine_info and undo_vault_change come per run, naila only); Write and Edit go through the write guard rooted at this phase's workspace root;
-# Read, Glob and Grep through the read guard narrowed to the run's origin channel (--by-origin, Ruling 16).
+# Read, Glob and Grep through the read guard narrowed to the run's origin channel (--by-origin, Ruling 16). Phase 2: the image's
+# claude-code adapter states what these static settings must hold for every run (CLAUDE_STATIC_LAYER, compile.js): each of its
+# denies, and for each of its hooks every tool of the matcher hooked by exactly one command, matching the hook's regex. An image
+# without it (older than the chart) fails the start.
 node -e '
-const fs = require("fs"), [f, phase, root, patch, capsjs] = process.argv.slice(1)
+const fs = require("fs"), [f, phase, root, patch, capsjs, layerjs] = process.argv.slice(1)
 const fail = (m) => { console.error(`harness-start: ${m}`); process.exit(2) }
 ;(async () => {
 const s = JSON.parse(fs.readFileSync(f, "utf8")), allow = s.permissions.allow, deny = s.permissions.deny
@@ -144,6 +153,16 @@ if (fs.existsSync(capsjs)) {
   if (!Array.isArray(m.FLOOR_DENY) || !m.FLOOR_DENY.length) fail(`${capsjs} has no FLOOR_DENY`)
   floor.push(...m.FLOOR_DENY)
 }
+if (!fs.existsSync(layerjs)) fail(`${layerjs} is missing: this naila image is older than the chart (it has no CLAUDE_STATIC_LAYER)`)
+const L = (await import(layerjs)).CLAUDE_STATIC_LAYER
+const isStr = (x) => typeof x === "string" && x.length > 0
+if (!L || !Array.isArray(L.deny) || !L.deny.length || !L.deny.every(isStr) || !Array.isArray(L.hooks) || !L.hooks.length || !L.hooks.every((x) => x && isStr(x.matcher) && isStr(x.command)))
+  fail(`${layerjs} has no well-formed CLAUDE_STATIC_LAYER: this naila image is older than the chart`)
+floor.push(...L.deny)
+for (const x of L.hooks) for (const t of x.matcher.split("|")) {
+  const c = hooked(t)
+  if (c.length !== 1 || !new RegExp(x.command).test(c[0])) fail(`${t} is not hooked by exactly one command matching /${x.command}/ (CLAUDE_STATIC_LAYER)`)
+}
 const missing = [...new Set(floor.filter((r) => !deny.includes(r)))]
 if (missing.length) fail(`the runs\x27 settings do not deny the floor: ${missing.join(", ")}`)
 const extra = allow.filter((r) => !h.allow.includes(r) || !/^mcp__core__[a-z_]+$/.test(r))
@@ -152,7 +171,7 @@ const guard = `node /config/harness-write-guard.mjs --root ${root}/Naila/Workspa
 for (const t of ["Write", "Edit", "NotebookEdit"]) { const c = hooked(t); if (c.length !== 1 || c[0] !== guard) fail(`${t} does not go through the write guard rooted at ${root}/Naila/Workspace`) }
 const rguard = "node /config/read-guard.mjs --by-origin || exit 2"
 for (const t of ["Read", "Glob", "Grep"]) { const c = hooked(t); if (c.length !== 1 || c[0] !== rguard) fail(`${t} does not go through the read guard narrowed to the run\x27s origin (read-guard.mjs --by-origin)`) }
-})().catch((e) => fail(e.message))' "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/harness-settings.json /naila/packages/harness/dist/capabilities.js
+})().catch((e) => fail(e.message))' "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/harness-settings.json /naila/packages/harness/dist/capabilities.js /naila/packages/harness/dist/providers/claude-code/compile.js
 
 # The work dirs are prepare.js's (above); the test notes cabinet may not exist yet.
 mkdir -p "$W/naila" "$W/_summary" "$FINANCE_NOTES_ROOT"
@@ -169,6 +188,7 @@ export HARNESS_WORKER_SPEC=/config/harness-workers.json
 claude mcp remove vault --scope user >/dev/null 2>&1 || true
 vault_env=(-e VAULT_ROOT="$VAULT_ROOT" -e TZ="$TZ")
 [ -z "${VAULT_EXCLUDE:-}" ] || vault_env+=(-e VAULT_EXCLUDE="$VAULT_EXCLUDE")   # real phase: the test folder stays out
+vault_env+=(-e VAULT_WORKERS_WRITE=0)   # the runs never get workers_write (the floor denies it too); checked supported above
 claude mcp add vault --scope user "${vault_env[@]}" -- node "$VAULT_SERVER" >/dev/null
 claude mcp remove docs --scope user >/dev/null 2>&1 || true
 DOCS_BY_CORE=1; [ -f /naila/packages/harness/dist/docs-relay.js ] || DOCS_BY_CORE=0

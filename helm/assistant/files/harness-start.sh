@@ -12,17 +12,21 @@ set -eu
 export NPM_CONFIG_PREFIX=$HOME/.npm-global PATH=$HOME/.npm-global/bin:$PATH
 C=$HOME/.claude
 MAIN=/naila/packages/harness/dist/main.js
+PREPARE=/naila/packages/harness/dist/providers/claude-code/prepare.js
 die() { echo "harness-start: $*" >&2; exit 2; }
 case "${HARNESS_PHASE:-}" in test|real) ;; *) die "HARNESS_PHASE must be test or real, got '${HARNESS_PHASE:-}'" ;; esac
 if [ "$HARNESS_PHASE" = real ]; then
   case ",${VAULT_EXCLUDE:-}," in *,Harness-test,*) ;; *) die "the real phase needs VAULT_EXCLUDE to name Harness-test, got '${VAULT_EXCLUDE:-}'" ;; esac
 fi
 [ -f "$MAIN" ] || die "$MAIN is missing: this naila image predates harness mode"
+# The worker spec (chart) and the claude-code adapter that writes the agent files from it (image) come together: roll back both.
+[ -f "$PREPARE" ] || die "$PREPARE is missing: this naila image predates the worker spec"
+[ -f /config/harness-workers.json ] || die "/config/harness-workers.json is missing: this chart predates the worker spec"
 # The vault server must honour VAULT_EXCLUDE, or the real phase's runs would see the test folder (an image older than the
 # chart): fail closed. The phrase is the one the server logs at startup when VAULT_EXCLUDE is set.
 VAULT_SERVER=/naila/packages/vault-mcp/dist/server.js
 if [ -n "${VAULT_EXCLUDE:-}" ] && ! grep -qF 'vault-mcp: VAULT_EXCLUDE supported' "$VAULT_SERVER"; then die "VAULT_EXCLUDE is set but $VAULT_SERVER doesn't support it: this naila image is older than the chart"; fi
-for k in harness-CLAUDE.md harness-agent-finance-bookkeeper.md harness-settings.json harness-write-guard.mjs settings.json docs-grant.mjs direct-lines; do
+for k in harness-CLAUDE.md harness-agent-finance-bookkeeper.md harness-settings.json harness-write-guard.mjs settings.json docs-grant.mjs; do
   [ -f "/config/$k" ] || die "/config/$k is missing: this chart predates harness mode"
 done
 [ -n "${MCP_FINANCE_TOKEN:-}" ] && [ -n "${MCP_FINANCE_READ_TOKEN:-}" ] && [ -n "${MCP_OPS_TOKEN:-}" ] || die "a bearer is missing (MCP_FINANCE_TOKEN, MCP_FINANCE_READ_TOKEN, MCP_OPS_TOKEN)"
@@ -44,17 +48,16 @@ if [ ! -f "$C/.credentials.json" ]; then
   sleep 10   # let `claude auth login` finish writing ~/.claude.json
 fi
 
-# Workers from the harness-agent-* keys, with the read-only bearer of this phase's finance server. In the test phase they
-# point at the test server and the test notes cabinet, and the bookkeeper is told its budget is a test copy.
-rm -rf "$C/agents" && mkdir -p "$C/agents"
-for f in /config/harness-agent-*.md; do
-  if [ "$HARNESS_PHASE" = test ]; then
-    sed -e "s/__MCP_FINANCE_READ_TOKEN__/$MCP_FINANCE_READ_TOKEN/" -e "s/__MCP_OPS_TOKEN__/$MCP_OPS_TOKEN/" \
-        -e 's#//assistant-finance:#//assistant-finance-test:#' -e "s#/vault/Finance/#$FINANCE_NOTES_ROOT/#g" "$f"
-  else
-    sed -e "s/__MCP_FINANCE_READ_TOKEN__/$MCP_FINANCE_READ_TOKEN/" -e "s/__MCP_OPS_TOKEN__/$MCP_OPS_TOKEN/" "$f"
-  fi > "$C/agents/${f#/config/harness-agent-}"
-done
+# Workers from the worker spec (/config/harness-workers.json, already resolved for this phase by the chart): the claude-code
+# adapter replaces ~/.claude/agents/ with one agent file per worker (its frontmatter from the spec, the read-only bearer of this
+# phase's finance server and the ops one filled in from the env; its instructions file verbatim), writes each worker's work dir
+# (HARNESS_HOME/work/<worker>: the core runs it there) with its agent and model, naila's with her harness CLAUDE.md, and
+# _summary's, and prints the dirs to trust. It refuses (exit 2, nothing written) an unset bearer or an agent file that would
+# hold the finance write bearer. In the test phase the bookkeeper is also told its budget is a test copy.
+W=$HARNESS_HOME/work
+out=$(node "$PREPARE" --spec /config/harness-workers.json --claude-dir "$C" --work-dir "$W") || die "prepare.js refused the worker spec (its reason is above)"
+[ -n "$out" ] || die "prepare.js printed no work dirs"
+mapfile -t dirs <<< "$out"
 if [ "$HARNESS_PHASE" = test ] && ! grep -q 'TEST COPY' "$C/agents/finance-bookkeeper.md"; then
   { echo; cat /config/finance-test-note; } >> "$C/agents/finance-bookkeeper.md"
 fi
@@ -151,21 +154,10 @@ const rguard = "node /config/read-guard.mjs --by-origin || exit 2"
 for (const t of ["Read", "Glob", "Grep"]) { const c = hooked(t); if (c.length !== 1 || c[0] !== rguard) fail(`${t} does not go through the read guard narrowed to the run\x27s origin (read-guard.mjs --by-origin)`) }
 })().catch((e) => fail(e.message))' "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/harness-settings.json /naila/packages/harness/dist/capabilities.js
 
-# Work dirs (the core runs each worker in HARNESS_HOME/work/<worker>): naila's holds her harness CLAUDE.md; each direct-line
-# worker's names its agent and model, as start.sh does for the RC lines.
-W=$HARNESS_HOME/work
-mkdir -p "$W/naila" "$W/_summary" "$FINANCE_NOTES_ROOT"   # the test notes cabinet may not exist yet
-cp /config/harness-CLAUDE.md "$W/naila/CLAUDE.md"
-dirs=("$W/naila" "$W/_summary")
-while read -r n m; do
-  [ -n "$n" ] || continue
-  [ -f "$C/agents/$n.md" ] || die "no harness-agent-$n.md for direct line $n"
-  mkdir -p "$W/$n/.claude"
-  printf '{"agent": "%s", "model": "%s"}\n' "$n" "$m" > "$W/$n/.claude/settings.json"
-  dirs+=("$W/$n")
-done < /config/direct-lines
-# engine_info's models (naila 3ae8cbb): the chart's per-worker model of each direct line, as comma-separated worker=model pairs
-export HARNESS_MODELS="$(awk 'NF >= 2 { printf "%s%s=%s", (n++ ? "," : ""), $1, $2 }' /config/direct-lines)"
+# The work dirs are prepare.js's (above); the test notes cabinet may not exist yet.
+mkdir -p "$W/naila" "$W/_summary" "$FINANCE_NOTES_ROOT"
+# The core reads the same spec: its workers, their models (engine_info) and servers.
+export HARNESS_WORKER_SPEC=/config/harness-workers.json
 
 # User-scope MCP: only vault (rooted at this phase's vault); projects: only the trusted work dirs. Written to ~/.claude.json
 # and copied to ~/.claude/.claude.json, where Claude Code looks once CLAUDE_CONFIG_DIR is set.

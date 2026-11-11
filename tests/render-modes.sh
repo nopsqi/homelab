@@ -38,8 +38,9 @@
 #  - test phase points at assistant-finance-test and /vault/Harness-test, real phase at assistant-finance and /vault;
 #  - the real phase denies //vault/Harness-test/** to the runs (settings patch run as rendered) and sets VAULT_EXCLUDE;
 #  - the finance write bearer reaches only the core's env (the harness container's MCP_FINANCE_TOKEN), never another container;
-#  - HARNESS_VERSION is the naila image tag, harness-start exports HARNESS_MODELS (worker=model pairs from direct-lines) and
-#    its settings check refuses a static allow outside the mcp__core__ tools;
+#  - HARNESS_VERSION is the naila image tag, harness-start runs the claude-code adapter's prepare.js on the worker spec (its
+#    exit status and an empty dir list fail the start), exports HARNESS_WORKER_SPEC, and its settings check refuses a static
+#    allow outside the mcp__core__ tools;
 #  - login alerts are per pod, and cloudflared routes naila.nopsqi.dev/harness to the harness login page.
 # Then the RC off switch (claude.rcLines, both phases): false stops the RC pod (replicas 0) and drops its login alerts;
 #  every other object, the harness pod and its checksum among them, renders exactly as with rcLines true.
@@ -49,6 +50,15 @@
 #  --disallowedTools among the CLI flags it checks.
 # Then the core's run metrics: 3102 open to monitoring only, its own Service and ServiceMonitor (job assistant-harness-core),
 #  the login Service and ServiceMonitor as at <git-ref>, and the three core alerts, scoped by job, none naming Discord.
+# Then the worker spec (harness-workers.json in ConfigMap assistant-harness, both phases): naila's own validator accepts it when
+#  NAILA_WORKTREE points at a naila checkout (skipped with a notice otherwise), no __MARKER__ survives, each model is the
+#  chart's per-worker model (direct-lines), each description the RC agent file's, each ceiling its tools.md, the URLs and the
+#  notes root follow the phase, no server names the finance write bearer, and the harness body keys hold no frontmatter (nor,
+#  in the test phase, the real finance host or notes root). The byte-identity oracle: the agent files the pod writes (rebuilt
+#  from the spec and the body keys in the claude-code adapter's format, plus the test phase's TEST COPY note) equal, byte for
+#  byte, those the pod wrote from ORACLE_REF (default 2a6ccab, the prod chart before the spec: its harness-agent keys through
+#  the old start script's sed; a ref that has a spec is rebuilt from it the same way), with placeholder bearers; with
+#  NAILA_WORKTREE, the adapter's real prepare (run with tsx) writes those same files, work-dir settings, CLAUDE.md and dirs.
 # Then the docs bearer and socket (Rulings 19, 21; both phases, two channels, RC off): one init container (docs-token, run as
 #  rendered) writes a fresh 64-hex-character token, mode 0440, into the emptyDir docs-token (medium Memory); docs makes its
 #  socket in another, docs-sock (Ruling 22); the core mounts both read-only, docs docs-token read-only and docs-sock writable,
@@ -64,6 +74,7 @@ root="$(git rev-parse --show-toplevel)"
 cd "$root"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+export TMPDIR="$tmp"   # the checks' own temp dirs (Python tempfile) go with it
 # The harness floor, verbatim from naila packages/harness/src/capabilities.ts FLOOR_DENY (Task 12, up to e248d5a): every run's settings and
 # the static settings deny all of it, whatever the switches. A change there changes this list.
 export FLOOR_DENY='["Bash","NotebookEdit","Agent","Task","Workflow","TaskStop","Monitor","CronCreate","CronDelete","CronList","ScheduleWakeup","RemoteTrigger","EnterWorktree","ExitWorktree","SendMessage","ListAgents","mcp__vault__workers_*","mcp__claude_ai_*","mcp__finance__add_transaction","mcp__finance__transfer","mcp__finance__update_transaction","mcp__finance__actual_write","mcp__finance-notes__write_note","mcp__finance-notes__edit_note","Read(//home/claude/.claude/.credentials.json)","Read(//home/claude/.claude/harness/**)","Read(//home/claude/.claude/agents/**)","Read(//home/claude/.claude/settings.json)","Read(//home/claude/.claude/.claude.json)","Read(//home/claude/.claude.json)","Read(//home/claude/.claude/projects/**/*.jsonl)","Read(//proc/**)","Read(//config/**)","Read(//naila/**)","Edit(//home/claude/.claude/.credentials.json)","Edit(//home/claude/.claude/harness/**)","Edit(//home/claude/.claude/agents/**)","Edit(//home/claude/.claude/settings.json)","Edit(//home/claude/.claude/.claude.json)","Edit(//home/claude/.claude.json)","Edit(//home/claude/.claude/projects/**/*.jsonl)","Edit(//proc/**)","Edit(//config/**)","Edit(//naila/**)","Write(//home/claude/.claude/.credentials.json)","Write(//home/claude/.claude/harness/**)","Write(//home/claude/.claude/agents/**)","Write(//home/claude/.claude/settings.json)","Write(//home/claude/.claude/.claude.json)","Write(//home/claude/.claude.json)","Write(//home/claude/.claude/projects/**/*.jsonl)","Write(//proc/**)","Write(//config/**)","Write(//naila/**)","Edit(//home/claude/.claude/**)","Write(//home/claude/.claude/**)"]'
@@ -86,6 +97,12 @@ helm template helm/assistant "${P[@]}" --set claude.rcLines=false > "$tmp/test-r
 helm template helm/assistant "${P[@]}" --set harness.phase=real --set claude.rcLines=false > "$tmp/real-rcoff.yaml"
 helm template helm/assistant -f helm/assistant/values.yaml -f helm/assistant/values.staging.yaml > "$tmp/staging.yaml"
 helm template helm/cloudflared -f helm/cloudflared/values.yaml > "$tmp/cloudflared.yaml"
+# The worker spec's byte-identity oracle (R20): the agent files as the pod wrote them from ORACLE_REF, both phases.
+oref="${ORACLE_REF:-2a6ccab}"
+mkdir -p "$tmp/oracle" && git archive "$oref" helm/assistant | tar -x -C "$tmp/oracle"
+for ph in test real; do
+  helm template "$tmp/oracle/helm/assistant" -f "$tmp/oracle/helm/assistant/values.yaml" -f "$tmp/oracle/helm/assistant/values.prod.yaml" --set harness.enabled=true --set harness.phase=$ph --set claude.rcLines=true > "$tmp/oracle-$ph.yaml"
+done
 # The channels: the ref with the harness on (as the working tree's test-phase render), and a second channel next to discord.
 helm template "$tmp/helm/assistant" -f "$tmp/helm/assistant/values.yaml" -f "$tmp/helm/assistant/values.prod.yaml" --set harness.phase=test --set claude.rcLines=true > "$tmp/old-harness.yaml"
 helm template helm/assistant "${P[@]}" --set-json 'harness.channels.telegram={"enabled":true,"label":"Telegram","settle":"reject","secretKey":"GATEWAY_TELEGRAM_SECRET","gateway":{"uid":1003,"env":{"TELEGRAM_CHAT":"-100123"},"secretEnv":{"TELEGRAM_TOKEN":"TELEGRAM_TOKEN"}}}' > "$tmp/two.yaml"
@@ -113,6 +130,15 @@ def keys(path):
     sys.exit(f"FAIL: ConfigMap assistant-claude not found in {path}")
 
 old, new = keys(sys.argv[1]), keys(sys.argv[2])
+# The worker spec (harness-workers.json, ConfigMap assistant-harness): each worker's ceiling and servers come from it.
+import json
+def spec_workers(path):
+    for d in yaml.safe_load_all(open(path)):
+        if d and d.get("kind") == "ConfigMap" and d["metadata"]["name"] == "assistant-harness":
+            try: return json.loads(d["data"]["harness-workers.json"])["workers"]
+            except (KeyError, ValueError, TypeError): return {}
+    return {}
+SPEC = spec_workers(sys.argv[2])
 RETIRED = "harness-test.sh"   # retired with RC mode; its removal is allowed (R9)
 # RC is retired (claude.rcLines false): these keys share their text with harness mode, so they may differ (plan 4 Global Constraints).
 RC_ALLOWED = {"agent-finance-bookkeeper.md", "agent-finance-advisor.md", "actual-handbook.md", "web-guard.mjs", "docs-grant.mjs", "read-guard.mjs"}
@@ -185,11 +211,10 @@ want = {"finance-bookkeeper": ({"mcp__core__propose_plan", "mcp__finance__find_d
         "finance-advisor": ({"mcp__core__propose_plan", "mcp__finance-read__find_duplicates", "mcp__finance-read__snapshot"} | COLLEAGUE, set()),
         "ops-oncall": (COLLEAGUE, set())}
 for name, (has, hasnt) in want.items():
-    k = f"harness-agent-{name}.md"
-    m = re.search(r"^tools: (.*)$", new.get(k, ""), re.M)
-    if not m:
-        bad.append(f"{k}: no tools line"); continue
-    tools = set(m.group(1).split(", "))
+    k = f"harness-workers.json {name}"
+    if not isinstance(SPEC.get(name, {}).get("ceiling"), list):
+        bad.append(f"{k}: no ceiling"); continue
+    tools = set(SPEC[name]["ceiling"])
     for t in has - tools: bad.append(f"{k}: tools lack {t}")
     for t in (hasnt | set(WRITES) | {"SendMessage", "ListAgents"}) & tools: bad.append(f"{k}: tools include {t}")
 import glob
@@ -208,8 +233,11 @@ CAPS = {"files.read": ["Read", "Glob", "Grep"], "files.write": ["Write", "Edit",
         "vault.write": ["mcp__vault__write_inbox", "mcp__vault__append_daily", "mcp__core__vault_edit_line", "mcp__core__vault_tick_task"],
         "cluster.read": [f"mcp__ops__{t}" for t in ("pods", "workloads", "describe", "logs", "events", "top", "argocd_apps", "alerts", "backups")],
         "docs.convert": ["mcp__docs__convert"]}
-SERVERS = {"finance-bookkeeper": {"core", "vault", "docs", "finance"}, "finance-advisor": {"core", "vault", "docs", "finance-read", "finance-notes"},
-           "ops-oncall": {"core", "vault", "docs", "ops"}}
+# each worker's servers: the core's (naila workers-spec.ts CORE_SERVERS) plus its own from the spec
+SERVERS = {w: {"core", "vault", "docs"} | {x.get("name") for x in SPEC.get(w, {}).get("servers", [])} for w in ("finance-bookkeeper", "finance-advisor", "ops-oncall")}
+if SERVERS != {"finance-bookkeeper": {"core", "vault", "docs", "finance"}, "finance-advisor": {"core", "vault", "docs", "finance-read", "finance-notes"},
+               "ops-oncall": {"core", "vault", "docs", "ops"}}:
+    bad.append(f"harness-workers.json: the workers' servers are {SERVERS}")
 CEILING_CORE = {"mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change"} | SELF_NOTES
 def server(t): return t.split("__")[1] if t.startswith("mcp__") else None
 for w, srv in SERVERS.items():
@@ -219,8 +247,7 @@ for w, srv in SERVERS.items():
     for t in sorted(expect - listed): bad.append(f"P19: the {w} ceiling ({f}) lacks {t}")
     if "mcp__core__engine_info" in listed: bad.append(f"the {w} ceiling ({f}) holds engine_info, which is naila's only")
     if "mcp__core__undo_vault_change" in listed: bad.append(f"the {w} ceiling ({f}) holds undo_vault_change, which is naila's only")
-    m = re.search(r"^tools: (.*)$", new.get(f"harness-agent-{w}.md", ""), re.M)
-    if not m or set(m.group(1).split(", ")) != listed: bad.append(f"P19: harness-agent-{w}.md's tools line is not its tools.md")
+    if SPEC.get(w, {}).get("ceiling") != open(f).read().strip().split(", "): bad.append(f"P19: the harness-workers.json ceiling of {w} is not its tools.md")
 # The colleagues (any-to-any ask_worker), honest messaging and decision outcomes, in every harness worker's prompt.
 WORKERS = ["naila", "finance-bookkeeper", "finance-advisor", "ops-oncall"]
 NEVER_CLAIM = "Never say you told, asked or sent something to a colleague unless `ask_worker` returned their answer."
@@ -379,9 +406,12 @@ for k in harness:
 for k in harness:
     if "__MCP_FINANCE_TOKEN__" in new[k]:
         bad.append(f"{k} holds the finance write bearer")
-bk = new.get("harness-agent-finance-bookkeeper.md", "")
-if not re.search(r'^  - finance:\n(?:      .*\n)*?        Authorization: "Bearer __MCP_FINANCE_READ_TOKEN__"$', bk, re.M):
-    bad.append("harness-agent-finance-bookkeeper.md: server `finance` does not use __MCP_FINANCE_READ_TOKEN__")
+fin = [x for x in SPEC.get("finance-bookkeeper", {}).get("servers", []) if x.get("name") == "finance"]
+if len(fin) != 1 or fin[0].get("bearer") != "MCP_FINANCE_READ_TOKEN":
+    bad.append("harness-workers.json: the bookkeeper's server `finance` does not use the bearer MCP_FINANCE_READ_TOKEN")
+for w, x in SPEC.items():
+    for srv in x.get("servers", []):
+        if "MCP_FINANCE_TOKEN" in json.dumps(srv): bad.append(f"harness-workers.json: a server of {w} names MCP_FINANCE_TOKEN (the finance write bearer)")
 import json
 try:
     hs = json.loads(new.get("harness-settings.json", ""))["permissions"]
@@ -597,7 +627,6 @@ def pod(r): return r[H]["spec"]["template"]["spec"] if H in r else {"containers"
 def ctr(r, n): return next((c for c in pod(r)["containers"] if c["name"] == n), {"env": [], "volumeMounts": []})
 _v = [yaml.safe_load(open(f"helm/assistant/{f}")) for f in ("values.yaml", "values.prod.yaml")]
 VALUES_REPO, VALUES_TAG = _v[0]["image"]["repository"], _v[1]["image"]["tag"]
-WORKER_MODELS = ",".join(f"{w['name']}={w['model']}" for w in _v[0]["workers"] if w.get("direct"))
 def env(c): return {e["name"]: e for e in c.get("env", [])}
 def val(c, k): return env(c).get(k, {}).get("value")
 def key(c, k): return ((env(c).get(k, {}).get("valueFrom") or {}).get("secretKeyRef") or {}).get("key")
@@ -844,21 +873,43 @@ else:
     if check("old image", "") != 0: bad.append("harness-start.sh: the test phase (no VAULT_EXCLUDE) needs the support marker")
 if not (re.search(r'^\[ -z "\$\{VAULT_EXCLUDE:-\}" \] \|\| vault_env\+=\(-e VAULT_EXCLUDE="\$VAULT_EXCLUDE"\)', start, re.M) and re.search(r'^claude mcp add vault [^\n]*"\$\{vault_env\[@\]\}"', start, re.M)): bad.append("harness-start.sh: the runs' vault server does not get VAULT_EXCLUDE")
 
-# P21: harness-start exports HARNESS_MODELS as comma-separated worker=model pairs, from direct-lines (the chart's per-worker
-# models), before the core starts; run as rendered against the rendered direct-lines
-tag = "harness-start exports HARNESS_MODELS as comma-separated worker=model pairs"
+# The worker spec replaces the sed loop, direct-lines and HARNESS_MODELS: harness-start refuses an image without the claude-code
+# adapter's prepare.js and a chart without the spec, runs prepare.js on /config/harness-workers.json (its exit status and an empty
+# dir list fail the start: run as rendered with a stand-in node), keeps the TEST COPY append and the agent-file checks after it,
+# and exports HARNESS_WORKER_SPEC before the core starts.
+tag = "harness-start runs prepare.js on the worker spec and exports HARNESS_WORKER_SPEC"
 sl = start.splitlines()
-hm = [i for i, l in enumerate(sl) if l.startswith("export HARNESS_MODELS=")]
+PREP = "/naila/packages/harness/dist/providers/claude-code/prepare.js"
 ex = [i for i, l in enumerate(sl) if l.startswith('exec node "$MAIN"')]
-if len(hm) != 1 or not ex or hm[0] > ex[0]: bad.append(f"{tag}: {len(hm)} export lines, before the core starts: {bool(hm and ex and hm[0] < ex[0])}")
+hw = [i for i, l in enumerate(sl) if l == "export HARNESS_WORKER_SPEC=/config/harness-workers.json"]
+if len(hw) != 1 or not ex or hw[0] > ex[0]: bad.append(f"{tag}: {len(hw)} export lines of HARNESS_WORKER_SPEC=/config/harness-workers.json before the core starts")
+if f"PREPARE={PREP}" not in sl: bad.append(f"{tag}: harness-start does not set PREPARE={PREP}")
+if not any(re.fullmatch(r'\[ -f "\$PREPARE" \] \|\| die ".*this naila image predates the worker spec.*"', l) for l in sl): bad.append(f"{tag}: no die when prepare.js is missing")
+if not any(re.fullmatch(r'\[ -f /config/harness-workers\.json \] \|\| die ".*predates the worker spec.*"', l) for l in sl): bad.append(f"{tag}: no die when /config/harness-workers.json is missing")
+for gone in ("HARNESS_MODELS", "direct-lines", "s/__MCP_FINANCE_READ_TOKEN__/", "cp /config/harness-CLAUDE.md"):
+    if gone in "\n".join(l for l in sl if not l.lstrip().startswith("#")): bad.append(f"{tag}: harness-start still has {gone!r}")
+if not any(re.fullmatch(r'mkdir -p .*"\$FINANCE_NOTES_ROOT".*', l) for l in sl): bad.append(f"{tag}: harness-start no longer makes $FINANCE_NOTES_ROOT")
+wl = [i for i, l in enumerate(sl) if l == "W=$HARNESS_HOME/work"]
+pc = [i for i, l in enumerate(sl) if l.startswith('out=$(node "$PREPARE" --spec /config/harness-workers.json --claude-dir "$C" --work-dir "$W") || die ')]
+ck = [i for i, l in enumerate(sl) if l.startswith('[ -n "$out" ] || die ')]
+mf = [i for i, l in enumerate(sl) if l == 'mapfile -t dirs <<< "$out"']
+if len(wl) != 1 or len(pc) != 1 or len(ck) != 1 or len(mf) != 1 or not wl[0] < pc[0] < min(ck[0], mf[0]):
+    bad.append(f"{tag}: want one W=$HARNESS_HOME/work, then one prepare call into $out with || die, then one empty-output die and one mapfile into dirs (got {len(wl)}, {len(pc)}, {len(ck)}, {len(mf)})")
 else:
-    d = tempfile.mkdtemp(); dl = os.path.join(d, "direct-lines")
-    for what, lines_, want_ in (("the rendered direct-lines", test[("ConfigMap", "assistant-claude")]["data"]["direct-lines"], WORKER_MODELS),
-                                ("no direct line", "", ""), ("a blank line and odd spacing", "\n  a  x\n\nb\ty\n", "a=x,b=y")):
-        open(dl, "w").write(lines_)
-        p = subprocess.run(["bash", "-c", "set -eu; " + sl[hm[0]].replace("/config/direct-lines", shlex.quote(dl)) + '; printf %s "$HARNESS_MODELS"'], env={"PATH": "/usr/bin:/bin"}, capture_output=True, text=True)
-        if p.returncode != 0 or p.stdout != want_: bad.append(f"{tag}: with {what} it is {p.stdout!r} (exit {p.returncode} {p.stderr.strip()}), want {want_!r}")
-    if WORKER_MODELS != "finance-bookkeeper=haiku,finance-advisor=opus,ops-oncall=sonnet": bad.append(f"{tag}: the chart's per-worker models are {WORKER_MODELS!r}")
+    for what, pat in (("the TEST COPY append", "TEST COPY"), ("the placeholder check", "grep -l '__MCP_'"), ("the real-server check", "'//assistant-finance:'"),
+                      ("the write-bearer check", '"$MCP_FINANCE_TOKEN"'), ("the trusted dirs", '"${dirs[@]}"')):
+        at_ = [i for i, l in enumerate(sl) if pat in l and not l.lstrip().startswith("#")]
+        if not at_ or min(at_) < pc[0]: bad.append(f"{tag}: {what} is missing or comes before prepare.js")
+    d = tempfile.mkdtemp(); os.makedirs(f"{d}/bin")
+    open(f"{d}/bin/node", "w").write('#!/bin/sh\nprintf "%s\\n" "$*" > "$ARGS"\ncase "$FAKE" in ok) printf "%s\\n" /h/work/naila /h/work/_summary /h/work/ops-oncall ;; fail) echo "prepare: refused" >&2; exit 2 ;; esac\n')
+    os.chmod(f"{d}/bin/node", 0o755)
+    snippet = "\n".join(sl[wl[0]:max(ck[0], mf[0]) + 1])
+    for fake, rc_, out_ in (("ok", 0, "/h/work/naila\n/h/work/_summary\n/h/work/ops-oncall\n"), ("fail", 2, ""), ("empty", 2, "")):
+        p = subprocess.run(["bash", "-c", 'set -eu; die() { echo "harness-start: $*" >&2; exit 2; }; C=/c; HARNESS_HOME=/h; PREPARE=/p.js\n' + snippet + '\nprintf "%s\\n" "${dirs[@]}"'],
+                           env={"PATH": f"{d}/bin:/usr/bin:/bin", "FAKE": fake, "ARGS": f"{d}/args"}, capture_output=True, text=True)
+        if p.returncode != rc_ or p.stdout != out_: bad.append(f"{tag}: with prepare.js {fake}: exit {p.returncode} {p.stderr.strip()!r}, dirs {p.stdout!r}; want exit {rc_}, dirs {out_!r}")
+    if open(f"{d}/args").read() != "/p.js --spec /config/harness-workers.json --claude-dir /c --work-dir /h/work\n": bad.append(f"{tag}: prepare.js ran with {open(f'{d}/args').read()!r}")
+    __import__("shutil").rmtree(d)
 
 if not re.search(r"^unset .*MCP_FINANCE_READ_TOKEN", start, re.M):   # the gateway secrets: see the channel checks below
     bad.append("the harness pod never holds a worker write bearer outside the core env: harness-start.sh does not unset the read bearer before the core starts")
@@ -873,9 +924,15 @@ for k in sorted(set(old) | set(off)):
     if k in (("ConfigMap", "assistant-claude"), ("PrometheusRule", "assistant-login")) or k[1].startswith("assistant-harness"): continue   # a ref with the harness on
     if k not in old or k not in off or strip(old[k]) != strip(off[k]): bad.append(f"RC render identical: {k[0]}/{k[1]} differs from the ref render with the harness off")
 changes = {("Deployment", "assistant-finance-test"), ("NetworkPolicy", "assistant-finance"), ("NetworkPolicy", "assistant-finance-test"), ("NetworkPolicy", "assistant-ops")}
+# the harness body keys (harness-agent-*) are resolved for harness.phase (off renders the test phase); every other key is not
+CM = ("ConfigMap", "assistant-claude")
+def rc_only(d): return {**d, "data": {k: v for k, v in d["data"].items() if not k.startswith("harness-agent-")}}
 for label, r in (("test", test), ("real", real)):
     for k in off:
-        if k not in changes and off[k] != r.get(k): bad.append(f"RC render identical: {k[0]}/{k[1]} changes when the harness is on ({label})")
+        if k == CM and r.get(k):
+            if rc_only(off[k]) != rc_only(r[k]): bad.append(f"RC render identical: {k[0]}/{k[1]} changes beyond the harness body keys when the harness is on ({label})")
+            if label == "test" and off[k] != r[k]: bad.append(f"RC render identical: {k[0]}/{k[1]} changes when the harness is on (test)")
+        elif k not in changes and off[k] != r.get(k): bad.append(f"RC render identical: {k[0]}/{k[1]} changes when the harness is on ({label})")
 
 # the RC ConfigMap keys harness-start.sh reads are unchanged from the ref, and the harness checksum follows each of them
 for k in ("settings.json", "direct-lines", "finance-test-note"):
@@ -912,6 +969,175 @@ elif min(i for i, x in naila if "path" not in x) < hp[0][0]: bad.append("cloudfl
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
 print("harness pod: renders only when enabled; phases wired; write bearer only in the core env; RC render identical")
+PY
+
+python3 - "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/oracle-test.yaml" "$tmp/oracle-real.yaml" "$oref" <<'PY'
+import sys, yaml, json, re, os, subprocess, tempfile, shutil, difflib
+def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
+def config(r):
+    """/config as the harness pod mounts it: ConfigMap assistant-claude, then assistant-harness (one projected volume)."""
+    return {**(r.get(("ConfigMap", "assistant-claude")) or {}).get("data", {}), **(r.get(("ConfigMap", "assistant-harness")) or {}).get("data", {})}
+new = {"test": config(load(sys.argv[1])), "real": config(load(sys.argv[2]))}
+orc = {"test": config(load(sys.argv[3])), "real": config(load(sys.argv[4]))}
+oref = sys.argv[5]
+bad = []
+AGENTS = ["finance-bookkeeper", "finance-advisor", "ops-oncall"]   # naila roster.ts WORKERS order, minus the lead
+WORKERS = ["naila", *AGENTS]
+ENV = {"MCP_FINANCE_READ_TOKEN": "placeholder-read-bearer", "MCP_OPS_TOKEN": "placeholder-ops-bearer"}
+FIN = {"test": "assistant-finance-test", "real": "assistant-finance"}
+NOTES = {"test": "/vault/Harness-test/Finance/", "real": "/vault/Finance/"}
+
+# The claude-code adapter's agent file, ported from naila packages/harness/src/providers/claude-code/agent-files.ts
+# (renderAgentFile): the frontmatter from the spec, then the instructions file verbatim.
+YAML_WORD = re.compile(r"(y|yes|n|no|true|false|on|off|null)", re.I)
+PLAIN_TEXT = re.compile(r"[A-Za-z](?:[A-Za-z0-9 ,.;()'\"/?-]*[A-Za-z0-9,.;()'\"/?-])?")
+PLAIN_WORD = re.compile(r"[A-Za-z_/][A-Za-z0-9_./-]*")
+PLAIN_URL = re.compile(r"https?://[A-Za-z0-9._~:/?&=%+@-]+")
+def quote(v): return re.sub("[\u007f-\u009f  ﻿]", lambda m: f"\\u{ord(m.group(0)):04x}", json.dumps(v, ensure_ascii=False))
+def scalar(v, plain): return v if plain.fullmatch(v) and not YAML_WORD.fullmatch(v) else quote(v)
+def agent_file(name, s, body):
+    out = ["---", f"name: {name}", f"description: {scalar(s['description'], PLAIN_TEXT)}", f"model: {scalar(s['brain']['model'], PLAIN_WORD)}",
+           f"tools: {', '.join(s['ceiling'])}", "mcpServers:"]
+    for x in s["servers"]:
+        out.append(f"  - {scalar(x['name'], PLAIN_WORD)}:")
+        if x["transport"] == "http":
+            out += ["      type: http", f"      url: {scalar(x['url'], PLAIN_URL)}"]
+            if "bearer" in x: out += ["      headers:", f"        Authorization: {quote('Bearer ' + ENV[x['bearer']])}"]
+        else:
+            out += ["      type: stdio", f"      command: {scalar(x['command'], PLAIN_WORD)}", f"      args: [{','.join(quote(a) for a in x['args'])}]"]
+            if "env" in x: out += ["      env:", *(f"        {scalar(k, PLAIN_WORD)}: {scalar(v, PLAIN_WORD)}" for k, v in x["env"].items())]
+    return "\n".join(out) + "\n---\n" + body
+def sed(text, ph):
+    """The start script's sed before the spec, line by line (an s/// without g replaces a line's first match only)."""
+    out = []
+    for line in text.splitlines(keepends=True):
+        line = line.replace("__MCP_FINANCE_READ_TOKEN__", ENV["MCP_FINANCE_READ_TOKEN"], 1).replace("__MCP_OPS_TOKEN__", ENV["MCP_OPS_TOKEN"], 1)
+        if ph == "test": line = line.replace("//assistant-finance:", "//assistant-finance-test:", 1).replace("/vault/Finance/", "/vault/Harness-test/Finance/")
+        out.append(line)
+    return "".join(out)
+def test_copy(files, cfg, ph):
+    """The files after harness-start's test-phase TEST COPY append, run as this render's harness-start.sh has it."""
+    sl = cfg.get("harness-start.sh", "").splitlines()
+    a = [i for i, l in enumerate(sl) if l.startswith('if [ "$HARNESS_PHASE" = test ] && ! grep -q \'TEST COPY\' "$C/agents/finance-bookkeeper.md"; then')]
+    b = [i for i, l in enumerate(sl) if l == "fi" and a and i > a[0]]
+    if len(a) != 1 or not b: raise ValueError("harness-start.sh has no TEST COPY append")
+    d = tempfile.mkdtemp(); os.makedirs(f"{d}/agents")
+    for w, t in files.items(): open(f"{d}/agents/{w}.md", "w").write(t)
+    open(f"{d}/note", "w").write(cfg["finance-test-note"])
+    snippet = "\n".join(sl[a[0]:b[0] + 1]).replace("/config/finance-test-note", f"{d}/note")
+    p = subprocess.run(["bash", "-c", "set -eu\n" + snippet], env={"PATH": "/usr/bin:/bin", "C": d, "HARNESS_PHASE": ph}, capture_output=True, text=True)
+    if p.returncode != 0: raise ValueError(f"the TEST COPY append exits {p.returncode}: {p.stderr.strip()}")
+    out = {w: open(f"{d}/agents/{w}.md").read() for w in files}
+    shutil.rmtree(d)
+    return out
+def pod_files(cfg, ph):
+    """The agent files as the pod writes them from this /config: rebuilt from a worker spec when there is one, else the keys through the sed."""
+    if "harness-workers.json" in cfg:
+        spec = json.loads(cfg["harness-workers.json"])["workers"]
+        files = {w: agent_file(w, spec[w], cfg[spec[w]["instructions"]]) for w in AGENTS}
+    else:
+        files = {w: sed(cfg[f"harness-agent-{w}.md"], ph) for w in AGENTS}
+    return test_copy(files, cfg, ph)
+def first_diff(a, b):
+    return " | ".join(list(difflib.unified_diff(a.splitlines(), b.splitlines(), "oracle", "now", n=0, lineterm=""))[2:6])
+
+specs = {}
+for ph in ("test", "real"):
+    cfg, tag = new[ph], f"the worker spec ({ph} phase)"
+    raw = cfg.get("harness-workers.json")
+    if raw is None: bad.append(f"{tag}: no harness-workers.json in ConfigMap assistant-harness"); continue
+    if m := re.search(r"__[A-Z_]+__", raw): bad.append(f"{tag}: the marker {m.group(0)} survives in harness-workers.json")
+    try: spec = json.loads(raw)
+    except ValueError as e: bad.append(f"{tag}: harness-workers.json is not JSON: {e}"); continue
+    specs[ph] = spec
+    if spec.get("version") != 1: bad.append(f"{tag}: version is {spec.get('version')!r}, want 1")
+    ws = spec.get("workers", {})
+    if sorted(ws) != sorted(WORKERS): bad.append(f"{tag}: the workers are {sorted(ws)}, want {sorted(WORKERS)}"); continue
+    if spec.get("summary") != {"brain": {"provider": "claude-subscription", "model": "default"}}: bad.append(f"{tag}: summary is {spec.get('summary')!r}")
+    # one source for the models: the chart's per-worker model, as the RC lines' direct-lines has it; naila's is default
+    lines = dict(l.split() for l in cfg.get("direct-lines", "").splitlines() if l.strip())
+    for w in WORKERS:
+        b, want = ws[w].get("brain"), {"provider": "claude-subscription", "model": lines.get(w, "default") if w != "naila" else "default"}
+        if b != want: bad.append(f"{tag}: {w}'s brain is {b!r}, want {want!r} (its model as in direct-lines)")
+        k = "harness-CLAUDE.md" if w == "naila" else f"harness-agent-{w}.md"
+        if ws[w].get("instructions") != k or k not in cfg: bad.append(f"{tag}: {w}'s instructions are {ws[w].get('instructions')!r}, want {k!r} beside the spec")
+        for srv in ws[w].get("servers", []):
+            for v in [srv.get("name", ""), srv.get("url", ""), srv.get("bearer", ""), srv.get("command", ""), *srv.get("args", []), *(x for kv in srv.get("env", {}).items() for x in kv)]:
+                if "$" in v or "MCP_FINANCE_TOKEN" in v: bad.append(f"{tag}: a server string of {w} holds a $ or MCP_FINANCE_TOKEN")
+    if "description" in ws["naila"] or "ceiling" in ws["naila"] or ws["naila"].get("servers") != []: bad.append(f"{tag}: naila (the lead) has a description, a ceiling or servers")
+    for w in AGENTS:
+        # the description is the RC agent file's, a drift check while RC is frozen
+        fm = re.match(r"(?s)\A---\n(.*?)\n---\n", cfg.get(f"agent-{w}.md", ""))
+        rc = yaml.safe_load(fm.group(1)).get("description") if fm else None
+        if not rc or ws[w].get("description") != rc: bad.append(f"{tag}: {w}'s description is not its RC agent file's")
+        if ws[w].get("ceiling") != open(f"helm/assistant/files/modes/harness/{w}.tools.md").read().strip().split(", "): bad.append(f"{tag}: {w}'s ceiling is not its tools.md")
+        # the body key: no frontmatter, no bearer placeholder; in the test phase nothing of the real budget's
+        body = cfg.get(f"harness-agent-{w}.md", "")
+        if body.startswith("---"): bad.append(f"{tag}: harness-agent-{w}.md still starts with a frontmatter")
+        if "__MCP_" in body: bad.append(f"{tag}: harness-agent-{w}.md holds a bearer placeholder")
+        if ph == "test" and ("/vault/Finance/" in body or "//assistant-finance:" in body): bad.append(f"{tag}: harness-agent-{w}.md names /vault/Finance/ or //assistant-finance:")
+    url = {s["name"]: s.get("url") for w in AGENTS for s in ws[w].get("servers", [])}
+    for n in ("finance", "finance-read"):
+        if url.get(n) != f"http://{FIN[ph]}:8080/mcp": bad.append(f"{tag}: server {n} is at {url.get(n)!r}, want http://{FIN[ph]}:8080/mcp")
+    if url.get("ops") != "http://assistant-ops:8080/mcp": bad.append(f"{tag}: server ops is at {url.get('ops')!r}")
+    if ph == "test" and "//assistant-finance:" in raw: bad.append(f"{tag}: harness-workers.json names the real finance server")
+    notes = [s for s in ws["finance-advisor"].get("servers", []) if s.get("name") == "finance-notes"]
+    if len(notes) != 1 or notes[0].get("env", {}).get("VAULT_ROOT") != NOTES[ph]: bad.append(f"{tag}: finance-notes VAULT_ROOT is not {NOTES[ph]}")
+    if [s.get("bearer") for s in ws["finance-bookkeeper"].get("servers", [])] != ["MCP_FINANCE_READ_TOKEN"]: bad.append(f"{tag}: the bookkeeper's finance bearer is not MCP_FINANCE_READ_TOKEN")
+
+    # The byte-identity oracle: the pod's agent files from this spec equal those it wrote from ORACLE_REF.
+    tag = f"byte-identity with {oref} ({ph} phase)"
+    try: got = pod_files(cfg, ph)
+    except (KeyError, TypeError, ValueError) as e: bad.append(f"{tag}: the agent files can't be rebuilt from the spec: {e!r}"); continue
+    try: want = pod_files(orc[ph], ph)
+    except (KeyError, TypeError, ValueError) as e: bad.append(f"{tag}: the agent files can't be rebuilt from {oref}: {e!r}"); continue
+    for w in AGENTS:
+        if got[w] != want[w]: bad.append(f"{tag}: {w}.md differs: {first_diff(want[w], got[w])}")
+    if ph == "test" and "TEST COPY" not in got["finance-bookkeeper"]: bad.append(f"{tag}: the bookkeeper is not told its budget is a TEST COPY")
+    if cfg.get("harness-CLAUDE.md") != orc[ph].get("harness-CLAUDE.md"): bad.append(f"{tag}: the lead's instructions (harness-CLAUDE.md) differ from the CLAUDE.md the pod copied")
+if specs.get("test") and specs.get("real"):
+    t, r = json.dumps(specs["test"]), json.dumps(specs["real"])
+    if t.replace("assistant-finance-test:", "assistant-finance:").replace("/vault/Harness-test/Finance/", "/vault/Finance/") != r: bad.append("the worker spec: the phases differ beyond the finance host and the notes root")
+
+# naila's own validator and the claude-code adapter's prepare, run with tsx on the rendered /config (optional: NAILA_WORKTREE)
+nw = os.environ.get("NAILA_WORKTREE", "")
+if not (nw and os.path.isfile(f"{nw}/packages/harness/src/providers/claude-code/prepare.ts")):
+    print("NOTICE: NAILA_WORKTREE is not a naila checkout with the claude-code adapter: naila's validator and prepare were not run on the rendered spec")
+else:
+    base = {k: v for k, v in os.environ.items() if not k.startswith("MCP_")}
+    tsx = lambda args, env, d: subprocess.run(["npx", "--no-install", "tsx", *args], cwd=nw, env={**base, **env}, capture_output=True, text=True)
+    for ph in specs:
+        tag = f"naila's validator and prepare on the rendered spec ({ph} phase)"
+        d = tempfile.mkdtemp(); cdir = f"{d}/config"; os.makedirs(cdir)
+        for k, v in new[ph].items(): open(f"{cdir}/{k}", "w").write(v)
+        sf = f"{cdir}/harness-workers.json"
+        p = tsx(["-e", "import { loadWorkerSpecs } from './packages/harness/src/workers-spec.ts'; loadWorkerSpecs(process.env.SPEC_FILE); console.log('valid')"], {"SPEC_FILE": sf}, d)
+        if p.returncode != 0 or p.stdout.strip() != "valid": bad.append(f"{tag}: loadWorkerSpecs refuses it: {(p.stderr or p.stdout).strip()[-300:]}")
+        prep = ["packages/harness/src/providers/claude-code/prepare.ts", "--spec", sf, "--claude-dir", f"{d}/c", "--work-dir", f"{d}/w"]
+        p = tsx(prep, {**ENV, "MCP_FINANCE_TOKEN": "placeholder-write-bearer"}, d)
+        if p.returncode != 0: bad.append(f"{tag}: prepare exits {p.returncode}: {p.stderr.strip()[-300:]}"); continue
+        if p.stdout.splitlines() != [f"{d}/w/{x}" for x in ("naila", "_summary", *AGENTS)]: bad.append(f"{tag}: prepare printed {p.stdout.splitlines()}")
+        if sorted(os.listdir(f"{d}/c/agents")) != sorted(f"{w}.md" for w in AGENTS): bad.append(f"{tag}: agents/ holds {sorted(os.listdir(f'{d}/c/agents'))}")
+        got = test_copy({w: open(f"{d}/c/agents/{w}.md").read() for w in AGENTS}, new[ph], ph)
+        want = pod_files(orc[ph], ph)
+        for w in AGENTS:
+            if got[w] != want[w]: bad.append(f"{tag}: prepare's {w}.md differs from {oref}'s: {first_diff(want[w], got[w])}")
+        for l in orc[ph]["direct-lines"].splitlines():
+            if not l.strip(): continue
+            n, m = l.split()
+            if open(f"{d}/w/{n}/.claude/settings.json").read() != f'{{"agent": "{n}", "model": "{m}"}}\n': bad.append(f"{tag}: {n}'s work-dir settings differ from the old start script's")
+        if open(f"{d}/w/naila/CLAUDE.md").read() != orc[ph]["harness-CLAUDE.md"] or not os.path.isdir(f"{d}/w/_summary"): bad.append(f"{tag}: naila's CLAUDE.md or _summary differs")
+        # refused before writing anything: the write bearer's value in an agent file, an unset bearer
+        for what, env_ in (("the write bearer's value in an agent file", {**ENV, "MCP_FINANCE_TOKEN": ENV["MCP_FINANCE_READ_TOKEN"]}), ("MCP_OPS_TOKEN unset", {"MCP_FINANCE_READ_TOKEN": "x"})):
+            e = tempfile.mkdtemp()
+            p = tsx([*prep[:3], "--claude-dir", f"{e}/c", "--work-dir", f"{e}/w"], env_, e)
+            if p.returncode != 2 or os.listdir(e): bad.append(f"{tag}: prepare with {what}: exit {p.returncode}, wrote {os.listdir(e)}")
+            shutil.rmtree(e)
+        shutil.rmtree(d)
+    if specs: print(f"naila's validator accepts the rendered spec and prepare writes the same agent files as {oref} ({', '.join(specs)} phases)")
+if bad:
+    print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
+print(f"worker spec: one source per value, phase-resolved, no marker; the pod's agent files are byte-identical to {oref}'s (test and real)")
 PY
 
 python3 - "$tmp/new.yaml" "$tmp/test-rcoff.yaml" "$tmp/real.yaml" "$tmp/real-rcoff.yaml" <<'PY'

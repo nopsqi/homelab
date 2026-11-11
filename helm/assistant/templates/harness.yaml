@@ -2,6 +2,47 @@
 {{- define "assistant.harnessModeFiles" -}}
 {{- range $p, $_ := .Files.Glob "files/modes/harness/**" }}{{ $.Files.Get $p }}{{ end }}
 {{- end }}
+{{- /* The worker spec (harness.workerSpec; naila packages/harness/src/workers-spec.ts, version 1) as harness-workers.json for
+       harness.phase. One source per value: an agent worker's model is its workers[].model, its description its
+       files/agents/<name>.md frontmatter's, its ceiling files/modes/harness/<name>.<ceiling>.md split on ", ". The markers
+       __FINANCE_HOST__ and __VAULT_ROOT__ resolve to this phase's finance server and vault root (Helm renders no values, so
+       a template local can't be written into them). Fails the render on what the core would refuse at start. */ -}}
+{{- define "assistant.workerSpec" -}}
+{{- $h := .Values.harness }}
+{{- $test := eq $h.phase "test" }}
+{{- $finance := ternary "assistant-finance-test" "assistant-finance" $test }}
+{{- $vaultRoot := ternary "/vault/Harness-test" "/vault" $test }}
+{{- $models := dict }}
+{{- range .Values.workers }}
+{{- if not (hasKey $h.workerSpec.workers .name) }}{{ fail (printf "harness.workerSpec.workers has no %s (workers[] names it)" .name) }}{{ end }}
+{{- $_ := set $models .name (toString .model) }}
+{{- end }}
+{{- $workers := dict }}
+{{- range $w, $s := $h.workerSpec.workers }}
+{{- $at := printf "harness.workerSpec.workers.%s" $w }}
+{{- $brain := deepCopy ($s.brain | default dict) }}
+{{- if hasKey $models $w }}
+{{- if hasKey $brain "model" }}{{ fail (printf "%s.brain.model is set: the model is workers[].model (one source)" $at) }}{{ end }}
+{{- $_ := set $brain "model" (index $models $w) }}
+{{- end }}
+{{- $x := dict "instructions" $s.instructions "brain" $brain "servers" ($s.servers | default list) }}
+{{- if $s.ceiling }}
+{{- $fm := regexFind "(?s)\\A---\\n.*?\\n---\\n" ($.Files.Get (printf "files/agents/%s.md" $w)) }}
+{{- $d := regexFind "(?m)^description: .*$" $fm | trimPrefix "description: " }}
+{{- if or (not $d) (hasPrefix "\"" $d) (hasPrefix "'" $d) }}{{ fail (printf "%s: files/agents/%s.md has no plain one-line description in its frontmatter" $at $w) }}{{ end }}
+{{- $tools := $.Files.Get (printf "files/modes/harness/%s.%s.md" $w $s.ceiling) | required (printf "%s.ceiling: files/modes/harness/%s.%s.md is missing" $at $w $s.ceiling) }}
+{{- $_ := set $x "description" $d }}
+{{- $_ := set $x "ceiling" (splitList ", " (trimSuffix "\n" $tools)) }}
+{{- end }}
+{{- range $x.servers }}
+{{- if or (contains "$" (toJson .)) (contains "MCP_FINANCE_TOKEN" (toJson .)) }}{{ fail (printf "%s: a server holds a $ or MCP_FINANCE_TOKEN (the finance write bearer)" $at) }}{{ end }}
+{{- end }}
+{{- $_ := set $workers $w $x }}
+{{- end }}
+{{- $json := toJson (dict "version" 1 "workers" $workers "summary" $h.workerSpec.summary) | replace "__FINANCE_HOST__" $finance | replace "__VAULT_ROOT__" $vaultRoot }}
+{{- with regexFind "__[A-Z_]+__" $json }}{{ fail (printf "harness.workerSpec: the marker %s is not resolved" .) }}{{ end }}
+{{- $json }}
+{{- end }}
 {{- if .Values.harness.enabled }}
 {{- $h := .Values.harness }}
 {{- $test := eq $h.phase "test" }}
@@ -84,6 +125,7 @@
 {{- $finance := ternary "assistant-finance-test" "assistant-finance" $test }}
 {{- $tokenKey := ternary "MCP_FINANCE_TEST_TOKEN" "MCP_FINANCE_TOKEN" $test }}
 {{- $readKey := ternary "MCP_FINANCE_TEST_READ_TOKEN" "MCP_FINANCE_READ_TOKEN" $test }}
+{{- $workerSpec := include "assistant.workerSpec" . }}
 # Harness mode as its own pod: the core (packages/harness) runs each worker as a one-shot Claude Code run with this pod's
 # own Max login (naila.nopsqi.dev/harness), each channel's gateway (harness.channels) carries the user's messages and
 # confirmations, and the core alone carries out an approved decision. The RC pod (assistant-claude) is not touched.
@@ -94,6 +136,11 @@ metadata:
 data:
   harness-start.sh: |
 {{ .Files.Get "files/harness-start.sh" | indent 4 }}
+  # The worker spec: the core reads it (HARNESS_WORKER_SPEC), and harness-start.sh's prepare.js (the claude-code adapter)
+  # writes the agent files, work dirs and the lead's CLAUDE.md from it. The instructions files it names are assistant-claude's
+  # harness-* keys, beside it in /config.
+  harness-workers.json: |
+    {{ $workerSpec }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -118,8 +165,8 @@ spec:
     metadata:
       labels: { app: assistant-harness }
       # What the core and its runs are built from at start, including what harness-start.sh takes from the RC ConfigMap
-      # (settings.json, direct-lines, finance-test-note). Not the RC-only mode files: an RC edit doesn't restart the harness.
-      annotations: { checksum/config: {{ print (.Files.Get "files/CLAUDE.md") (include "assistant.agentFiles" .) (include "assistant.harnessModeFiles" .) (toJson .Values.workers) (.Files.Get "files/harness-settings.json") (.Files.Get "files/harness-write-guard.mjs") (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/harness-start.sh") (include "assistant.settingsJson" .) (include "assistant.directLines" .) (include "assistant.testCopyNote" .) (toJson $h) .Values.claude.version .Values.finance.testBudget | sha256sum | trunc 12 | quote }} }
+      # (settings.json, finance-test-note, the harness-* keys) and the worker spec. Not the RC-only mode files: an RC edit doesn't restart the harness.
+      annotations: { checksum/config: {{ print (.Files.Get "files/CLAUDE.md") (include "assistant.agentFiles" .) (include "assistant.harnessModeFiles" .) (toJson .Values.workers) (.Files.Get "files/harness-settings.json") (.Files.Get "files/harness-write-guard.mjs") (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/harness-start.sh") (include "assistant.settingsJson" .) (include "assistant.directLines" .) (include "assistant.testCopyNote" .) (toJson $h) $workerSpec .Values.claude.version .Values.finance.testBudget | sha256sum | trunc 12 | quote }} }
     spec:
       automountServiceAccountToken: false
       shareProcessNamespace: true   # the login sidecar sees the core (status) and restarts it after a login; pause reaps exited runs
@@ -311,7 +358,7 @@ spec:
           resources: { requests: { cpu: 10m, memory: 64Mi }, limits: { memory: 512Mi } }   # spikes while it runs the Claude CLI
       volumes:
         - { name: home, persistentVolumeClaim: { claimName: assistant-harness-home } }
-        # The RC pod's ConfigMap (harness-* keys, settings.json, the guards, direct-lines) plus harness-start.sh.
+        # The RC pod's ConfigMap (harness-* keys, settings.json, the guards) plus harness-start.sh and harness-workers.json.
         - name: config
           projected: { sources: [{ configMap: { name: assistant-claude } }, { configMap: { name: assistant-harness } }] }
         - { name: handbooks, configMap: { name: assistant-claude, items: [{ key: actual-handbook.md, path: actual.md }] } }

@@ -66,6 +66,40 @@ harness:
       settle: reject
       retainMs: 3600000                   # nobody polls it between live runs
       secretKey: GATEWAY_TEST_SECRET
+  # The worker spec (naila packages/harness/src/workers-spec.ts, version 1): templates/harness.yaml renders it as
+  # harness-workers.json beside each worker's instructions (/config), and the claude-code adapter's prepare.js writes the
+  # agent files from it. One source per value: a worker's model is its workers[].model (naila has none there: hers is
+  # here), its description its files/agents/<name>.md frontmatter's, and its ceiling (the tools its runs may ever have)
+  # files/modes/harness/<name>.<ceiling>.md, split on ", ". Literal markers the template resolves per phase:
+  # __FINANCE_HOST__ (assistant-finance-test or assistant-finance) and __VAULT_ROOT__ (/vault/Harness-test or /vault).
+  # No server string may hold a $ or MCP_FINANCE_TOKEN (the finance write bearer): the render fails, as the core would.
+  workerSpec:
+    workers:
+      naila:
+        instructions: harness-CLAUDE.md
+        brain: { provider: claude-subscription, model: default }
+        servers: []
+      finance-bookkeeper:
+        instructions: harness-agent-finance-bookkeeper.md
+        brain: { provider: claude-subscription }
+        ceiling: tools
+        servers:
+          - { name: finance, transport: http, url: "http://__FINANCE_HOST__:8080/mcp", bearer: MCP_FINANCE_READ_TOKEN }
+      finance-advisor:
+        instructions: harness-agent-finance-advisor.md
+        brain: { provider: claude-subscription }
+        ceiling: tools
+        servers:
+          - { name: finance-read, transport: http, url: "http://__FINANCE_HOST__:8080/mcp", bearer: MCP_FINANCE_READ_TOKEN }
+          - { name: finance-notes, transport: stdio, command: node, args: [/naila/packages/vault-mcp/dist/notes-server.js], env: { VAULT_ROOT: "__VAULT_ROOT__/Finance/" } }
+      ops-oncall:
+        instructions: harness-agent-ops-oncall.md
+        brain: { provider: claude-subscription }
+        ceiling: tools
+        servers:
+          - { name: ops, transport: http, url: "http://assistant-ops:8080/mcp", bearer: MCP_OPS_TOKEN }
+    summary:
+      brain: { provider: claude-subscription, model: default }
 ops:
   enabled: false           # on-call tool server (cluster-mcp over HTTP, read-only ServiceAccount); the `ops` subagent calls it
   # Namespaces whose pod logs ops may read. Never: assistant (Naila's terminal), sealed-secrets, argocd, kube-system.

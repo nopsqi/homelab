@@ -47,6 +47,14 @@
     {{ .name }} {{ .model }}
 {{- end }}{{ end }}
 {{- end }}
+{{- /* A harness worker's instructions (harness-agent-<name>.md): its harness-mode render without the frontmatter (the
+       worker spec, harness-workers.json, holds what the frontmatter held), resolved for harness.phase: in the test phase the
+       finance host and the notes root are the test ones, as in the spec (templates/harness.yaml's ternaries). */ -}}
+{{- define "assistant.harnessBody" -}}
+{{- $test := eq .root.Values.harness.phase "test" }}
+{{- $out := regexReplaceAll "(?s)\\A---\\n.*?\\n---\\n" (include "assistant.render" (dict "root" .root "body" (.root.Files.Get (printf "files/agents/%s.md" .name)) "mode" "harness" "base" .name)) "" }}
+{{- $out | replace "//assistant-finance:" (printf "//%s:" (ternary "assistant-finance-test" "assistant-finance" $test)) | replace "/vault/Finance/" (printf "%s/Finance/" (ternary "/vault/Harness-test" "/vault" $test)) }}
+{{- end }}
 {{- define "assistant.testCopyNote" -}}
 The connected budget is a TEST COPY of the user's household budget, made for this. Test changes (creating, editing, deleting, budgeting) are fine here; still clean up what a test creates.
 {{- end }}
@@ -83,7 +91,7 @@ data:
 {{ include "assistant.testCopyNote" $ | indent 4 }}
 {{- end }}
   harness-agent-{{ .name }}.md: |
-{{ include "assistant.render" (dict "root" $ "body" ($.Files.Get (printf "files/agents/%s.md" .name)) "mode" "harness" "base" .name) | indent 4 }}
+{{ include "assistant.harnessBody" (dict "root" $ "name" .name) | indent 4 }}
 {{- if and (eq .name "finance-bookkeeper") $.Values.finance.testBudget }}
     
 {{ include "assistant.testCopyNote" $ | indent 4 }}

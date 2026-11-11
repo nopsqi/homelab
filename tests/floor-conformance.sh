@@ -12,7 +12,8 @@
 #  - it pipes the Claude Code hook input {tool_name, tool_input, cwd} (cwd: T/work/<worker>, also the hook's own) into the hook, with
 #    HARNESS_CAPS (the case's capabilities, comma-joined), HARNESS_WORKER and HARNESS_ORIGIN (unset for a run from no channel)
 #    in its env, and checks that it prints a deny exactly when the case says so: `hook` where a ruling makes the core
-#    stricter than the hook (named in `ruling`), else `expect`. A hook that exits non-zero fails the case (it would block,
+#    stricter than the hook (named in `ruling`), else `expect` (a case's `expectBy`, run.extraRead and run.extraWrite
+#    concern the naila runners' policies only: no hook reads them). A hook that exits non-zero fails the case (it would block,
 #    but no case expects a crash);
 #  - it checks that harness-start.sh and claude.yaml still render those hook commands, and that web-guard.mjs's SITES are
 #    naila's WEB_SITES, in order (F26: both read from the source files, packages/harness/src/floor/web.ts, so no build of
@@ -62,6 +63,8 @@ for (const [file, text, s] of [
   ['claude.yaml', claudeYaml, '"matcher": "WebFetch|WebSearch", "hooks": [{ "type": "command", "command": "node /config/web-guard.mjs" }]'],
 ]) if (!text.includes(s)) bad(`${file} no longer renders ${s}`)
 
+// One tree for every case: no hook writes a file, and docs-grant's only change (its chmod) touches the literal
+// /home/claude/.claude/uploads, never this tree, so no case can see another's leftovers.
 const t = realpathSync(mkdtempSync(join(tmpdir(), 'floor-')))
 for (const d of tree.dirs) mkdirSync(join(t, d), { recursive: true })
 for (const [f, text] of Object.entries(tree.files)) writeFileSync(join(t, f), text)

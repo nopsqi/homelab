@@ -91,7 +91,9 @@ harness:
         ceiling: tools
         servers:
           - { name: finance-read, transport: http, url: "http://__FINANCE_HOST__:8080/mcp", bearer: MCP_FINANCE_READ_TOKEN }
-          - { name: finance-notes, transport: stdio, command: node, args: [/naila/packages/vault-mcp/dist/notes-server.js], env: { VAULT_ROOT: "__VAULT_ROOT__/Finance/" } }
+          # read-only (NOTES_READONLY, harness-start needs the image's support): its write tools are floor-denied anyway; a note
+          # change is a plan the user approves, carried out by the core's own notes executor, which never gets NOTES_READONLY
+          - { name: finance-notes, transport: stdio, command: node, args: [/naila/packages/vault-mcp/dist/notes-server.js], env: { VAULT_ROOT: "__VAULT_ROOT__/Finance/", NOTES_READONLY: "1" } }
       ops-oncall:
         instructions: harness-agent-ops-oncall.md
         brain: { provider: claude-subscription }

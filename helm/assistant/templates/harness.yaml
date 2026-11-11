@@ -166,7 +166,7 @@ spec:
       labels: { app: assistant-harness }
       # What the core and its runs are built from at start, including what harness-start.sh takes from the RC ConfigMap
       # (settings.json, finance-test-note, the harness-* keys) and the worker spec. Not the RC-only mode files: an RC edit doesn't restart the harness.
-      annotations: { checksum/config: {{ print (.Files.Get "files/CLAUDE.md") (include "assistant.agentFiles" .) (include "assistant.harnessModeFiles" .) (toJson .Values.workers) (.Files.Get "files/harness-settings.json") (.Files.Get "files/harness-write-guard.mjs") (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/harness-start.sh") (include "assistant.settingsJson" .) (include "assistant.directLines" .) (include "assistant.testCopyNote" .) (toJson $h) $workerSpec .Values.claude.version .Values.finance.testBudget | sha256sum | trunc 12 | quote }} }
+      annotations: { checksum/config: {{ print (.Files.Get "files/CLAUDE.md") (include "assistant.agentFiles" .) (include "assistant.harnessModeFiles" .) (toJson .Values.workers) (.Files.Get "files/harness-settings.json") (.Files.Get "files/harness-write-guard.mjs") (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/harness-start.sh") (include "assistant.settingsJson" .) (include "assistant.testCopyNote" .) (toJson $h) $workerSpec .Values.claude.version .Values.finance.testBudget | sha256sum | trunc 12 | quote }} }
     spec:
       automountServiceAccountToken: false
       shareProcessNamespace: true   # the login sidecar sees the core (status) and restarts it after a login; pause reaps exited runs

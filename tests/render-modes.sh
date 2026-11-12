@@ -1021,8 +1021,11 @@ else:
     if open(f"{d}/args").read() != "/p.js --spec /config/harness-workers.json --claude-dir /c --work-dir /h/work\n": bad.append(f"{tag}: prepare.js ran with {open(f'{d}/args').read()!r}")
     __import__("shutil").rmtree(d)
 
-if not re.search(r"^unset .*MCP_FINANCE_READ_TOKEN", start, re.M):   # the gateway secrets: see the channel checks below
-    bad.append("the harness pod never holds a worker write bearer outside the core env: harness-start.sh does not unset the read bearer before the core starts")
+# The core keeps the read-only finance bearer and the ops bearer: its own loop opens the workers' servers with them (by name,
+# from its env). The gateway secrets: see the channel checks below.
+for v in ("MCP_FINANCE_READ_TOKEN", "MCP_OPS_TOKEN"):
+    if re.search(rf"^\s*unset\b.*\b{v}\b", start, re.M) or re.search(rf"\bexport\s+-n\b.*\b{v}\b", start):
+        bad.append(f"harness-start.sh drops {v} before the core starts: the core loop's runs cannot open the workers' servers")
 
 # RC render identical: with the harness off, everything equals the ref render, except the RC ConfigMap (its RC keys are checked
 # above) and checksum, and the RC login alerts (scoped per pod); enabling the harness changes only the finance/ops policies and finance-test's replicas.
@@ -1537,7 +1540,7 @@ for f in sorted(os.path.basename(x) for x in glob.glob("helm/assistant/files/mod
     for pat in (r"#decisions", r"discord", r"\btap\b", r"\bbutton"):
         if re.search(pat, s, re.I): bad.append(f"{tag}: {f} matches {pat}")
 
-tag = "harness-start.sh unsets GATEWAY_*_SECRET by pattern and keeps GATEWAY_SECRETS"
+tag = "harness-start.sh unsets GATEWAY_*_SECRET by pattern and keeps GATEWAY_SECRETS and the core's bearers"
 start = test[("ConfigMap", "assistant-harness")]["data"]["harness-start.sh"]
 lines = start.splitlines()
 loop = [i for i, l in enumerate(lines) if l.startswith("for v in $(compgen -v")]
@@ -1549,8 +1552,14 @@ else:
     p = subprocess.run(["bash", "-c", sh], env={"PATH": "/usr/bin:/bin"}, capture_output=True, text=True)
     if p.returncode != 0: bad.append(f"{tag}: the loop fails when no gateway secret is set: {p.stderr.strip()}")
     ex = [i for i, l in enumerate(lines) if l.startswith('exec node "$MAIN"')]
-    un = [i for i, l in enumerate(lines) if l == "unset MCP_FINANCE_READ_TOKEN MCP_OPS_TOKEN"]
-    if not ex or not un or not (un[0] < loop[0] < ex[0]): bad.append(f"{tag}: the unset line and the loop do not both come before the core starts")
+    if not ex or not (loop[0] < ex[0]): bad.append(f"{tag}: the loop does not come before the core starts")
+    # run from the loop to the exec: the gateway secrets go, the core's bearers stay (a stub node prints what it got)
+    sh = "set -euo pipefail; " + "\n".join(l for l in lines[loop[0]:ex[0] + 1] if not l.startswith("cd ") and not l.startswith("export "))
+    p = subprocess.run(["bash", "-c", "node() { for v in GATEWAY_DISCORD_SECRET GATEWAY_SECRETS MCP_FINANCE_TOKEN MCP_FINANCE_READ_TOKEN MCP_OPS_TOKEN; do echo \"$v=${!v+set}\"; done; }; " + sh.replace('exec node "$MAIN"', 'node "$MAIN"')],
+                       env={"PATH": "/usr/bin:/bin", "MAIN": "/m.js", "GATEWAY_DISCORD_SECRET": "a", "GATEWAY_SECRETS": "discord:a",
+                            "MCP_FINANCE_TOKEN": "w", "MCP_FINANCE_READ_TOKEN": "r", "MCP_OPS_TOKEN": "o"}, capture_output=True, text=True)
+    want = "GATEWAY_DISCORD_SECRET=\nGATEWAY_SECRETS=set\nMCP_FINANCE_TOKEN=set\nMCP_FINANCE_READ_TOKEN=set\nMCP_OPS_TOKEN=set\n"
+    if p.returncode != 0 or p.stdout != want: bad.append(f"{tag}: from the loop to the core's start, the env holds {p.stdout!r} (exit {p.returncode}, {p.stderr.strip()!r}); want {want!r}")
 if "GATEWAY_DISCORD_SECRET" in start: bad.append(f"{tag}: harness-start.sh still names GATEWAY_DISCORD_SECRET")
 
 # P25: an asked run's write tools are removed with --disallowedTools; a CLI without it must fail closed at start

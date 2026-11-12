@@ -136,3 +136,4 @@ sealedSecret:
   ops: {}                  # MCP_SECRET
   harness: {}              # DISCORD_TOKEN GATEWAY_DISCORD_SECRET CORE_TOOLS_SECRET (assistant-harness-secret; harness.enabled)
   claude: {}               # MCP_FINANCE_TOKEN MCP_FINANCE_READ_TOKEN MCP_FINANCE_TEST_TOKEN MCP_FINANCE_TEST_READ_TOKEN MCP_OPS_TOKEN (same values as the tool servers' MCP_SECRET)
+  providerKeys: {}         # anthropic-api: the API providers' keys (assistant-provider-keys, strict scope; harness.enabled), mounted at /run/provider-keys

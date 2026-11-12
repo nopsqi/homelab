@@ -125,7 +125,8 @@ fs.writeFileSync(dst, JSON.stringify(s, null, 2))' /config/settings.json /config
 # Read, Glob and Grep through the read guard narrowed to the run's origin channel (--by-origin, Ruling 16). Phase 2: the image's
 # claude-code adapter states what these static settings must hold for every run (CLAUDE_STATIC_LAYER, compile.js): each of its
 # denies, and for each of its hooks every tool of the matcher hooked by exactly one command, matching the hook's regex. An image
-# without it (older than the chart) fails the start.
+# without it (older than the chart) fails the start. Phase 3: when the image exports CORE_ALWAYS_TOOLS (capabilities.js),
+# harness-settings.json's allow must be exactly that list plus propose_plan and ask_worker.
 node -e '
 const fs = require("fs"), [f, phase, root, patch, capsjs, layerjs] = process.argv.slice(1)
 const fail = (m) => { console.error(`harness-start: ${m}`); process.exit(2) }
@@ -152,6 +153,16 @@ if (fs.existsSync(capsjs)) {
   const m = await import(capsjs)
   if (!Array.isArray(m.FLOOR_DENY) || !m.FLOOR_DENY.length) fail(`${capsjs} has no FLOOR_DENY`)
   floor.push(...m.FLOOR_DENY)
+  // the static allow is exactly the core tools every run has (CORE_ALWAYS_TOOLS of the image) plus ask_worker and propose_plan
+  // (P24): a tool the image moved behind a switch, still allowed here, would reach every run; one it added, missing here,
+  // would be denied to every claude-code run. An image without the export (older) skips this.
+  if (m.CORE_ALWAYS_TOOLS !== undefined) {
+    const isTool = (x) => typeof x === "string" && /^mcp__core__[a-z_]+$/.test(x)
+    if (!Array.isArray(m.CORE_ALWAYS_TOOLS) || !m.CORE_ALWAYS_TOOLS.length || !m.CORE_ALWAYS_TOOLS.every(isTool)) fail(`${capsjs} has a malformed CORE_ALWAYS_TOOLS`)
+    const want = new Set([...m.CORE_ALWAYS_TOOLS, "mcp__core__propose_plan", "mcp__core__ask_worker"]), have = new Set(h.allow)
+    const lack = [...want].filter((x) => !have.has(x)), over = [...have].filter((x) => !want.has(x))
+    if (lack.length || over.length) fail(`harness-settings.json\x27s allow is not the image\x27s CORE_ALWAYS_TOOLS plus propose_plan and ask_worker (missing: ${lack.join(", ") || "none"}; extra: ${over.join(", ") || "none"})`)
+  }
 }
 if (!fs.existsSync(layerjs)) fail(`${layerjs} is missing: this naila image is older than the chart (it has no CLAUDE_STATIC_LAYER)`)
 const L = (await import(layerjs)).CLAUDE_STATIC_LAYER

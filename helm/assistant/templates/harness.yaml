@@ -251,6 +251,7 @@ spec:
             - { name: HARNESS_CHANNELS, value: {{ toJson $specs | quote }} }
             - { name: DOCS_TOKEN_FILE, value: /run/docs-token/token }   # docs' bearer: checked at start; set and unusable fails it
             - { name: DOCS_SOCKET, value: /run/docs-sock/docs.sock }    # where each run's docs relay reaches docs
+            - { name: PROVIDER_KEYS_DIR, value: /run/provider-keys }    # the API providers' keys, one file each; none: that provider can't run
           ports: [{ name: core-metrics, containerPort: 3102 }]
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           volumeMounts:
@@ -260,6 +261,7 @@ spec:
             - { name: naila, mountPath: /naila, readOnly: true }
             - { name: docs-token, mountPath: /run/docs-token, readOnly: true }
             - { name: docs-sock, mountPath: /run/docs-sock, readOnly: true }   # connecting needs no write to the mount
+            - { name: provider-keys, mountPath: /run/provider-keys, readOnly: true }   # this container alone; every run is denied it
             - name: vault
               mountPath: {{ $vaultRoot }}
               {{- with $vaultSub }}
@@ -367,6 +369,13 @@ spec:
         - { name: docs-tmp, emptyDir: {} }
         - { name: docs-token, emptyDir: { medium: Memory, sizeLimit: 1Mi } }   # the docs bearer: in RAM, gone with the pod
         - { name: docs-sock, emptyDir: { medium: Memory, sizeLimit: 1Mi } }    # docs' socket
+        # The API providers' keys (assistant-provider-keys, sealed: one key per provider, e.g. anthropic-api), read by the core
+        # alone (naila providers/keys.ts: a regular file others can't read, one line). Optional: without the Secret, or without
+        # a provider's key in it, the core logs that provider can't run and starts anyway. root:1000 0440 (fsGroup): every
+        # container is in group 1000, so what keeps the others out is that only the harness container mounts it; and the static
+        # settings deny every run Read/Edit/Write under /run/provider-keys (harness-settings.json, checked at start against the
+        # image's floor).
+        - { name: provider-keys, secret: { secretName: assistant-provider-keys, optional: true, defaultMode: 0440 } }
         - { name: vault, persistentVolumeClaim: { claimName: {{ if eq .Values.vault.mode "smb" }}assistant-vault-smb{{ else }}assistant-vault{{ end }} } }
 ---
 apiVersion: v1

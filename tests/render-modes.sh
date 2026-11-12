@@ -88,9 +88,13 @@ export TMPDIR="$tmp"   # the checks' own temp dirs (Python tempfile) go with it
 # the static settings deny all of it, whatever the switches. A change there changes this list.
 export FLOOR_DENY='["Bash","NotebookEdit","Agent","Task","Workflow","TaskStop","Monitor","CronCreate","CronDelete","CronList","ScheduleWakeup","RemoteTrigger","EnterWorktree","ExitWorktree","SendMessage","ListAgents","mcp__vault__workers_*","mcp__claude_ai_*","mcp__finance__add_transaction","mcp__finance__transfer","mcp__finance__update_transaction","mcp__finance__actual_write","mcp__finance-notes__write_note","mcp__finance-notes__edit_note","Read(//home/claude/.claude/.credentials.json)","Read(//home/claude/.claude/harness/**)","Read(//home/claude/.claude/agents/**)","Read(//home/claude/.claude/settings.json)","Read(//home/claude/.claude/.claude.json)","Read(//home/claude/.claude.json)","Read(//home/claude/.claude/projects/**/*.jsonl)","Read(//proc/**)","Read(//config/**)","Read(//naila/**)","Edit(//home/claude/.claude/.credentials.json)","Edit(//home/claude/.claude/harness/**)","Edit(//home/claude/.claude/agents/**)","Edit(//home/claude/.claude/settings.json)","Edit(//home/claude/.claude/.claude.json)","Edit(//home/claude/.claude.json)","Edit(//home/claude/.claude/projects/**/*.jsonl)","Edit(//proc/**)","Edit(//config/**)","Edit(//naila/**)","Write(//home/claude/.claude/.credentials.json)","Write(//home/claude/.claude/harness/**)","Write(//home/claude/.claude/agents/**)","Write(//home/claude/.claude/settings.json)","Write(//home/claude/.claude/.claude.json)","Write(//home/claude/.claude.json)","Write(//home/claude/.claude/projects/**/*.jsonl)","Write(//proc/**)","Write(//config/**)","Write(//naila/**)","Edit(//home/claude/.claude/**)","Write(//home/claude/.claude/**)"]'
 # The claude-code adapter's static layer, verbatim from naila packages/harness/src/providers/claude-code/compile.ts
-# CLAUDE_STATIC_LAYER (Task 7, up to e48bb3f): the denies and the guard hooks (matcher, command regex source) harness-start's
+# CLAUDE_STATIC_LAYER (up to naila 8346393; /run/provider-keys since cbbede6): the denies and the guard hooks (matcher, command regex source) harness-start's
 # settings check takes from the image. With NAILA_WORKTREE the built dist export must equal it. A change there changes this.
-export CLAUDE_STATIC_LAYER='{"deny":["Read(//run/docs-token/**)","Edit(//run/docs-token/**)","Write(//run/docs-token/**)","Read(//run/docs-sock/**)","Edit(//run/docs-sock/**)","Write(//run/docs-sock/**)"],"hooks":[{"matcher":"Read|Glob|Grep","command":"^node \\/config\\/read-guard\\.mjs --by-origin \\|\\| exit 2$"},{"matcher":"Write|Edit|NotebookEdit","command":"harness-write-guard\\.mjs --root \\S+\\/Naila\\/Workspace \\|\\| exit 2$"},{"matcher":"mcp__docs__convert","command":"docs-grant\\.mjs --by-caps "},{"matcher":"WebFetch|WebSearch","command":"web-guard\\.mjs$"}]}'
+export CLAUDE_STATIC_LAYER='{"deny":["Read(//run/docs-token/**)","Edit(//run/docs-token/**)","Write(//run/docs-token/**)","Read(//run/docs-sock/**)","Edit(//run/docs-sock/**)","Write(//run/docs-sock/**)","Read(//run/provider-keys/**)","Edit(//run/provider-keys/**)","Write(//run/provider-keys/**)"],"hooks":[{"matcher":"Read|Glob|Grep","command":"^node \\/config\\/read-guard\\.mjs --by-origin \\|\\| exit 2$"},{"matcher":"Write|Edit|NotebookEdit","command":"harness-write-guard\\.mjs --root \\S+\\/Naila\\/Workspace \\|\\| exit 2$"},{"matcher":"mcp__docs__convert","command":"docs-grant\\.mjs --by-caps "},{"matcher":"WebFetch|WebSearch","command":"web-guard\\.mjs$"}]}'
+# The core tools every run has, verbatim from naila packages/harness/src/capabilities.ts CORE_ALWAYS_TOOLS (up to 8346393):
+# harness-start's settings check requires harness-settings.json's allow to be exactly these plus propose_plan and ask_worker
+# when the image exports them. With NAILA_WORKTREE the built dist export must equal it. A change there changes this.
+export CORE_ALWAYS_TOOLS='["mcp__core__decision_status","mcp__core__propose_capability_change","mcp__core__self_note_history","mcp__core__self_note_set","mcp__core__self_note_undo"]'
 
 git archive "$ref" helm/assistant | tar -x -C "$tmp"
 # harness off: a ref that already has the harness pod compares like one that predates it
@@ -884,6 +888,30 @@ for ph, r in (("test", test), ("real", real)):
     if run_check(s, fm).returncode == 0: bad.append(f"{tag}: harness-start's check accepts settings that lack an entry of the image's FLOOR_DENY")
     open(fm, "w").write(f"export const FLOOR_DENY = {json.dumps(FLOOR_DENY)}\n")
     if (p := run_check(s, fm)).returncode != 0: bad.append(f"{tag}: harness-start's check refuses the image's own floor: {p.stderr.strip()}")
+    # phase 3: the static allow is exactly the image's CORE_ALWAYS_TOOLS plus propose_plan and ask_worker
+    ALWAYS = json.loads(os.environ["CORE_ALWAYS_TOOLS"])
+    tag3 = f"{tag}: CORE_ALWAYS_TOOLS"
+    if set(json.loads(data["harness-settings.json"])["permissions"]["allow"]) != set(ALWAYS) | {"mcp__core__propose_plan", "mcp__core__ask_worker"}:
+        bad.append(f"{tag3}: harness-settings.json's allow is not this file's CORE_ALWAYS_TOOLS plus propose_plan and ask_worker")
+    def caps_module(always):
+        open(fm, "w").write(f"export const FLOOR_DENY = {json.dumps(FLOOR_DENY)}\n" + (f"export const CORE_ALWAYS_TOOLS = {json.dumps(always)}\n" if always is not None else ""))
+        return fm
+    if (p := run_check(s, caps_module(ALWAYS))).returncode != 0: bad.append(f"{tag3}: harness-start's check refuses the image's own always-on core tools: {p.stderr.strip()}")
+    for what, always in (("an always-on tool the chart's allow lacks", ALWAYS + ["mcp__core__new_tool"]),
+                         ("a chart allow the image no longer has always on (self_note_set)", [t for t in ALWAYS if t != "mcp__core__self_note_set"]),
+                         ("an empty CORE_ALWAYS_TOOLS", []), ("a CORE_ALWAYS_TOOLS entry outside the core tools", ALWAYS + ["Read"])):
+        if run_check(s, caps_module(always)).returncode == 0: bad.append(f"{tag3}: harness-start's check accepts {what}")
+    hsj = json.loads(data["harness-settings.json"])
+    hsj["permissions"]["allow"] = [t for t in hsj["permissions"]["allow"] if t != "mcp__core__ask_worker"]
+    open(os.path.join(d, "harness-settings.json"), "w").write(json.dumps(hsj))
+    if run_check(s, caps_module(ALWAYS)).returncode == 0: bad.append(f"{tag3}: harness-start's check accepts a harness-settings.json allow without ask_worker")
+    open(os.path.join(d, "harness-settings.json"), "w").write(data["harness-settings.json"])
+    nw3 = os.environ.get("NAILA_WORKTREE", "")
+    real_caps = f"{nw3}/packages/harness/dist/capabilities.js"
+    if nw3 and os.path.isfile(real_caps):
+        p = subprocess.run(["node", "--input-type=module", "-e", f"const m = await import({json.dumps(real_caps)}); process.stdout.write(JSON.stringify(m.CORE_ALWAYS_TOOLS))"], capture_output=True, text=True)
+        if p.returncode != 0 or json.loads(p.stdout or "null") != ALWAYS: bad.append(f"{tag3}: the built naila CORE_ALWAYS_TOOLS ({nw3}) differs from this file's copy: {(p.stdout or p.stderr)[:300]}")
+        if (p := run_check(s, real_caps)).returncode != 0: bad.append(f"{tag3}: harness-start's check refuses the settings it wrote against naila's built capabilities.js: {p.stderr.strip()}")
     # phase 2: CLAUDE_STATIC_LAYER. An image without it (older than the chart) fails the start, as does a layer the settings
     # don't hold: a deny entry missing, or a layer hook's tool hooked by anything but one command matching its regex.
     tag2 = f"{tag}: CLAUDE_STATIC_LAYER"
@@ -1681,4 +1709,47 @@ for label, path in zip(("test", "real", "two channels", "real, RC off"), sys.arg
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
 print("docs bearer and socket: docs-token (filled by the init, read-only to the core and docs) and docs-sock (writable by docs alone), mounted by no one else; no port 3002; probes need the socket; the runs' settings deny it; harness-start follows the image")
+PY
+# Phase 3: the API providers' keys (assistant-provider-keys, sealed with strict scope). One optional secret volume, root:1000
+# 0440, mounted read-only at /run/provider-keys by the harness container alone (not docs, not a gateway, not login, not an
+# init container), which alone sets PROVIDER_KEYS_DIR; the SealedSecret renders with exactly that name and namespace when
+# values.prod.yaml holds a key, and nothing names it with harness off or in staging.
+helm template helm/assistant -n assistant "${P[@]}" --set harness.phase=real > "$tmp/real-ns.yaml"   # as ArgoCD renders it: namespace assistant
+python3 - "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/two.yaml" "$tmp/real-rcoff.yaml" "$tmp/off.yaml" "$tmp/staging.yaml" "$tmp/real-ns.yaml" <<'PY'
+import sys, yaml, json
+def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
+H, SS, KDIR = ("Deployment", "assistant-harness"), ("SealedSecret", "assistant-provider-keys"), "/run/provider-keys"
+bad = []
+for label, path in zip(("test", "real", "two channels", "real, RC off", "real, namespace assistant"), sys.argv[1:5] + sys.argv[7:8]):
+    r = load(path)
+    if H not in r: bad.append(f"no harness pod ({label})"); continue
+    ps = r[H]["spec"]["template"]["spec"]
+    tag = f"provider keys: one optional secret volume of assistant-provider-keys, mode 0440 ({label})"
+    vols = [v for v in ps.get("volumes", []) if v["name"] == "provider-keys"]
+    if vols != [{"name": "provider-keys", "secret": {"secretName": "assistant-provider-keys", "optional": True, "defaultMode": 0o440}}]: bad.append(f"{tag}: it is {vols!r}")
+    others = [v["name"] for v in ps.get("volumes", []) if v["name"] != "provider-keys" and "assistant-provider-keys" in json.dumps(v)]
+    if others: bad.append(f"{tag}: other volumes name the secret: {others}")
+    tag = f"provider keys: the harness container alone mounts them, read-only at {KDIR}, and alone sets PROVIDER_KEYS_DIR ({label})"
+    got = {c["name"]: [(m["mountPath"], m.get("readOnly", False)) for m in c.get("volumeMounts", []) if m["name"] == "provider-keys"]
+           for c in ps.get("initContainers", []) + ps["containers"]}
+    got = {n: m for n, m in got.items() if m}
+    if got != {"harness": [(KDIR, True)]}: bad.append(f"{tag}: the mounts are {got}")
+    envs = {c["name"]: [e.get("value") for e in c.get("env", []) if e["name"] == "PROVIDER_KEYS_DIR"] for c in ps.get("initContainers", []) + ps["containers"]}
+    if {n: v for n, v in envs.items() if v} != {"harness": [KDIR]}: bad.append(f"{tag}: PROVIDER_KEYS_DIR is {envs}")
+    for c in ps.get("initContainers", []) + ps["containers"]:
+        if any(KDIR in json.dumps(m) for m in c.get("volumeMounts", []) if m["name"] != "provider-keys"): bad.append(f"{tag}: {c['name']} mounts something else at {KDIR}")
+        if c["name"] != "harness" and "assistant-provider-keys" in json.dumps(c): bad.append(f"{tag}: {c['name']} names the secret")
+    tag = f"provider keys: the SealedSecret is assistant-provider-keys in the release namespace (assistant), one encrypted key anthropic-api ({label})"
+    s = r.get(SS)
+    if not s: bad.append(f"{tag}: it does not render"); continue
+    t, ns = s["spec"]["template"]["metadata"], ("assistant" if "namespace assistant" in label else "default")
+    if s["metadata"]["name"] != "assistant-provider-keys" or t.get("name") != "assistant-provider-keys" or t.get("namespace") != ns: bad.append(f"{tag}: its template is {t}, want namespace {ns}")
+    ed = s["spec"].get("encryptedData") or {}
+    if sorted(ed) != ["anthropic-api"] or not str(ed["anthropic-api"]).startswith("Ag"): bad.append(f"{tag}: its keys are {sorted(ed)}")
+    if "data" in s["spec"] or "stringData" in s["spec"]: bad.append(f"{tag}: it carries plain data")
+for label, path in zip(("harness off", "staging"), sys.argv[5:7]):
+    if "assistant-provider-keys" in open(path).read() or "PROVIDER_KEYS_DIR" in open(path).read(): bad.append(f"provider keys: the {label} render names the secret or PROVIDER_KEYS_DIR")
+if bad:
+    print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
+print("provider keys: assistant-provider-keys sealed (strict: its name, assistant), mounted 0440 read-only at /run/provider-keys by the harness container alone; none with harness off or in staging")
 PY

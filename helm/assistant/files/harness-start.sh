@@ -216,9 +216,10 @@ c.projects = Object.fromEntries(dirs.map((d) => [d, { hasTrustDialogAccepted: tr
 fs.writeFileSync(f, JSON.stringify(c, null, 2))' "$HOME/.claude.json" "$DOCS_BY_CORE" "${dirs[@]}"
 cp "$HOME/.claude.json" "$C/.claude.json"
 
-# The core reads only its own env; the workers' bearers live in the agent files now, and each channel's secret is in
-# GATEWAY_SECRETS (which the core reads, so the pattern leaves it set).
-unset MCP_FINANCE_READ_TOKEN MCP_OPS_TOKEN
+# The core keeps MCP_FINANCE_READ_TOKEN and MCP_OPS_TOKEN: its own loop opens the workers' servers with them, by name.
+# No child inherits them (stdio servers get a base env plus their named env, Claude Code runs an explicit list; its
+# runs read them from the agent files above). Each channel's secret is in GATEWAY_SECRETS (which the core reads, so
+# the pattern leaves it set); the per-channel copies go.
 for v in $(compgen -v | grep -E '^GATEWAY_[A-Z0-9_]+_SECRET$'); do unset "$v"; done
 export CLAUDE_CONFIG_DIR=$C CLAUDE_BIN=$HOME/.npm-global/bin/claude
 cd "$HARNESS_HOME"

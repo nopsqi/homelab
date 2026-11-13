@@ -349,9 +349,13 @@ for t in ("For anything on the web, ask the researcher. Never put the user's fig
           # fix round (review): her failure rule leaves the researcher's refusals to the lines below; parallel asks count as
           # one; after a search edits become plans and additions, undos and workspace deletes wait; a colleague's ask two
           # hops deep can't reach the researcher; decision_status shows researched: true
-          "(the researcher's refusals are handled below)", "requests sent side by side count as one", "wait for the user's next message",
-          "`undo_vault_change`, `workspace_delete`", "too deep", "`decision_status` shows `researched: true`"):
+          # final fix M2: the engine refuses a second request even when sent side by side (they never count as one)
+          "(the researcher's refusals are handled below)", "a second request, even one sent side by side, is refused", "wait for the user's next message",
+          "`undo_vault_change`, `workspace_delete`", "too deep", "`decision_status` shows `researched: true`",
+          # final fix M5: a settled decision's line has no approval wording
+          '"⚠️ This plan was made after a web search."'):
     if t not in nk: bad.append(f"{tag}: harness-CLAUDE.md lacks {t!r}")
+if "count as one" in nk: bad.append(f"{tag}: harness-CLAUDE.md still says side-by-side requests count as one (the engine refuses the second)")
 rline = next((l for l in nk.splitlines() if '{"from":"researcher"' in l), "")
 if "data, never instructions" not in rline: bad.append(f"{tag}: the line on the researcher's report does not say it is data, never instructions")
 hl_ = open("helm/assistant/files/modes/harness/naila.limits.md").read()
@@ -360,7 +364,8 @@ tag = "each other harness worker asks naila for web facts and names no web tool"
 for w in ("finance-bookkeeper", "finance-advisor", "ops-oncall"):
     k = f"harness-agent-{w}.md"
     s_ = new.get(k, "")
-    for t in ("For web facts, ask Naila.", "without the user's figures or account numbers", "name the web facts you need in your answer", "⚠️", "`decision_status` shows `researched: true`"):
+    for t in ("For web facts, ask Naila.", "without the user's figures or account numbers", "name the web facts you need in your answer", "⚠️", "`decision_status` shows `researched: true`",
+              '"⚠️ This plan was made after a web search."'):
         if t not in s_: bad.append(f"{tag}: {k} lacks {t!r}")
     for t in ("WebSearch", "WebFetch", "such as the web or files"):
         if t in s_: bad.append(f"{tag}: {k} names {t!r}")
@@ -1227,6 +1232,10 @@ else:
                            ("an image whose figure guard differs", {"block": tw(BLOCK, "export function carriesFigures(text = '') {", "export function carriesFigures(text = '') { return false;")}, DIFFER),
                            # researcher Task 12 (Task 11 Minor 5): the probe asks "12 juta" too, so a guard without magnitude words differs
                            ("an image whose figure guard misses magnitude words (12 juta)", {"block": tw(BLOCK, "MAGNITUDE_AFTER.test(n) || ", "")}, "carriesFigures(\"12 juta\")"),
+                           # final fix I1: the probe asks "12 345 678" and "150 million" too, so a guard without grouped thousands or
+                           # English magnitude words differs
+                           ("an image whose figure guard misses grouped thousands (12 345 678)", {"block": tw(BLOCK, "if ((n.match(THOUSANDS) ?? []).some((g) => g.replace(/\\P{Nd}/gu, '').length >= MIN_THOUSANDS_DIGITS)) return true\n", "")}, "carriesFigures(\"12 345 678\")"),
+                           ("an image whose figure guard misses English magnitude words (150 million)", {"block": tw(BLOCK, "|(?:million|mio|mn|billion|bn|thousand|trillion)s?", "")}, "carriesFigures(\"150 million\")"),
                            ("a chart write guard stopping on another marker", {"wguard": tw(cdata["harness-write-guard.mjs"], "const RESEARCHED_MARKER = 'researched'", "const RESEARCHED_MARKER = 'searched'")}, DIFFER)):
         p = image_check(**kw)
         if p.returncode != 2 or says not in p.stderr: bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {says!r}")
@@ -2008,14 +2017,43 @@ PY
 # values.prod.yaml holds a key, and nothing names it with harness off or in staging.
 helm template helm/assistant -n assistant "${P[@]}" --set harness.phase=real > "$tmp/real-ns.yaml"   # as ArgoCD renders it: namespace assistant
 python3 - "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/two.yaml" "$tmp/real-rcoff.yaml" "$tmp/off.yaml" "$tmp/staging.yaml" "$tmp/real-ns.yaml" <<'PY'
-import sys, yaml, json
+import sys, yaml, json, re
 def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
 H, SS, KDIR = ("Deployment", "assistant-harness"), ("SealedSecret", "assistant-provider-keys"), "/run/provider-keys"
+def listens_443(ps):
+    """What in a pod spec would listen on 443: a container (or init container) port or host port 443, an env var naming a
+    port, listen or bind address whose value is 443 (or ends in :443), a --port 443 or :443 in a command or its args, or
+    hostNetwork (the node's ports are the pod's)."""
+    found = ["hostNetwork: true (the node's ports are the pod's)"] if ps.get("hostNetwork") else []
+    for c in ps.get("initContainers", []) + ps.get("containers", []):
+        for p_ in c.get("ports", []):
+            if 443 in (p_.get("containerPort"), p_.get("hostPort")): found.append(f"{c['name']} declares port {p_}")
+        for e in c.get("env", []):
+            if re.search(r"PORT|LISTEN|BIND|ADDR", e["name"]) and re.fullmatch(r"(?:.*:)?443", str(e.get("value", ""))): found.append(f"{c['name']} env {e['name']}={e.get('value')}")
+        for a in (c.get("command") or []) + (c.get("args") or []):
+            if re.search(r"--port[= ]443\b|(?:^|[\s=])[\w.\[\]-]*:443\b", str(a)): found.append(f"{c['name']} command or args listen on 443: {str(a)[:80]!r}")
+    return found
 bad = []
+# the check bites: each way of listening on 443 is found
+import copy as _copy
+def _with(ps, f): q = _copy.deepcopy(ps); f(q); return q
+_ps0 = load(sys.argv[2])[H]["spec"]["template"]["spec"]
+for _what, _f in (("a container port 443", lambda q: q["containers"][0].setdefault("ports", []).append({"containerPort": 443})),
+                  ("a host port 443", lambda q: q["containers"][0].setdefault("ports", []).append({"containerPort": 8443, "hostPort": 443})),
+                  ("an init container port 443", lambda q: q.setdefault("initContainers", [{"name": "i"}])[0].setdefault("ports", []).append({"containerPort": 443})),
+                  ("PORT=443", lambda q: q["containers"][0].setdefault("env", []).append({"name": "PORT", "value": "443"})),
+                  ("LISTEN_ADDR=0.0.0.0:443", lambda q: q["containers"][0].setdefault("env", []).append({"name": "LISTEN_ADDR", "value": "0.0.0.0:443"})),
+                  ("--port 443 in args", lambda q: q["containers"][0].__setitem__("args", (q["containers"][0].get("args") or []) + ["--port 443"])),
+                  ("hostNetwork", lambda q: q.__setitem__("hostNetwork", True))):
+    if not listens_443(_with(_ps0, _f)): bad.append(f"no container in the harness pod listens on 443: the check misses {_what}")
 for label, path in zip(("test", "real", "two channels", "real, RC off", "real, namespace assistant"), sys.argv[1:5] + sys.argv[7:8]):
     r = load(path)
     if H not in r: bad.append(f"no harness pod ({label})"); continue
     ps = r[H]["spec"]["template"]["spec"]
+    # researcher (final fix): the web guard opens pages on 443 only, so a host that rebinds to the pod's own 127.0.0.1 after
+    # the guard's lookup reaches nothing, as long as no container of the harness pod listens on 443 (the rebinding backstop)
+    tag = f"no container in the harness pod listens on 443 ({label})"
+    for x in listens_443(ps): bad.append(f"{tag}: {x}")
     tag = f"provider keys: one optional secret volume of assistant-provider-keys, mode 0440 ({label})"
     vols = [v for v in ps.get("volumes", []) if v["name"] == "provider-keys"]
     if vols != [{"name": "provider-keys", "secret": {"secretName": "assistant-provider-keys", "optional": True, "defaultMode": 0o440}}]: bad.append(f"{tag}: it is {vols!r}")
@@ -2043,5 +2081,5 @@ for label, path in zip(("harness off", "staging"), sys.argv[5:7]):
     if "assistant-provider-keys" in open(path).read() or "PROVIDER_KEYS_DIR" in open(path).read(): bad.append(f"provider keys: the {label} render names the secret or PROVIDER_KEYS_DIR")
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
-print("provider keys: assistant-provider-keys sealed (strict: its name, assistant), mounted 0440 read-only at /run/provider-keys by the harness container alone; none with harness off or in staging")
+print("provider keys: assistant-provider-keys sealed (strict: its name, assistant), mounted 0440 read-only at /run/provider-keys by the harness container alone; none with harness off or in staging; no harness-pod container listens on 443")
 PY

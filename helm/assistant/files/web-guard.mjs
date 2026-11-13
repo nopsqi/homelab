@@ -73,7 +73,7 @@ const DIGIT_RUN = /\p{Nd}(?:[.,]?\p{Nd}){5,}/u
 // Thousands grouped by a space (NBSP, narrow NBSP and thin space are spaces after NFKC), an apostrophe, a right single
 // quote or an underscore: 1 to 3 digits, then 3-digit groups; 6 or more digits in all make an amount ("12 345 678",
 // "12'345'678"). Strict: no digit boundary is asked for, so a 3-digit tail of a longer run starts a group too.
-const THOUSANDS = /\p{Nd}{1,3}(?:[\s'\u2019_]\p{Nd}{3})+/gu
+const THOUSANDS = /(?<!\p{Nd})\p{Nd}{1,3}(?:[\s'\u2019_]\p{Nd}{3})+(?!\p{Nd})/gu
 const MIN_THOUSANDS_DIGITS = 6
 // Digit groups joined by single spaces or hyphens, an optional + before them; 10 or more digits make an account or phone.
 const DIGIT_GROUPS = /\+?\p{Nd}+(?:[ -]\p{Nd}+)+/gu

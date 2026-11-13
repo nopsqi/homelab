@@ -60,7 +60,7 @@ fs.writeFileSync(f, `import { isIP } from "node:net"\n${src.slice(i + B.length, 
 let ours
 try { ours = await import(f) } finally { fs.rmSync(d, { recursive: true, force: true }) }
 for (const k of ["WEB_WORKER", "WEB_RESEARCHED_MARKER", "WEB_LIMITS", "WEB_TEXT"]) if (!util.isDeepStrictEqual(ours[k], img[k])) fail(`${k}: ${differ}`)
-for (const t of ["Rp 1.000", "12 juta", "123456", "BI rate"]) if (typeof img.carriesFigures !== "function" || ours.carriesFigures(t) !== img.carriesFigures(t)) fail(`carriesFigures(${JSON.stringify(t)}): ${differ}`)
+for (const t of ["Rp 1.000", "12 juta", "123456", "12 345 678", "150 million", "BI rate"]) if (typeof img.carriesFigures !== "function" || ours.carriesFigures(t) !== img.carriesFigures(t)) fail(`carriesFigures(${JSON.stringify(t)}): ${differ}`)
 const m = /^const RESEARCHED_MARKER = \x27([^\x27]+)\x27$/m.exec(fs.readFileSync(wguard, "utf8"))
 if (!m || m[1] !== img.WEB_RESEARCHED_MARKER) fail(`harness-write-guard.mjs stops on another marker than WEB_RESEARCHED_MARKER: ${differ}`)
 })().catch((e) => fail(`${e.message}: ${differ}`))' "$WEB_RULES" /naila/packages/harness/dist/providers/claude-code/adapter.js /config/web-guard.mjs /config/harness-write-guard.mjs

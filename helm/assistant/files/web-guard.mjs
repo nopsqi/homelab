@@ -63,11 +63,18 @@ export const WEB_TEXT = Object.freeze({
 const MARKER_BEFORE = /(?:(?<!\p{L})(?:rp|idr|usd)|[$€])[\s.:+_-]{0,3}\p{Nd}/iu
 const MARKER_AFTER = /\p{Nd}[\s.:+_-]{0,3}(?:(?<!\p{L})(?:rp|idr|usd)(?!\p{L})|[$€])/iu
 // A magnitude or currency word right after digits, with or without a space, an optional "-an" suffix ("5 jutaan"),
-// standing alone ("50 rbx" is not one); or the shorthand M, K or T ("1,5 M", "5k"), strictly: "5 m" of metres counts too.
+// standing alone ("50 rbx" is not one); an English magnitude word with an optional plural ("75 million", "3.5 bn",
+// "9500 thousand"); or the shorthand M, K or T ("1,5 M", "5k"), strictly: "5 m" of metres counts too. Strict on purpose:
+// "2 million downloads" is refused too, the guard can't tell a count from an amount (over-refusal is the safe direction).
 const MAGNITUDE_AFTER =
-  /\p{Nd}\s{0,3}(?:(?:juta|jt|ribu|rb|miliar|milyar|triliun|rupiah|dollars?|dolar)(?:an)?|[mkt])(?!\p{L})/iu
+  /\p{Nd}\s{0,3}(?:(?:juta|jt|ribu|rb|miliar|milyar|triliun|rupiah|dollars?|dolar)(?:an)?|(?:million|mio|mn|billion|bn|thousand|trillion)s?|[mkt])(?!\p{L})/iu
 // 6 or more digits, with at most one `.` or `,` between any two: an account-like number or a separated amount.
 const DIGIT_RUN = /\p{Nd}(?:[.,]?\p{Nd}){5,}/u
+// Thousands grouped by a space (NBSP, narrow NBSP and thin space are spaces after NFKC), an apostrophe, a right single
+// quote or an underscore: 1 to 3 digits, then 3-digit groups; 6 or more digits in all make an amount ("12 345 678",
+// "12'345'678"). Strict: no digit boundary is asked for, so a 3-digit tail of a longer run starts a group too.
+const THOUSANDS = /\p{Nd}{1,3}(?:[\s'\u2019_]\p{Nd}{3})+/gu
+const MIN_THOUSANDS_DIGITS = 6
 // Digit groups joined by single spaces or hyphens, an optional + before them; 10 or more digits make an account or phone.
 const DIGIT_GROUPS = /\+?\p{Nd}+(?:[ -]\p{Nd}+)+/gu
 const MIN_GROUPED_DIGITS = 10
@@ -96,8 +103,10 @@ function decodeEscapes(text = '') {
 }
 
 /** Whether `text` carries a figure: a currency marker next to digits; a magnitude word after digits (juta, jt, ribu, rb,
- *  miliar, milyar, triliun, rupiah, dollar, dolar, each with an optional "-an"; or M, K, T); a run of 6 or more digits ignoring `.` and `,` between them (so any
- *  1.234.567 or 1,234,567 amount); or 10 or more digits in groups joined by single spaces or hyphens (an account or phone
+ *  miliar, milyar, triliun, rupiah, dollar, dolar, each with an optional "-an"; million, mio, mn, billion, bn, thousand,
+ *  trillion, each with an optional plural; or M, K, T); a run of 6 or more digits ignoring `.` and `,` between them (so any
+ *  1.234.567 or 1,234,567 amount); 6 or more digits in 3-digit groups joined by a space, an apostrophe, a right single
+ *  quote or an underscore (so 12 345 678 or 12'345'678); or 10 or more digits in groups joined by single spaces or hyphens (an account or phone
  *  number). On the safe side: the text is judged as given and with its percent-escapes decoded, each NFKC-normalized
  *  (fullwidth digits and signs) and with its format characters (\p{Cf}: zero-width and the like) removed. A text with
  *  more than MAX_ESCAPES percent-escapes carries a figure as far as this guard knows (fail closed). */
@@ -108,6 +117,7 @@ export function carriesFigures(text = '') {
   return [raw, decoded].some((t) => {
     const n = t.normalize('NFKC').replace(/\p{Cf}/gu, '')
     if (MARKER_BEFORE.test(n) || MARKER_AFTER.test(n) || MAGNITUDE_AFTER.test(n) || DIGIT_RUN.test(n)) return true
+    if ((n.match(THOUSANDS) ?? []).some((g) => g.replace(/\P{Nd}/gu, '').length >= MIN_THOUSANDS_DIGITS)) return true
     return (n.match(DIGIT_GROUPS) ?? []).some((g) => g.replace(/\P{Nd}/gu, '').length >= MIN_GROUPED_DIGITS)
   })
 }

@@ -22,7 +22,8 @@ import { posix } from 'node:path'
 
 /** naila's WEB_RESEARCHED_MARKER (packages/harness/src/floor/web-rules.ts). */
 const RESEARCHED_MARKER = 'researched'
-const RESEARCHED_TEXT = "A web search happened in this message, so nothing can be written in it: file a plan, or ask again in a message of its own."
+/** naila's RESEARCHED_WRITE_REFUSED (packages/harness/src/research.ts), word for word (tests/floor-conformance.sh). */
+const RESEARCHED_TEXT = "A web search happened in this message, so files can't be written in it: ask again in a message of its own."
 /** The tools the marker stops. */
 const MARKED = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'mcp__vault__write_inbox', 'mcp__vault__append_daily', 'mcp__vault__workers_write'])
 const marked = (t) => typeof t === 'string' && (MARKED.has(t) || t.startsWith('mcp__finance-notes__'))

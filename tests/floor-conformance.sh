@@ -27,7 +27,8 @@
 #    is no slot, a resolver that never answers (refused after the 5 s race), and the hook's own 15 s deadline (stdin never
 #    closes: a deny with exit 2, since Claude Code lets a call through when a hook times out); the write guard refuses every
 #    write tool (and the vault and finance-notes servers' write tools) in a run marked researched or with no slots folder, and
-#    has the same 15 s deadline on its input;
+#    has the same 15 s deadline on its input; its refusal text is naila's RESEARCHED_WRITE_REFUSED, read from naila's built
+#    dist (packages/harness/dist/research.js: build naila first), word for word;
 #  - it checks that harness-start.sh and claude.yaml still render those hook commands (the web and write hooks with their
 #    30 s timeout and onFailure block), and that web-guard.mjs carries naila's
 #    web-rules block byte for byte (the text between the web-rules:begin and web-rules:end lines, each once in both files, read
@@ -261,7 +262,13 @@ await writeDeadline
 
 // Homelab-only checks of the write guard: in a run marked researched every write tool is refused, the servers' write tools
 // too; a run with no slots folder is refused (fail closed); without the marker the servers' tools are the settings' to decide
-const RESEARCHED_TEXT = "A web search happened in this message, so nothing can be written in it: file a plan, or ask again in a message of its own."
+// The refusal is the core's own (naila's RESEARCHED_WRITE_REFUSED, from its built dist): one text for a researched write,
+// whichever side refuses it. It offers no plan: an addition after a search has no plan form, it waits for the next message.
+const researchJs = join(naila, 'packages/harness/dist/research.js')
+const RESEARCHED_TEXT = existsSync(researchJs) ? (await import(researchJs)).RESEARCHED_WRITE_REFUSED : undefined
+if (typeof RESEARCHED_TEXT !== 'string' || !RESEARCHED_TEXT) bad(`naila's built ${researchJs} has no RESEARCHED_WRITE_REFUSED: build naila first (npm run build)`)
+else if (!wgSrc.includes(`const RESEARCHED_TEXT = ${JSON.stringify(RESEARCHED_TEXT)}\n`)) bad(`harness-write-guard.mjs's RESEARCHED_TEXT is not naila's RESEARCHED_WRITE_REFUSED (${JSON.stringify(RESEARCHED_TEXT)})`)
+if (/file a plan/i.test(RESEARCHED_TEXT ?? '')) bad('the researched write refusal offers a plan: an addition after a search has none')
 const wroot = join(t, tree.phases.real.root)
 const write = (what, tool, toolInput, env, want, reason) => {
   extra++

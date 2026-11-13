@@ -32,9 +32,38 @@ if [ -n "${VAULT_EXCLUDE:-}" ] && ! grep -qF 'vault-mcp: VAULT_EXCLUDE supported
 NOTES_SERVER=/naila/packages/vault-mcp/dist/notes-server.js
 grep -qF 'vault-mcp: VAULT_WORKERS_WRITE supported' "$VAULT_SERVER" || die "$VAULT_SERVER doesn't support VAULT_WORKERS_WRITE: this naila image is older than the chart"
 grep -qF 'finance-notes: NOTES_READONLY supported' "$NOTES_SERVER" || die "$NOTES_SERVER doesn't support NOTES_READONLY: this naila image is older than the chart"
-for k in harness-CLAUDE.md harness-agent-finance-bookkeeper.md harness-settings.json harness-write-guard.mjs settings.json docs-grant.mjs; do
+for k in harness-CLAUDE.md harness-agent-finance-bookkeeper.md harness-agent-researcher.md harness-settings.json harness-write-guard.mjs settings.json docs-grant.mjs web-guard.mjs; do
   [ -f "/config/$k" ] || die "/config/$k is missing: this chart predates harness mode"
 done
+# The researcher (one promote ships it in the image and the chart together): the chart's write guard refuses every write in a
+# run without HARNESS_WEB_SLOTS, which only an image with the researcher sets, and its web guard carries naila's web-rules
+# block byte for byte. An older image would leave every write refused, quietly: fail the start instead (deploy the image that
+# ships with this chart, or revert the promote merge to roll both back). The image's rules (dist/floor/web-rules.js) must
+# also be the chart's: the web guard's block, imported on its own, has the same worker, marker, limits and texts and judges a
+# few asks alike, and the write guard stops on the same marker.
+WEB_RULES=/naila/packages/harness/dist/floor/web-rules.js
+[ -f "$WEB_RULES" ] || die "$WEB_RULES is missing: this naila image predates the researcher: deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+node -e '
+const fs = require("fs"), os = require("os"), path = require("path"), util = require("util")
+const [rules, adapter, guard, wguard] = process.argv.slice(1)
+const fail = (m) => { console.error(`harness-start: ${m}`); process.exit(2) }
+const old = "this naila image predates the researcher: deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+const differ = "the chart\x27s web guard and the image\x27s web rules differ: ship them together"
+;(async () => {
+const img = await import(rules)
+if (typeof img.WEB_RESEARCHED_MARKER !== "string" || !img.WEB_RESEARCHED_MARKER) fail(`${rules} has no WEB_RESEARCHED_MARKER: ${old}`)
+if (!fs.existsSync(adapter) || !fs.readFileSync(adapter, "utf8").includes("HARNESS_WEB_SLOTS")) fail(`${adapter} sets no HARNESS_WEB_SLOTS: ${old}`)
+const src = fs.readFileSync(guard, "utf8"), B = "// web-rules:begin\n", E = "// web-rules:end\n", i = src.indexOf(B), j = src.indexOf(E)
+if (i < 0 || j < i) fail(`${guard} has no web-rules block: ${differ}`)
+const d = fs.mkdtempSync(path.join(os.tmpdir(), "web-rules-")), f = path.join(d, "web-rules.mjs")
+fs.writeFileSync(f, `import { isIP } from "node:net"\n${src.slice(i + B.length, j)}`)
+let ours
+try { ours = await import(f) } finally { fs.rmSync(d, { recursive: true, force: true }) }
+for (const k of ["WEB_WORKER", "WEB_RESEARCHED_MARKER", "WEB_LIMITS", "WEB_TEXT"]) if (!util.isDeepStrictEqual(ours[k], img[k])) fail(`${k}: ${differ}`)
+for (const t of ["Rp 1.000", "12 juta", "123456", "12 345 678", "150 million", "BI rate"]) if (typeof img.carriesFigures !== "function" || ours.carriesFigures(t) !== img.carriesFigures(t)) fail(`carriesFigures(${JSON.stringify(t)}): ${differ}`)
+const m = /^const RESEARCHED_MARKER = \x27([^\x27]+)\x27$/m.exec(fs.readFileSync(wguard, "utf8"))
+if (!m || m[1] !== img.WEB_RESEARCHED_MARKER) fail(`harness-write-guard.mjs stops on another marker than WEB_RESEARCHED_MARKER: ${differ}`)
+})().catch((e) => fail(`${e.message}: ${differ}`))' "$WEB_RULES" /naila/packages/harness/dist/providers/claude-code/adapter.js /config/web-guard.mjs /config/harness-write-guard.mjs
 [ -n "${MCP_FINANCE_TOKEN:-}" ] && [ -n "${MCP_FINANCE_READ_TOKEN:-}" ] && [ -n "${MCP_OPS_TOKEN:-}" ] || die "a bearer is missing (MCP_FINANCE_TOKEN, MCP_FINANCE_READ_TOKEN, MCP_OPS_TOKEN)"
 
 [ "$(claude --version 2>/dev/null | cut -d' ' -f1)" = "$CLAUDE_VERSION" ] || npm i -g @anthropic-ai/claude-code@$CLAUDE_VERSION
@@ -86,7 +115,10 @@ if grep -qF -- "$MCP_FINANCE_TOKEN" "$C"/agents/*.md; then die "a worker holds t
 # none for a run without an origin, or on an image older than naila 95dd7a2, which sets none), this phase's vault only with vault.read, its
 # Finance/ for a finance worker with files.read, the worker's own workspace with files.read; minus VAULT_EXCLUDE in the real
 # phase. Read, Glob and Grep go through read-guard.mjs --by-origin (Ruling 16): of the uploads only the run's own channel's
-# folder, none without HARNESS_ORIGIN, as the core narrows each run's Read allow; `|| exit 2` makes a crash a block. Test
+# folder, none without HARNESS_ORIGIN, as the core narrows each run's Read allow; `|| exit 2` makes a crash a block. WebFetch
+# and WebSearch go through web-guard.mjs --by-worker alone (the researcher's web; the RC lines' entry, which refuses every
+# call, is dropped): it and the write guard get a 30 s timeout and onFailure "block", since Claude Code lets a call through
+# when a hook times out or fails otherwise (each guard also refuses by itself after 15 s). Test
 # phase: no file-tool rule reaches the vault outside /vault/Harness-test. Real phase: no file tool reads a VAULT_EXCLUDE folder.
 case "$VAULT_ROOT" in /*) ;; *) die "VAULT_ROOT must be an absolute path, got '$VAULT_ROOT'" ;; esac
 printf '%s' "$VAULT_ROOT" | grep -qE '^/[A-Za-z0-9._/-]+$' || die "VAULT_ROOT may hold only letters, digits and ._/- (it goes into a hook command), got '$VAULT_ROOT'"
@@ -112,17 +144,22 @@ const pre = (s.hooks ??= {}).PreToolUse ??= []
 // dropping it would drop it for every other tool too, so it fails the start (the check below counts such an entry as well).
 const every = (e) => e.matcher === undefined || e.matcher === null || e.matcher === "" || e.matcher === "*"
 if (pre.some(every)) { console.error("harness-start: settings.json has a PreToolUse entry with no matcher, \"\" or \"*\" (every tool): give it a matcher"); process.exit(2) }
-s.hooks.PreToolUse = pre.filter((e) => !/docs|Write|Edit|Read|Glob|Grep/.test(e.matcher))
+// each guarded tool keeps one hook: its own entries go, the web guard of the RC lines (no --by-worker) among them
+s.hooks.PreToolUse = pre.filter((e) => !/docs|Write|Edit|Read|Glob|Grep|WebFetch|WebSearch/.test(e.matcher))
 s.hooks.PreToolUse.push({ matcher: "Read|Glob|Grep", hooks: [{ type: "command", command: "node /config/read-guard.mjs --by-origin || exit 2" }] })
 s.hooks.PreToolUse.push({ matcher: "mcp__docs__convert", hooks: [{ type: "command", command: `node ${grant} --by-caps --uploads ${uploads} --root ${root}${docsExclude} || exit 2` }] })
-s.hooks.PreToolUse.push({ matcher: "Write|Edit|NotebookEdit", hooks: [{ type: "command", command: `node /config/harness-write-guard.mjs --root ${root}/Naila/Workspace || exit 2` }] })
+s.hooks.PreToolUse.push({ matcher: "^(Write|Edit|MultiEdit|NotebookEdit|mcp__vault__write_inbox|mcp__vault__append_daily|mcp__vault__workers_write|mcp__finance-notes__.*)$", hooks: [{ type: "command", command: `node /config/harness-write-guard.mjs --root ${root}/Naila/Workspace || exit 2`, timeout: 30, onFailure: "block" }] })
+s.hooks.PreToolUse.push({ matcher: "WebFetch|WebSearch", hooks: [{ type: "command", command: "node /config/web-guard.mjs --by-worker || exit 2", timeout: 30, onFailure: "block" }] })
 fs.writeFileSync(dst, JSON.stringify(s, null, 2))' /config/settings.json /config/harness-settings.json "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/docs-grant.mjs "$C/uploads" "${VAULT_EXCLUDE:-}"
 # The check, failing startup: no test-phase rule reaches the real vault; docs conversion follows the run's switches under this
 # phase's roots (docs-grant.mjs --by-caps --root VAULT_ROOT); the deny holds the whole static floor (harness-settings.json, Agent and Bash among it) and, when the image has the capability
 # registry, the image's own FLOOR_DENY (a chart older than the image's floor fails closed); the allow holds nothing beyond the
 # static core tools (harness-settings.json's allow, mcp__core__ tools only: propose_plan, ask_worker, decision_status,
-# propose_capability_change and the self_note tools; engine_info and undo_vault_change come per run, naila only); Write and Edit go through the write guard rooted at this phase's workspace root;
-# Read, Glob and Grep through the read guard narrowed to the run's origin channel (--by-origin, Ruling 16). Phase 2: the image's
+# propose_capability_change and the self_note tools; engine_info and undo_vault_change come per run, naila only); Write, Edit, MultiEdit, NotebookEdit and the vault and finance-notes servers' write tools go through the write guard rooted at this phase's workspace root (it refuses them all in a run marked researched);
+# Read, Glob and Grep through the read guard narrowed to the run's origin channel (--by-origin, Ruling 16); WebFetch and
+# WebSearch through the web guard deciding by worker (--by-worker), it and the write guard with a 30 s timeout and onFailure
+# block, and each of those hook objects holds exactly type, command, timeout and onFailure (no async, asyncRewake or if); for
+# a layer hook that names a timeout or onFailure, the hook object carries exactly that. Phase 2: the image's
 # claude-code adapter states what these static settings must hold for every run (CLAUDE_STATIC_LAYER, compile.js): each of its
 # denies, and for each of its hooks every tool of the matcher hooked by exactly one command, matching the hook's regex. An image
 # without it (older than the chart) fails the start. Phase 3: when the image exports CORE_ALWAYS_TOOLS (capabilities.js),
@@ -141,7 +178,8 @@ const bad = phase !== "test" ? [] : allow.filter((r) => {
 if (bad.length) fail(`test-phase runs would be allowed into the real vault: ${bad.join(", ")}`)
 // an entry with no matcher, "" or "*" hooks every tool (Claude Code), so it counts for each
 const every = (e) => e.matcher === undefined || e.matcher === null || e.matcher === "" || e.matcher === "*"
-const hooked = (tool) => s.hooks.PreToolUse.filter((e) => every(e) || new RegExp(`^(${e.matcher})$`).test(tool)).flatMap((e) => e.hooks.map((x) => x.command))
+const hooksOf = (tool) => s.hooks.PreToolUse.filter((e) => every(e) || new RegExp(`^(${e.matcher})$`).test(tool)).flatMap((e) => e.hooks)
+const hooked = (tool) => hooksOf(tool).map((x) => x.command)
 const docs = hooked("mcp__docs__convert")
 const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 if (docs.length !== 1 || !new RegExp(`^node \\S+/docs-grant\\.mjs --by-caps --uploads /\\S+ --root ${esc(root)}( --exclude \\S+)? \\|\\| exit 2$`).test(docs[0]))
@@ -167,19 +205,42 @@ if (fs.existsSync(capsjs)) {
 if (!fs.existsSync(layerjs)) fail(`${layerjs} is missing: this naila image is older than the chart (it has no CLAUDE_STATIC_LAYER)`)
 const L = (await import(layerjs)).CLAUDE_STATIC_LAYER
 const isStr = (x) => typeof x === "string" && x.length > 0
-if (!L || !Array.isArray(L.deny) || !L.deny.length || !L.deny.every(isStr) || !Array.isArray(L.hooks) || !L.hooks.length || !L.hooks.every((x) => x && isStr(x.matcher) && isStr(x.command)))
+const pin = (x) => (x.timeout === undefined || (Number.isFinite(x.timeout) && x.timeout > 0)) && (x.onFailure === undefined || isStr(x.onFailure))
+if (!L || !Array.isArray(L.deny) || !L.deny.length || !L.deny.every(isStr) || !Array.isArray(L.hooks) || !L.hooks.length || !L.hooks.every((x) => x && isStr(x.matcher) && isStr(x.command) && pin(x)))
   fail(`${layerjs} has no well-formed CLAUDE_STATIC_LAYER: this naila image is older than the chart`)
 floor.push(...L.deny)
+// a layer hook the settings miss means a chart older than the image (an older image fails the web-rules check before
+// this): say which hook, and what to do
+const older = "the chart is older than this image: deploy the chart that ships it (one promote)"
 for (const x of L.hooks) for (const t of x.matcher.split("|")) {
-  const c = hooked(t)
-  if (c.length !== 1 || !new RegExp(x.command).test(c[0])) fail(`${t} is not hooked by exactly one command matching /${x.command}/ (CLAUDE_STATIC_LAYER)`)
+  const hs = hooksOf(t)
+  if (hs.length !== 1 || !new RegExp(x.command).test(hs[0].command)) {
+    const flag = /--by-worker/.test(x.command) && !hs.some((h) => /web-guard\.mjs --by-worker/.test(h.command)) ? " web-guard.mjs lacks --by-worker:" : ""
+    fail(`${t} is not hooked by exactly one command matching /${x.command}/ (CLAUDE_STATIC_LAYER):${flag} ${older}`)
+  }
+  if (x.timeout !== undefined && hs[0].timeout !== x.timeout) fail(`${t}\x27s hook has timeout ${hs[0].timeout ?? "none"}, CLAUDE_STATIC_LAYER wants ${x.timeout} s: ${older}`)
+  if (x.onFailure !== undefined && hs[0].onFailure !== x.onFailure) fail(`${t}\x27s hook has onFailure ${hs[0].onFailure ?? "none"}, CLAUDE_STATIC_LAYER wants ${x.onFailure}: ${older}`)
 }
 const missing = [...new Set(floor.filter((r) => !deny.includes(r)))]
 if (missing.length) fail(`the runs\x27 settings do not deny the floor: ${missing.join(", ")}`)
 const extra = allow.filter((r) => !h.allow.includes(r) || !/^mcp__core__[a-z_]+$/.test(r))
 if (extra.length) fail(`the static allow holds more than the core tools: ${extra.join(", ")}`)
 const guard = `node /config/harness-write-guard.mjs --root ${root}/Naila/Workspace || exit 2`
-for (const t of ["Write", "Edit", "NotebookEdit"]) { const c = hooked(t); if (c.length !== 1 || c[0] !== guard) fail(`${t} does not go through the write guard rooted at ${root}/Naila/Workspace`) }
+// the write and web guards: a 30 s timeout well above the 15 s deadline of each guard, and a guard that fails (times out,
+// crashes, prints no verdict) blocks the call (onFailure "block"; without it Claude Code lets the call through)
+const blocks = (h) => h.timeout === 30 && h.onFailure === "block"
+// and nothing else on the hook object: async (run in the background, its verdict ignored), asyncRewake or if (run only when
+// a condition holds) would each let a call through unguarded
+const HOOK_KEYS = "command,onFailure,timeout,type"
+const exact = (t, h) => { const k = Object.keys(h).sort().join(","); if (k !== HOOK_KEYS) fail(`${t}\x27s hook has the keys ${k}: want exactly type, command, timeout and onFailure`) }
+for (const t of ["Write", "Edit", "MultiEdit", "NotebookEdit", "mcp__vault__write_inbox", "mcp__vault__append_daily", "mcp__vault__workers_write", "mcp__finance-notes__write_note", "mcp__finance-notes__edit_note"]) { const c = hooksOf(t); if (c.length !== 1 || c[0].command !== guard || !blocks(c[0])) fail(`${t} does not go through the write guard rooted at ${root}/Naila/Workspace (timeout 30, onFailure block)`); exact(t, c[0]) }
+const wguard = "node /config/web-guard.mjs --by-worker || exit 2"
+for (const t of ["WebFetch", "WebSearch"]) {
+  const c = hooksOf(t)
+  if (c.length !== 1 || c[0].command !== wguard) fail(`${t} is not hooked by exactly ${wguard}: web-guard.mjs lacks --by-worker`)
+  if (!blocks(c[0])) fail(`${t}\x27s web guard has no 30 s timeout with onFailure block`)
+  exact(t, c[0])
+}
 const rguard = "node /config/read-guard.mjs --by-origin || exit 2"
 for (const t of ["Read", "Glob", "Grep"]) { const c = hooked(t); if (c.length !== 1 || c[0] !== rguard) fail(`${t} does not go through the read guard narrowed to the run\x27s origin (read-guard.mjs --by-origin)`) }
 })().catch((e) => fail(e.message))' "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/harness-settings.json /naila/packages/harness/dist/capabilities.js /naila/packages/harness/dist/providers/claude-code/compile.js

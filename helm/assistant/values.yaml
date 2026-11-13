@@ -100,6 +100,13 @@ harness:
         ceiling: tools
         servers:
           - { name: ops, transport: http, url: "http://assistant-ops:8080/mcp", bearer: MCP_OPS_TOKEN }
+      # The web and nothing else (WebSearch and WebFetch, through web-guard.mjs --by-worker): no server, not even the core's.
+      # Not in workers[] above: no RC line, no direct line or channel of its own; only naila asks it. Its model is set here.
+      researcher:
+        instructions: harness-agent-researcher.md
+        brain: { provider: claude-subscription, model: sonnet }
+        ceiling: tools
+        servers: []
     summary:
       brain: { provider: claude-subscription, model: default }
 ops:

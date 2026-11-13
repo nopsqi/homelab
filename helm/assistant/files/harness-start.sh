@@ -32,21 +32,22 @@ if [ -n "${VAULT_EXCLUDE:-}" ] && ! grep -qF 'vault-mcp: VAULT_EXCLUDE supported
 NOTES_SERVER=/naila/packages/vault-mcp/dist/notes-server.js
 grep -qF 'vault-mcp: VAULT_WORKERS_WRITE supported' "$VAULT_SERVER" || die "$VAULT_SERVER doesn't support VAULT_WORKERS_WRITE: this naila image is older than the chart"
 grep -qF 'finance-notes: NOTES_READONLY supported' "$NOTES_SERVER" || die "$NOTES_SERVER doesn't support NOTES_READONLY: this naila image is older than the chart"
-for k in harness-CLAUDE.md harness-agent-finance-bookkeeper.md harness-settings.json harness-write-guard.mjs settings.json docs-grant.mjs web-guard.mjs; do
+for k in harness-CLAUDE.md harness-agent-finance-bookkeeper.md harness-agent-researcher.md harness-settings.json harness-write-guard.mjs settings.json docs-grant.mjs web-guard.mjs; do
   [ -f "/config/$k" ] || die "/config/$k is missing: this chart predates harness mode"
 done
 # The researcher (one promote ships it in the image and the chart together): the chart's write guard refuses every write in a
 # run without HARNESS_WEB_SLOTS, which only an image with the researcher sets, and its web guard carries naila's web-rules
-# block byte for byte. An older image would leave every write refused, quietly: fail the start instead (roll the chart back
-# with it). The image's rules (dist/floor/web-rules.js) must also be the chart's: the web guard's block, imported on its own,
-# has the same worker, marker, limits and texts and judges a few asks alike, and the write guard stops on the same marker.
+# block byte for byte. An older image would leave every write refused, quietly: fail the start instead (deploy the image that
+# ships with this chart, or revert the promote merge to roll both back). The image's rules (dist/floor/web-rules.js) must
+# also be the chart's: the web guard's block, imported on its own, has the same worker, marker, limits and texts and judges a
+# few asks alike, and the write guard stops on the same marker.
 WEB_RULES=/naila/packages/harness/dist/floor/web-rules.js
-[ -f "$WEB_RULES" ] || die "$WEB_RULES is missing: this naila image predates the researcher: roll the chart back with it"
+[ -f "$WEB_RULES" ] || die "$WEB_RULES is missing: this naila image predates the researcher: deploy the image that ships with this chart, or roll both back (revert the promote merge)"
 node -e '
 const fs = require("fs"), os = require("os"), path = require("path"), util = require("util")
 const [rules, adapter, guard, wguard] = process.argv.slice(1)
 const fail = (m) => { console.error(`harness-start: ${m}`); process.exit(2) }
-const old = "this naila image predates the researcher: roll the chart back with it"
+const old = "this naila image predates the researcher: deploy the image that ships with this chart, or roll both back (revert the promote merge)"
 const differ = "the chart\x27s web guard and the image\x27s web rules differ: ship them together"
 ;(async () => {
 const img = await import(rules)
@@ -59,7 +60,7 @@ fs.writeFileSync(f, `import { isIP } from "node:net"\n${src.slice(i + B.length, 
 let ours
 try { ours = await import(f) } finally { fs.rmSync(d, { recursive: true, force: true }) }
 for (const k of ["WEB_WORKER", "WEB_RESEARCHED_MARKER", "WEB_LIMITS", "WEB_TEXT"]) if (!util.isDeepStrictEqual(ours[k], img[k])) fail(`${k}: ${differ}`)
-for (const t of ["Rp 1.000", "123456", "BI rate"]) if (typeof img.carriesFigures !== "function" || ours.carriesFigures(t) !== img.carriesFigures(t)) fail(`carriesFigures(${JSON.stringify(t)}): ${differ}`)
+for (const t of ["Rp 1.000", "12 juta", "123456", "BI rate"]) if (typeof img.carriesFigures !== "function" || ours.carriesFigures(t) !== img.carriesFigures(t)) fail(`carriesFigures(${JSON.stringify(t)}): ${differ}`)
 const m = /^const RESEARCHED_MARKER = \x27([^\x27]+)\x27$/m.exec(fs.readFileSync(wguard, "utf8"))
 if (!m || m[1] !== img.WEB_RESEARCHED_MARKER) fail(`harness-write-guard.mjs stops on another marker than WEB_RESEARCHED_MARKER: ${differ}`)
 })().catch((e) => fail(`${e.message}: ${differ}`))' "$WEB_RULES" /naila/packages/harness/dist/providers/claude-code/adapter.js /config/web-guard.mjs /config/harness-write-guard.mjs
@@ -157,7 +158,8 @@ fs.writeFileSync(dst, JSON.stringify(s, null, 2))' /config/settings.json /config
 # propose_capability_change and the self_note tools; engine_info and undo_vault_change come per run, naila only); Write, Edit, MultiEdit, NotebookEdit and the vault and finance-notes servers' write tools go through the write guard rooted at this phase's workspace root (it refuses them all in a run marked researched);
 # Read, Glob and Grep through the read guard narrowed to the run's origin channel (--by-origin, Ruling 16); WebFetch and
 # WebSearch through the web guard deciding by worker (--by-worker), it and the write guard with a 30 s timeout and onFailure
-# block; for a layer hook that names a timeout or onFailure, the hook object carries exactly that. Phase 2: the image's
+# block, and each of those hook objects holds exactly type, command, timeout and onFailure (no async, asyncRewake or if); for
+# a layer hook that names a timeout or onFailure, the hook object carries exactly that. Phase 2: the image's
 # claude-code adapter states what these static settings must hold for every run (CLAUDE_STATIC_LAYER, compile.js): each of its
 # denies, and for each of its hooks every tool of the matcher hooked by exactly one command, matching the hook's regex. An image
 # without it (older than the chart) fails the start. Phase 3: when the image exports CORE_ALWAYS_TOOLS (capabilities.js),
@@ -227,12 +229,17 @@ const guard = `node /config/harness-write-guard.mjs --root ${root}/Naila/Workspa
 // the write and web guards: a 30 s timeout well above the 15 s deadline of each guard, and a guard that fails (times out,
 // crashes, prints no verdict) blocks the call (onFailure "block"; without it Claude Code lets the call through)
 const blocks = (h) => h.timeout === 30 && h.onFailure === "block"
-for (const t of ["Write", "Edit", "MultiEdit", "NotebookEdit", "mcp__vault__write_inbox", "mcp__vault__append_daily", "mcp__vault__workers_write", "mcp__finance-notes__write_note", "mcp__finance-notes__edit_note"]) { const c = hooksOf(t); if (c.length !== 1 || c[0].command !== guard || !blocks(c[0])) fail(`${t} does not go through the write guard rooted at ${root}/Naila/Workspace (timeout 30, onFailure block)`) }
+// and nothing else on the hook object: async (run in the background, its verdict ignored), asyncRewake or if (run only when
+// a condition holds) would each let a call through unguarded
+const HOOK_KEYS = "command,onFailure,timeout,type"
+const exact = (t, h) => { const k = Object.keys(h).sort().join(","); if (k !== HOOK_KEYS) fail(`${t}\x27s hook has the keys ${k}: want exactly type, command, timeout and onFailure`) }
+for (const t of ["Write", "Edit", "MultiEdit", "NotebookEdit", "mcp__vault__write_inbox", "mcp__vault__append_daily", "mcp__vault__workers_write", "mcp__finance-notes__write_note", "mcp__finance-notes__edit_note"]) { const c = hooksOf(t); if (c.length !== 1 || c[0].command !== guard || !blocks(c[0])) fail(`${t} does not go through the write guard rooted at ${root}/Naila/Workspace (timeout 30, onFailure block)`); exact(t, c[0]) }
 const wguard = "node /config/web-guard.mjs --by-worker || exit 2"
 for (const t of ["WebFetch", "WebSearch"]) {
   const c = hooksOf(t)
   if (c.length !== 1 || c[0].command !== wguard) fail(`${t} is not hooked by exactly ${wguard}: web-guard.mjs lacks --by-worker`)
   if (!blocks(c[0])) fail(`${t}\x27s web guard has no 30 s timeout with onFailure block`)
+  exact(t, c[0])
 }
 const rguard = "node /config/read-guard.mjs --by-origin || exit 2"
 for (const t of ["Read", "Glob", "Grep"]) { const c = hooked(t); if (c.length !== 1 || c[0] !== rguard) fail(`${t} does not go through the read guard narrowed to the run\x27s origin (read-guard.mjs --by-origin)`) }

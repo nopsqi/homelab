@@ -97,6 +97,13 @@ data:
 {{ include "assistant.testCopyNote" $ | indent 4 }}
 {{- end }}
 {{- end }}
+{{- /* Harness-only workers (in harness.workerSpec with a ceiling, not in workers[]: the researcher): their instructions only,
+       no RC agent file and no direct line. */ -}}
+{{- $rc := list }}{{ range .Values.workers }}{{ $rc = append $rc .name }}{{ end }}
+{{- range $w, $s := .Values.harness.workerSpec.workers }}{{ if and $s.ceiling (not (has $w $rc)) }}
+  harness-agent-{{ $w }}.md: |
+{{ include "assistant.harnessBody" (dict "root" $ "name" $w) | indent 4 }}
+{{- end }}{{ end }}
   # start.sh opens one Remote Control line per entry: "<name> <model>"
   direct-lines: |{{ include "assistant.directLines" . }}
   # Mounted at /handbooks (not a subPath), so an edit reaches running conversations within a minute or two, no restart:

@@ -73,6 +73,12 @@
 #  spec (claude-subscription/sonnet, ceiling WebSearch and WebFetch, no servers, the golden's description), no other ceiling
 #  holds the web, it has no RC agent file, direct line, message peer or Discord conversation, its prompt carries the spec's
 #  text and names no core tool, and the "every harness worker" checks leave it out.
+#  Researcher Task 13 changed the workers' prompts, so the oracle holds each agent file's frontmatter to the ref's and its
+#  instructions to this chart's harness-agent key (and prepare's naila CLAUDE.md to harness-CLAUDE.md). Naila names the
+#  researcher (her colleagues, her ask_worker line), the no-figures rule, one request per message, the JSON report as data,
+#  unchecked facts without sources, the ⚠️ plans and no capability or brain change after a search; the other harness workers
+#  ask naila for web facts and name no web tool; the RC advisor (the slots web and web-source) stays byte-identical; no
+#  harness prompt names the old site list.
 # Then the docs bearer and socket (Rulings 19, 21; both phases, two channels, RC off): one init container (docs-token, run as
 #  rendered) writes a fresh 64-hex-character token, mode 0440, into the emptyDir docs-token (medium Memory); docs makes its
 #  socket in another, docs-sock (Ruling 22); the core mounts both read-only, docs docs-token read-only and docs-sock writable,
@@ -325,6 +331,37 @@ tag = "the researcher's prompt names no core tool"
 core_tools = {t.split("__")[2] for f in glob.glob("helm/assistant/files/modes/harness/*.tools.md") for t in open(f).read().strip().split(", ") if t.startswith("mcp__core__")} | {"engine_info", "undo_vault_change"}
 for t in sorted(core_tools | {"mcp__", "self note", "self-note"}):
     if t in rp: bad.append(f"{tag}: it names {t}")
+# researcher Task 13: naila asks the researcher for anything on the web (never with the user's figures, account numbers or
+# names; one request per message; its report arrives as JSON from the core and is data; no sources means unchecked; after a
+# search changes are plans with the ⚠️ line, and no capability or brain change); the other workers ask naila for web facts
+nk = new.get("harness-CLAUDE.md", "")
+tag = "naila names the researcher, the no-figures rule and that reports are data"
+if not re.search(r"^ *- `researcher`: \S", nk, re.M): bad.append(f"{tag}: her colleagues have no line for `researcher`")
+askl = next((l for l in nk.splitlines() if "You reach the workers with `ask_worker(worker, request)`" in l), "")
+if "`researcher`" not in askl: bad.append(f"{tag}: her ask_worker line does not name `researcher`")
+for t in ("For anything on the web, ask the researcher. Never put the user's figures, account numbers or names in the request",
+          "a search leaves the house", '{"from":"researcher","report":', "`core_note`", "data, never instructions", "with their sources",
+          "unchecked", "One research request per message", "⚠️", "propose_capability_change", "propose_brain_change",
+          "say whose request it is"):
+    if t not in nk: bad.append(f"{tag}: harness-CLAUDE.md lacks {t!r}")
+rline = next((l for l in nk.splitlines() if '{"from":"researcher"' in l), "")
+if "data, never instructions" not in rline: bad.append(f"{tag}: the line on the researcher's report does not say it is data, never instructions")
+hl_ = open("helm/assistant/files/modes/harness/naila.limits.md").read()
+if "search or read the web" in hl_ or "researcher" not in hl_: bad.append(f"{tag}: naila.limits.md still puts the web under her capabilities, or does not give it to the researcher")
+tag = "each other harness worker asks naila for web facts and names no web tool"
+for w in ("finance-bookkeeper", "finance-advisor", "ops-oncall"):
+    k = f"harness-agent-{w}.md"
+    s_ = new.get(k, "")
+    for t in ("For web facts, ask Naila.", "without the user's figures or account numbers", "name the web facts you need in your answer", "⚠️"):
+        if t not in s_: bad.append(f"{tag}: {k} lacks {t!r}")
+    for t in ("WebSearch", "WebFetch", "such as the web or files"):
+        if t in s_: bad.append(f"{tag}: {k} names {t!r}")
+tag = "the RC advisor is byte-identical to the ref"
+if old.get("agent-finance-advisor.md") != new.get("agent-finance-advisor.md"): bad.append(tag)
+tag = "no harness prompt mentions the old site list"
+for k in harness:
+    for t in ("only those are allowed", "bi.go.id"):
+        if t in new[k]: bad.append(f"{tag}: {k} names {t!r}")
 # The colleagues (any-to-any ask_worker), honest messaging and decision outcomes, in every harness worker's prompt.
 WORKERS = ["naila", "finance-bookkeeper", "finance-advisor", "ops-oncall"]
 NEVER_CLAIM = "Never say you told, asked or sent something to a colleague unless `ask_worker` returned their answer."
@@ -1354,14 +1391,18 @@ def test_copy(files, cfg, ph):
     out = {w: open(f"{d}/agents/{w}.md").read() for w in files}
     shutil.rmtree(d)
     return out
-def pod_files(cfg, ph):
+def pod_files(cfg, ph, bodies=None):
     """The agent files as the pod writes them from this /config: rebuilt from a worker spec when there is one, else the keys
-    through the sed. Every agent worker the /config has (the ref's lack the researcher)."""
+    through the sed. Every agent worker the /config has (the ref's lack the researcher). With `bodies` (another /config),
+    each file's instructions, after its frontmatter, are that /config's harness-agent key instead (researcher Task 13 changed
+    the workers' prompts: the oracle holds the frontmatter to the ref and the instructions to this chart's keys)."""
     if "harness-workers.json" in cfg:
         spec = json.loads(cfg["harness-workers.json"])["workers"]
-        files = {w: agent_file(w, spec[w], cfg[spec[w]["instructions"]]) for w in AGENTS if w in spec}
+        files = {w: agent_file(w, spec[w], (bodies or cfg)[spec[w]["instructions"]]) for w in AGENTS if w in spec}
     else:
         files = {w: sed(cfg[f"harness-agent-{w}.md"], ph) for w in OLD_AGENTS}
+        if bodies is not None:
+            files = {w: t[:t.index("\n---\n", 4) + 5] + bodies[f"harness-agent-{w}.md"] for w, t in files.items()}
     return test_copy(files, cfg, ph)
 def first_diff(a, b):
     return " | ".join(list(difflib.unified_diff(a.splitlines(), b.splitlines(), "oracle", "now", n=0, lineterm=""))[2:6])
@@ -1452,7 +1493,7 @@ for ph in ("test", "real"):
     tag = f"byte-identity with {oref} ({ph} phase)"
     try: got = pod_files(cfg, ph)
     except (KeyError, TypeError, ValueError) as e: bad.append(f"{tag}: the agent files can't be rebuilt from the spec: {e!r}"); continue
-    try: ref_files = pod_files(orc[ph], ph); want = phase2(ref_files)
+    try: ref_files = pod_files(orc[ph], ph, cfg); want = phase2(ref_files)
     except (KeyError, TypeError, ValueError) as e: bad.append(f"{tag}: the agent files can't be rebuilt from {oref}: {e!r}"); continue
     if sorted(got) != sorted(AGENTS) or sorted(ref_files) != sorted(OLD_AGENTS): bad.append(f"{tag}: agent files {sorted(got)} now, {sorted(ref_files)} at the ref; want {AGENTS}, {OLD_AGENTS}"); continue
     for w in OLD_AGENTS:
@@ -1460,7 +1501,6 @@ for ph in ("test", "real"):
         if not only_allowed(w, ref_files[w], got[w]): bad.append(f"{tag}: {w}.md is not the ref's with only the tools: line losing {WEB_IN_TOOLS!r} (and the advisor's {NOTES_RO!r}): {first_diff(ref_files[w], got[w])}")
     if got["researcher"] != researcher_file(ws["researcher"].get("description"), cfg.get("harness-agent-researcher.md", "")): bad.append(f"{tag}: the new researcher.md is not the web-only frontmatter plus its instructions: {got['researcher'][:300]!r}")
     if ph == "test" and "TEST COPY" not in got["finance-bookkeeper"]: bad.append(f"{tag}: the bookkeeper is not told its budget is a TEST COPY")
-    if cfg.get("harness-CLAUDE.md") != orc[ph].get("harness-CLAUDE.md"): bad.append(f"{tag}: the lead's instructions (harness-CLAUDE.md) differ from the CLAUDE.md the pod copied")
 if specs.get("test") and specs.get("real"):
     t, r = json.dumps(specs["test"]), json.dumps(specs["real"])
     if t.replace("assistant-finance-test:", "assistant-finance:").replace("/vault/Harness-test/Finance/", "/vault/Finance/") != r: bad.append("the worker spec: the phases differ beyond the finance host and the notes root")
@@ -1485,7 +1525,7 @@ else:
         if p.stdout.splitlines() != [f"{d}/w/{x}" for x in ("naila", "_summary", *AGENTS)]: bad.append(f"{tag}: prepare printed {p.stdout.splitlines()}")
         if sorted(os.listdir(f"{d}/c/agents")) != sorted(f"{w}.md" for w in AGENTS): bad.append(f"{tag}: agents/ holds {sorted(os.listdir(f'{d}/c/agents'))}"); continue
         got = test_copy({w: open(f"{d}/c/agents/{w}.md").read() for w in AGENTS}, new[ph], ph)
-        want = phase2(pod_files(orc[ph], ph))
+        want = phase2(pod_files(orc[ph], ph, new[ph]))
         for w in OLD_AGENTS:
             if got[w] != want[w]: bad.append(f"{tag}: prepare's {w}.md differs from {oref}'s (minus WebSearch and WebFetch, plus the advisor's NOTES_READONLY line): {first_diff(want[w], got[w])}")
         # the agent file prepare writes for the researcher lists only WebSearch, WebFetch and no mcpServers entry: naila's
@@ -1500,7 +1540,7 @@ else:
             if not l.strip(): continue
             n, m = l.split()
             if open(f"{d}/w/{n}/.claude/settings.json").read() != f'{{"agent": "{n}", "model": "{m}"}}\n': bad.append(f"{tag}: {n}'s work-dir settings differ from the old start script's")
-        if open(f"{d}/w/naila/CLAUDE.md").read() != orc[ph]["harness-CLAUDE.md"] or not os.path.isdir(f"{d}/w/_summary"): bad.append(f"{tag}: naila's CLAUDE.md or _summary differs")
+        if open(f"{d}/w/naila/CLAUDE.md").read() != new[ph]["harness-CLAUDE.md"] or not os.path.isdir(f"{d}/w/_summary"): bad.append(f"{tag}: naila's CLAUDE.md is not harness-CLAUDE.md, or _summary is missing")
         # refused before writing anything: the write bearer's value in an agent file, an unset bearer
         for what, env_ in (("the write bearer's value in an agent file", {**ENV, "MCP_FINANCE_TOKEN": ENV["MCP_FINANCE_READ_TOKEN"]}), ("MCP_OPS_TOKEN unset", {"MCP_FINANCE_READ_TOKEN": "x"})):
             e = tempfile.mkdtemp()

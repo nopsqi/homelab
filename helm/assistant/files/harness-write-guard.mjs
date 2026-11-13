@@ -15,6 +15,8 @@
 // another name for a file outside). Anything else, a missing --root or worker included, is a deny; the hook command adds
 // `|| exit 2`, so a crash blocks too. Inside the workspace it decides nothing: the run's settings still have to allow the
 // write (files.write on), so this guard alone never opens a write.
+// Claude Code lets a call through when a hook times out (unless the settings say onFailure "block", which harness-start.sh
+// sets), so this hook also stops itself: if its input has not ended within DEADLINE_MS it refuses with exit 2.
 import { lstatSync, realpathSync, statSync } from 'node:fs'
 import { posix } from 'node:path'
 
@@ -29,6 +31,14 @@ const deny = (why) => {
   console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: why } }))
   process.exit(0)
 }
+/** The hook's own hard deadline, well inside the settings' hook timeout (30 s). Unref'd: it never keeps a decided hook alive. */
+const DEADLINE_MS = 15000
+const DEADLINE_TEXT = 'The write check took too long, so the write is refused.'
+setTimeout(() => {
+  console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: DEADLINE_TEXT } }))
+  console.error(DEADLINE_TEXT)
+  process.exit(2)
+}, DEADLINE_MS).unref()
 let input = ''
 for await (const chunk of process.stdin) input += chunk
 // no `..` or `.` segment, no backslash, no control character (NUL, newline, …)

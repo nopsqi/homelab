@@ -88,9 +88,10 @@ export TMPDIR="$tmp"   # the checks' own temp dirs (Python tempfile) go with it
 # the static settings deny all of it, whatever the switches. A change there changes this list.
 export FLOOR_DENY='["Bash","NotebookEdit","Agent","Task","Workflow","TaskStop","Monitor","CronCreate","CronDelete","CronList","ScheduleWakeup","RemoteTrigger","EnterWorktree","ExitWorktree","SendMessage","ListAgents","mcp__vault__workers_*","mcp__claude_ai_*","mcp__finance__add_transaction","mcp__finance__transfer","mcp__finance__update_transaction","mcp__finance__actual_write","mcp__finance-notes__write_note","mcp__finance-notes__edit_note","Read(//home/claude/.claude/.credentials.json)","Read(//home/claude/.claude/harness/**)","Read(//home/claude/.claude/agents/**)","Read(//home/claude/.claude/settings.json)","Read(//home/claude/.claude/.claude.json)","Read(//home/claude/.claude.json)","Read(//home/claude/.claude/projects/**/*.jsonl)","Read(//proc/**)","Read(//config/**)","Read(//naila/**)","Edit(//home/claude/.claude/.credentials.json)","Edit(//home/claude/.claude/harness/**)","Edit(//home/claude/.claude/agents/**)","Edit(//home/claude/.claude/settings.json)","Edit(//home/claude/.claude/.claude.json)","Edit(//home/claude/.claude.json)","Edit(//home/claude/.claude/projects/**/*.jsonl)","Edit(//proc/**)","Edit(//config/**)","Edit(//naila/**)","Write(//home/claude/.claude/.credentials.json)","Write(//home/claude/.claude/harness/**)","Write(//home/claude/.claude/agents/**)","Write(//home/claude/.claude/settings.json)","Write(//home/claude/.claude/.claude.json)","Write(//home/claude/.claude.json)","Write(//home/claude/.claude/projects/**/*.jsonl)","Write(//proc/**)","Write(//config/**)","Write(//naila/**)","Edit(//home/claude/.claude/**)","Write(//home/claude/.claude/**)"]'
 # The claude-code adapter's static layer, verbatim from naila packages/harness/src/providers/claude-code/compile.ts
-# CLAUDE_STATIC_LAYER (up to naila 8346393; /run/provider-keys since cbbede6): the denies and the guard hooks (matcher, command regex source) harness-start's
+# CLAUDE_STATIC_LAYER (up to naila 8346393; /run/provider-keys since cbbede6; the researcher's web and write hooks, their 30 s
+# timeout and onFailure block, since the researcher branch): the denies and the guard hooks (matcher, command regex source, pins) harness-start's
 # settings check takes from the image. With NAILA_WORKTREE the built dist export must equal it. A change there changes this.
-export CLAUDE_STATIC_LAYER='{"deny":["Read(//run/docs-token/**)","Edit(//run/docs-token/**)","Write(//run/docs-token/**)","Read(//run/docs-sock/**)","Edit(//run/docs-sock/**)","Write(//run/docs-sock/**)","Read(//run/provider-keys/**)","Edit(//run/provider-keys/**)","Write(//run/provider-keys/**)"],"hooks":[{"matcher":"Read|Glob|Grep","command":"^node \\/config\\/read-guard\\.mjs --by-origin \\|\\| exit 2$"},{"matcher":"Write|Edit|NotebookEdit","command":"harness-write-guard\\.mjs --root \\S+\\/Naila\\/Workspace \\|\\| exit 2$"},{"matcher":"mcp__docs__convert","command":"docs-grant\\.mjs --by-caps "},{"matcher":"WebFetch|WebSearch","command":"web-guard\\.mjs$"}]}'
+export CLAUDE_STATIC_LAYER='{"deny":["Read(//run/docs-token/**)","Edit(//run/docs-token/**)","Write(//run/docs-token/**)","Read(//run/docs-sock/**)","Edit(//run/docs-sock/**)","Write(//run/docs-sock/**)","Read(//run/provider-keys/**)","Edit(//run/provider-keys/**)","Write(//run/provider-keys/**)"],"hooks":[{"matcher":"Read|Glob|Grep","command":"^node \\/config\\/read-guard\\.mjs --by-origin \\|\\| exit 2$"},{"matcher":"Write|Edit|MultiEdit|NotebookEdit|mcp__vault__write_inbox|mcp__vault__append_daily|mcp__vault__workers_write|mcp__finance-notes__write_note|mcp__finance-notes__edit_note","command":"harness-write-guard\\.mjs --root \\S+\\/Naila\\/Workspace \\|\\| exit 2$","timeout":30,"onFailure":"block"},{"matcher":"mcp__docs__convert","command":"docs-grant\\.mjs --by-caps "},{"matcher":"WebFetch|WebSearch","command":"^node \\/config\\/web-guard\\.mjs --by-worker \\|\\| exit 2$","timeout":30,"onFailure":"block"}]}'
 # The core tools every run has, verbatim from naila packages/harness/src/capabilities.ts CORE_ALWAYS_TOOLS (up to 8346393):
 # harness-start's settings check requires harness-settings.json's allow to be exactly these plus propose_plan and ask_worker
 # when the image exports them. With NAILA_WORKTREE the built dist export must equal it. A change there changes this.
@@ -870,6 +871,15 @@ for ph, r in (("test", test), ("real", real)):
     wroot = f"{val(ctr(r, 'harness'), 'VAULT_ROOT')}/Naila/Workspace"
     for tool in ("Write", "Edit", "NotebookEdit"):   # P18: the root on the command line
         if hooked(tool) != [f"node /config/harness-write-guard.mjs --root {wroot} || exit 2"]: bad.append(f"P18: {tag}: the {tool} hooks are {hooked(tool)}, want the write guard with --root {wroot}")
+    # researcher Task 11: WebFetch and WebSearch are hooked once, by the guard deciding by worker; the RC lines' entry (the guard
+    # with no flag, which refuses every call) is gone; the web and write hooks carry a 30 s timeout and onFailure block
+    for tool in ("WebFetch", "WebSearch"):
+        if hooked(tool) != ["node /config/web-guard.mjs --by-worker || exit 2"]: bad.append(f"researcher: {tag}: the merged settings hook {tool} with {hooked(tool)}, want the web guard once, by worker")
+    if any(h.get("command") == "node /config/web-guard.mjs" for e in pre for h in e["hooks"]): bad.append(f"researcher: {tag}: the RC entry (web-guard.mjs with no flag) is still in the harness settings")
+    hobj = lambda tool: [h for e in pre if e.get("matcher") in (None, "", "*") or re.fullmatch(f"(?:{e['matcher']})", tool) for h in e["hooks"]]
+    for tool in ("WebFetch", "WebSearch", "Write", "Edit", "MultiEdit", "NotebookEdit", "mcp__vault__write_inbox", "mcp__vault__append_daily", "mcp__vault__workers_write", "mcp__finance-notes__write_note", "mcp__finance-notes__edit_note"):
+        hs_ = hobj(tool)
+        if len(hs_) != 1 or hs_[0].get("timeout") != 30 or hs_[0].get("onFailure") != "block": bad.append(f"researcher: {tag}: the {tool} hook is {hs_}, want one with timeout 30 and onFailure block")
     # harness-start's own check, run as rendered: it passes these settings and fails each weakened copy
     data = {**r[("ConfigMap", "assistant-claude")]["data"], **r[("ConfigMap", "assistant-harness")]["data"]}
     ck = [x for x in re.finditer(r"^node -e '([^']*)' ([^\n]*)$", data["harness-start.sh"], re.M) if x.group(2).startswith('"$C/settings.json"')]
@@ -976,6 +986,30 @@ for ph, r in (("test", test), ("real", real)):
                      ("no web guard", lambda x: x["hooks"].__setitem__("PreToolUse", [e for e in x["hooks"]["PreToolUse"] if "web-guard" not in json.dumps(e)])),
                      ("the web guard on WebFetch only", lambda x: [e.__setitem__("matcher", "WebFetch") for e in x["hooks"]["PreToolUse"] if "web-guard" in json.dumps(e)])):
         if run_check(weaken(w_)).returncode == 0: bad.append(f"{tag2}: harness-start's check accepts {what}")
+    # researcher Task 11: the layer pins the web hook's command and the write hook's tools, both hooks' 30 s timeout and onFailure
+    # block; a chart that misses one fails the start, saying the chart is older than the image and what to do
+    OLDER = "the chart is older than this image: deploy the chart that ships it (one promote)"
+    def hooks_with(x, name): return [h for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if name in h["command"]]
+    for what, w_, says in (("the web guard without --by-worker (the RC entry)", lambda x: [h.__setitem__("command", "node /config/web-guard.mjs") for h in hooks_with(x, "web-guard")], ["web-guard.mjs lacks --by-worker", OLDER]),
+                           ("the RC web entry kept beside the by-worker one", lambda x: x["hooks"]["PreToolUse"].append({"matcher": "WebFetch|WebSearch", "hooks": [{"type": "command", "command": "node /config/web-guard.mjs"}]}), [OLDER]),
+                           ("the web hook without its timeout", lambda x: [h.pop("timeout", None) for h in hooks_with(x, "web-guard")], ["timeout none", OLDER]),
+                           ("the web hook on Claude Code's default timeout (600 s)", lambda x: [h.__setitem__("timeout", 600) for h in hooks_with(x, "web-guard")], ["timeout 600", OLDER]),
+                           ("the web hook without onFailure block", lambda x: [h.pop("onFailure", None) for h in hooks_with(x, "web-guard")], ["onFailure none", OLDER]),
+                           ("the write hook without its timeout", lambda x: [h.pop("timeout", None) for h in hooks_with(x, "write-guard")], ["timeout none", OLDER]),
+                           ("the write hook without onFailure block", lambda x: [h.pop("onFailure", None) for h in hooks_with(x, "write-guard")], ["onFailure none", OLDER]),
+                           ("the write hook in its pre-researcher form (Write|Edit|NotebookEdit)", lambda x: [e.__setitem__("matcher", "Write|Edit|NotebookEdit") for e in x["hooks"]["PreToolUse"] if "write-guard" in json.dumps(e)], ["MultiEdit is not hooked", OLDER]),
+                           ("the write hook without the servers' write tools", lambda x: [e.__setitem__("matcher", "^(Write|Edit|MultiEdit|NotebookEdit)$") for e in x["hooks"]["PreToolUse"] if "write-guard" in json.dumps(e)], ["mcp__vault__write_inbox is not hooked", OLDER])):
+        p = run_check(weaken(w_))
+        if p.returncode == 0: bad.append(f"{tag2}: harness-start's check accepts {what}")
+        elif not all(x_ in p.stderr for x_ in says): bad.append(f"{tag2}: with {what} the start fails without saying {says}: {p.stderr.strip()}")
+    # an image whose layer wants the old web command (naila 1cf05fb: web-guard\.mjs$, the write hook on Write|Edit|NotebookEdit)
+    # dies too, though in that direction the web-rules check (below) stops it first
+    old_layer = {**LAYER, "hooks": [LAYER["hooks"][0], {"matcher": "Write|Edit|NotebookEdit", "command": LAYER["hooks"][1]["command"]}, LAYER["hooks"][2], {"matcher": "WebFetch|WebSearch", "command": "web-guard\\.mjs$"}]}
+    if run_check(s, None, layer_file(f"export const CLAUDE_STATIC_LAYER = {json.dumps(old_layer)}\n")).returncode == 0: bad.append(f"{tag2}: an image whose static layer wants the old web command (web-guard\\.mjs$) passes the settings check")
+    for what, hooks_ in (("a layer hook with a malformed timeout", [{**LAYER["hooks"][0], "timeout": "30"}, *LAYER["hooks"][1:]]),
+                         ("a layer hook with an empty onFailure", [{**LAYER["hooks"][0], "onFailure": ""}, *LAYER["hooks"][1:]]),
+                         ("a layer pinning a timeout the read guard lacks", [{**LAYER["hooks"][0], "timeout": 10}, *LAYER["hooks"][1:]])):
+        if run_check(s, None, layer_file(f"export const CLAUDE_STATIC_LAYER = {json.dumps({**LAYER, 'hooks': hooks_})}\n")).returncode == 0: bad.append(f"{tag2}: harness-start's check accepts {what}")
     nw_ = os.environ.get("NAILA_WORKTREE", "")
     real_layer = f"{nw_}/packages/harness/dist/providers/claude-code/compile.js"
     if nw_ and os.path.isfile(real_layer):
@@ -1027,6 +1061,57 @@ for ph, r in (("test", test), ("real", real)):
     for cn, e in allenv(r):
         if e["name"] in ("NOTES_READONLY", "VAULT_WORKERS_WRITE"): bad.append(f"phase 2 ({ph}): {cn} env has {e['name']} (only the runs' servers get it)")
 if any(re.search(r"NOTES_READONLY\s*=|-e\s+NOTES_READONLY|export\b.*NOTES_READONLY", l) for l in sl if not l.lstrip().startswith("#")): bad.append("phase 2: harness-start.sh sets NOTES_READONLY (the core's executor must never get it)")
+
+# researcher Task 11: harness-start refuses, before it writes the runs' settings, an image without the researcher's web rules
+# (dist/floor/web-rules.js, its WEB_RESEARCHED_MARKER, an adapter that sets HARNESS_WEB_SLOTS: the chart's write guard would
+# refuse every write in that image's runs), and one whose rules differ from the chart's web guard block or write guard marker.
+# Run as rendered, on a fake image whose web-rules.js is naila's block (NAILA_WORKTREE, else the chart's own copy), and on
+# naila's built dist.
+tag = "researcher: harness-start checks the image's web rules"
+sl = start.splitlines()
+wr = [i for i, l in enumerate(sl) if l == "WEB_RULES=/naila/packages/harness/dist/floor/web-rules.js"]
+ce = [i for i, l in enumerate(sl) if l.startswith("})().catch((e) => fail(`${e.message}: ${differ}`))' \"$WEB_RULES\" ")]
+sw = [i for i, l in enumerate(sl) if l.startswith("# Settings:")]
+if len(wr) != 1 or len(ce) != 1 or len(sw) != 1 or not wr[0] < ce[0] < sw[0]: bad.append(f"{tag}: want one WEB_RULES= line, then its check, before the settings are written (got {len(wr)}, {len(ce)}, {len(sw)})")
+else:
+    cdata = {**test[("ConfigMap", "assistant-claude")]["data"], **test[("ConfigMap", "assistant-harness")]["data"]}
+    def between(src):
+        b_, e_ = "// web-rules:begin\n", "// web-rules:end\n"
+        return src[src.index(b_) + len(b_):src.index(e_)]
+    nw4 = os.environ.get("NAILA_WORKTREE", "")
+    rules_ts = f"{nw4}/packages/harness/src/floor/web-rules.ts"
+    BLOCK = between(open(rules_ts).read()) if nw4 and os.path.isfile(rules_ts) else between(cdata["web-guard.mjs"])
+    def image_check(block=BLOCK, adapter="const env = { HARNESS_WEB_SLOTS: dir }\n", wguard=None, dist=None):
+        d = tempfile.mkdtemp(); cfg = os.path.join(d, "config"); os.makedirs(cfg)
+        open(os.path.join(cfg, "web-guard.mjs"), "w").write(cdata["web-guard.mjs"])
+        open(os.path.join(cfg, "harness-write-guard.mjs"), "w").write(cdata["harness-write-guard.mjs"] if wguard is None else wguard)
+        if dist is None:
+            dist = os.path.join(d, "dist"); os.makedirs(os.path.join(dist, "floor")); os.makedirs(os.path.join(dist, "providers", "claude-code"))
+            open(os.path.join(dist, "package.json"), "w").write('{"type":"module"}')
+            if block is not None: open(os.path.join(dist, "floor", "web-rules.js"), "w").write("import { isIP } from 'node:net'\n" + block)
+            if adapter is not None: open(os.path.join(dist, "providers", "claude-code", "adapter.js"), "w").write(adapter)
+        snippet = "\n".join(sl[wr[0]:ce[0] + 1]).replace("/naila/packages/harness/dist/", dist + "/").replace("/config/", cfg + "/")
+        p = subprocess.run(["bash", "-c", 'set -eu; die() { echo "harness-start: $*" >&2; exit 2; }\n' + snippet], capture_output=True, text=True)
+        shutil.rmtree(d); return p
+    OLD_IMG, DIFFER = "this naila image predates the researcher: roll the chart back with it", "the chart's web guard and the image's web rules differ: ship them together"
+    if (p := image_check()).returncode != 0: bad.append(f"{tag}: refuses an image whose web rules are naila's block: {p.stderr.strip()}")
+    def tw(x_, a_, b_):   # one edit of a source, which must hold a_
+        assert a_ in x_, a_
+        return x_.replace(a_, b_, 1)
+    for what, kw, says in (("harness-start dies on an image without the researcher's web rules", {"block": None}, OLD_IMG),
+                           ("an image whose web rules lack WEB_RESEARCHED_MARKER", {"block": tw(BLOCK, "export const WEB_RESEARCHED_MARKER", "const WEB_RESEARCHED_MARKER")}, OLD_IMG),
+                           ("an image whose adapter sets no HARNESS_WEB_SLOTS", {"adapter": "const env = {}\n"}, OLD_IMG),
+                           ("an image without the claude-code adapter", {"adapter": None}, OLD_IMG),
+                           ("dies when the image's web texts differ from the chart's", {"block": tw(BLOCK, "'Only https addresses can be opened.'", "'Only https.'")}, DIFFER),
+                           ("an image whose web limits differ", {"block": tw(BLOCK, "searches: 20,", "searches: 21,")}, DIFFER),
+                           ("an image whose web worker differs", {"block": tw(BLOCK, "export const WEB_WORKER = 'researcher'", "export const WEB_WORKER = 'surfer'")}, DIFFER),
+                           ("an image whose figure guard differs", {"block": tw(BLOCK, "export function carriesFigures(text = '') {", "export function carriesFigures(text = '') { return false;")}, DIFFER),
+                           ("a chart write guard stopping on another marker", {"wguard": tw(cdata["harness-write-guard.mjs"], "const RESEARCHED_MARKER = 'researched'", "const RESEARCHED_MARKER = 'searched'")}, DIFFER)):
+        p = image_check(**kw)
+        if p.returncode != 2 or says not in p.stderr: bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {says!r}")
+    real_dist = f"{nw4}/packages/harness/dist"
+    if nw4 and os.path.isfile(f"{real_dist}/floor/web-rules.js"):
+        if (p := image_check(dist=real_dist)).returncode != 0: bad.append(f"{tag}: refuses naila's built dist ({real_dist}): {p.stderr.strip()}")
 
 # The worker spec replaces the sed loop, direct-lines and HARNESS_MODELS: harness-start refuses an image without the claude-code
 # adapter's prepare.js and a chart without the spec, runs prepare.js on /config/harness-workers.json (its exit status and an empty

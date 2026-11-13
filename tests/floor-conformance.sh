@@ -26,11 +26,14 @@
 #  - homelab-only checks: the web guard without --by-worker or HARNESS_CAPS, a missing slots folder, the researched marker
 #    is no slot, a resolver that never answers (refused after the 5 s race), and the hook's own 15 s deadline (stdin never
 #    closes: a deny with exit 2, since Claude Code lets a call through when a hook times out); the write guard refuses every
-#    write tool (and the vault and finance-notes servers' write tools) in a run marked researched or with no slots folder;
-#  - it checks that harness-start.sh and claude.yaml still render those hook commands, and that web-guard.mjs carries naila's
+#    write tool (and the vault and finance-notes servers' write tools) in a run marked researched or with no slots folder, and
+#    has the same 15 s deadline on its input;
+#  - it checks that harness-start.sh and claude.yaml still render those hook commands (the web and write hooks with their
+#    30 s timeout and onFailure block), and that web-guard.mjs carries naila's
 #    web-rules block byte for byte (the text between the web-rules:begin and web-rules:end lines, each once in both files, read
 #    from the source packages/harness/src/floor/web-rules.ts, so no build of naila is needed and a stale dist can't hide a drift).
-# Node only: no containers, no network. The two hang cases and the deadline check wait for real (about 5 s, 5 s and 15 s).
+# Node only: no containers, no network. The two hang cases and the deadline checks wait for real (about 5 s, 5 s and 15 s,
+# the two deadlines at once).
 set -euo pipefail
 naila="${1:?usage: tests/floor-conformance.sh <naila-dir>}"
 repo="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
@@ -110,7 +113,8 @@ for (const [file, text, s] of [
   ['harness-start.sh', start, 'command: "node /config/read-guard.mjs --by-origin || exit 2"'],
   ['harness-start.sh', start, 'command: `node ${grant} --by-caps --uploads ${uploads} --root ${root}${docsExclude} || exit 2`'],
   ['harness-start.sh', start, 'const docsExclude = excluded.length ? ` --exclude ${excluded.map((x) => `${root}/${x}`).join(",")}` : ""'],
-  ['harness-start.sh', start, `matcher: "${WRITE_MATCHER}", hooks: [{ type: "command", command: \`node /config/harness-write-guard.mjs --root \${root}/Naila/Workspace || exit 2\` }]`],
+  ['harness-start.sh', start, `matcher: "${WRITE_MATCHER}", hooks: [{ type: "command", command: \`node /config/harness-write-guard.mjs --root \${root}/Naila/Workspace || exit 2\`, timeout: 30, onFailure: "block" }]`],
+  ['harness-start.sh', start, 'matcher: "WebFetch|WebSearch", hooks: [{ type: "command", command: "node /config/web-guard.mjs --by-worker || exit 2", timeout: 30, onFailure: "block" }]'],
   ['claude.yaml', claudeYaml, '"matcher": "WebFetch|WebSearch", "hooks": [{ "type": "command", "command": "node /config/web-guard.mjs" }]'],
 ]) if (!text.includes(s)) bad(`${file} no longer renders ${s}`)
 
@@ -230,14 +234,14 @@ web('a lookup that never answers, on the host and both twins (refused at the 5 s
   (ms) => (ms >= 4500 && ms < 10000 ? [] : [`took ${ms} ms, want about 5000`]))
 // The deadline: Claude Code lets the call through when a hook times out, so the hook must refuse by itself at 15 s whatever
 // holds it up. Here its input never ends (stdin stays open): a deny, exit 2 (a block whatever the output), the reason on stderr.
-extra++
-await new Promise((resolve) => {
+// The write guard has the same deadline on its input; both wait at once.
+const deadline = (what, args, env, part) => new Promise((resolve) => {
+  extra++
   const t0 = Date.now()
-  const child = spawn(process.execPath, ['--import', stub, join(FILES, 'web-guard.mjs'), '--by-worker'],
-    { env: { PATH: process.env.PATH, ...R, HARNESS_WEB_SLOTS: slotsWith(), STUB_DNS: '{}' }, stdio: ['pipe', 'pipe', 'pipe'] })
+  const child = spawn(process.execPath, args, { env: { PATH: process.env.PATH, ...env }, stdio: ['pipe', 'pipe', 'pipe'] })
   let so = '', se = ''
   child.stdout.on('data', (x) => { so += x }); child.stderr.on('data', (x) => { se += x })
-  child.stdin.write(SEARCH.slice(0, 10))   // part of a call, and never the end of it
+  child.stdin.write(part)   // part of a call, and never the end of it
   const kill = setTimeout(() => child.kill('SIGKILL'), 25000)
   child.on('close', (code) => {
     clearTimeout(kill)
@@ -246,10 +250,14 @@ await new Promise((resolve) => {
     if (!/"permissionDecision":"deny"/.test(so)) why.push(`printed ${JSON.stringify(so)}`)
     if (!/took too long/.test(se)) why.push(`stderr ${JSON.stringify(se)}`)
     if (ms < 14500 || ms > 20000) why.push(`took ${ms} ms, want about 15000`)
-    if (why.length) bad(`web-guard.mjs's own deadline (its input never ends): ${why.join('; ')}`)
+    if (why.length) bad(`${what}'s own deadline (its input never ends): ${why.join('; ')}`)
     resolve()
   })
 })
+const writeDeadline = deadline('harness-write-guard.mjs', [join(FILES, 'harness-write-guard.mjs'), '--root', '/vault/Naila/Workspace'],
+  { HARNESS_WORKER: 'naila', HARNESS_WEB_SLOTS: slotsWith() }, '{"tool_name":"Wri')
+await deadline('web-guard.mjs', ['--import', stub, join(FILES, 'web-guard.mjs'), '--by-worker'], { ...R, HARNESS_WEB_SLOTS: slotsWith(), STUB_DNS: '{}' }, SEARCH.slice(0, 10))
+await writeDeadline
 
 // Homelab-only checks of the write guard: in a run marked researched every write tool is refused, the servers' write tools
 // too; a run with no slots folder is refused (fail closed); without the marker the servers' tools are the settings' to decide

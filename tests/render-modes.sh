@@ -172,8 +172,9 @@ def rcdiff(o, n):
         if o.get(k) != n.get(k): out.append(f"RC key {k} differs (or is missing on one side)")
     return out
 bad = rcdiff(old, new)
-# web-guard.mjs (plan 4 Task 13) and docs-grant.mjs (final fix I1) follow the run's capabilities, read-guard.mjs (Ruling 16) the
-# run's origin with --by-origin, and without them behave as at the ref (checked below); nothing else joins RC_ALLOWED
+# web-guard.mjs (researcher Task 10) opens the web to the researcher alone with --by-worker and refuses every call without it
+# (the RC lines lose the web), docs-grant.mjs (final fix I1) follows the run's capabilities, read-guard.mjs (Ruling 16) the
+# run's origin with --by-origin, and those two without flags behave as at the ref (checked below); nothing else joins RC_ALLOWED
 if RC_ALLOWED != {"agent-finance-bookkeeper.md", "agent-finance-advisor.md", "actual-handbook.md", "web-guard.mjs", "docs-grant.mjs", "read-guard.mjs"}:
     bad.append(f"the RC-identical check allows web-guard.mjs, docs-grant.mjs, read-guard.mjs and nothing new beyond RC_ALLOWED: it is {sorted(RC_ALLOWED)}")
 # the check itself: the retired key's removal alone passes, any other difference fails
@@ -469,22 +470,56 @@ def hook(src, ev, args=(), env=None):
     if p.returncode != 0: return f"exit {p.returncode}"
     try: return json.loads(p.stdout)["hookSpecificOutput"]["permissionDecision"] if p.stdout.strip() else "none"
     except ValueError: return f"bad output {p.stdout!r}"
-# web-guard: with HARNESS_CAPS, WebSearch iff web.search and WebFetch iff web.fetch (site rules unchanged); without it, as at the ref
-tag = "web-guard follows HARNESS_CAPS, and without it behaves as at the ref"
-wg, wg_old = new.get("web-guard.mjs", ""), old.get("web-guard.mjs", "")
+# web-guard: with --by-worker (the harness runs) only the researcher reads the web, the worker and its switches from the
+# run's env; without it (the RC lines' settings, and an older harness render) every call is refused. tests/floor-conformance.sh
+# runs the full case matrix; these run the rendered key, the resolver stubbed (no network): the stub answers only the
+# .example names below, which never resolve for real, so a stub that doesn't take effect fails the allow.
+tag = "web-guard decides by worker with --by-worker, and refuses everything without it"
+wg = new.get("web-guard.mjs", "")
+stub = os.path.join(gd, "dns-stub.mjs")
+open(stub, "w").write("""import dns from 'node:dns'
+import { appendFileSync } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
+const table = JSON.parse(process.env.STUB_DNS ?? '{}')
+dns.promises.lookup = async (name) => {
+  appendFileSync(process.env.STUB_DNS_LOG, `${name}\\n`)
+  if (!Array.isArray(table[name])) throw Object.assign(new Error('stub'), { code: 'ESERVFAIL' })
+  return table[name].map((address) => ({ address, family: 4 }))
+}
+dns.lookup = (...a) => process.nextTick(() => a.at(-1)(Object.assign(new Error('stub'), { code: 'ESTUB' })))
+syncBuiltinESMExports()
+""")
+wgf = os.path.join(gd, "web-guard.mjs"); open(wgf, "w").write(wg)
+DNS = {"site.example": ["93.184.215.14"], "www.site.example": ["93.184.215.14"]}
+def web(ev, args, env_):
+    slots, log = tempfile.mkdtemp(), os.path.join(tempfile.mkdtemp(), "log")
+    open(log, "w").close()
+    p = subprocess.run(["node", "--import", stub, wgf, *args], input=json.dumps(ev), capture_output=True, text=True,
+                       env={"PATH": os.environ["PATH"], "STUB_DNS": json.dumps(DNS), "STUB_DNS_LOG": log, "HARNESS_WEB_SLOTS": slots, **env_})
+    if p.returncode != 0: return f"exit {p.returncode}", [], []
+    try: got = json.loads(p.stdout)["hookSpecificOutput"]["permissionDecision"]
+    except ValueError: got = f"bad output {p.stdout!r}"
+    return got, sorted(open(log).read().split()), sorted(os.listdir(slots))
 S = {"tool_name": "WebSearch", "tool_input": {"query": "BI rate"}}
-F = lambda u: {"tool_name": "WebFetch", "tool_input": {"url": u}}
-for caps, ev, want_ in (("web.search", S, "allow"), ("web.search", F("https://www.bi.go.id/id/"), "deny"), ("web.fetch", F("https://www.bi.go.id/id/"), "allow"),
-                        ("web.fetch", S, "deny"), ("web.search,web.fetch", F("https://evil.example/x"), "deny"), ("web.search,web.fetch", F("https://bi.go.id/" + "a" * 300), "deny"),
-                        ("", S, "deny"), ("messaging.ask", F("https://www.bi.go.id/"), "deny")):
-    for agent in ("finance-advisor", None):   # HARNESS_CAPS decides, whatever the agent
-        e = {**ev, **({"agent_type": agent} if agent else {})}
-        got = hook(wg, e, env={"HARNESS_CAPS": caps})
-        if got != want_: bad.append(f"{tag}: HARNESS_CAPS={caps!r} {ev['tool_name']} {ev['tool_input']} agent {agent}: {got}, want {want_}")
-for agent in ("finance-advisor", "finance-bookkeeper", None):
-    for ev in (S, F("https://www.bi.go.id/id/"), F("http://www.bi.go.id/"), F("https://evil.example/"), F("https://kontan.co.id/" + "a" * 300), {"tool_name": "Read", "tool_input": {}}):
-        e = {**ev, **({"agent_type": agent} if agent else {})}
-        if hook(wg, e) != hook(wg_old, e): bad.append(f"{tag}: without HARNESS_CAPS, {ev['tool_name']} for {agent}: {hook(wg, e)}, at the ref {hook(wg_old, e)}")
+F = {"tool_name": "WebFetch", "tool_input": {"url": "https://site.example/id/statistik"}}
+RS = "web.search,web.open"
+for what, ev, env_, want_, looked, slots_ in (
+        ("the researcher searches", S, {"HARNESS_CAPS": RS, "HARNESS_WORKER": "researcher"}, "allow", [], ["search-1"]),
+        ("the researcher opens a public page (a stub that doesn't take effect fails this)", F, {"HARNESS_CAPS": RS, "HARNESS_WORKER": "researcher"}, "allow", ["site.example", "www.site.example"], ["open-1"]),
+        ("naila searches", S, {"HARNESS_CAPS": "vault.read,web.search", "HARNESS_WORKER": "naila"}, "deny", [], []),
+        ("naila opens a page", F, {"HARNESS_CAPS": "vault.read,web.open", "HARNESS_WORKER": "naila"}, "deny", [], []),
+        ("the advisor searches", S, {"HARNESS_CAPS": "budget.read,web.search,web.open", "HARNESS_WORKER": "finance-advisor"}, "deny", [], []),
+        ("the advisor opens a page", F, {"HARNESS_CAPS": "budget.read,web.search,web.open", "HARNESS_WORKER": "finance-advisor"}, "deny", [], []),
+        ("the researcher with no HARNESS_CAPS (an older image)", S, {"HARNESS_WORKER": "researcher"}, "deny", [], []),
+        ("the advisor subagent of the RC lines (agent_type, no harness env)", {**F, "agent_type": "finance-advisor"}, {}, "deny", [], [])):
+    for args in (["--by-worker"], []):
+        w_ = want_ if args else "deny"   # without --by-worker every call is refused, before any lookup or slot
+        got = web(ev, args, env_)
+        if got != (w_, looked if args and want_ == "allow" else [], slots_ if args and want_ == "allow" else []):
+            bad.append(f"{tag}: {what} {'with' if args else 'without'} --by-worker: {got}, want {w_}")
+# the RC settings (claude.yaml) still run the guard without the flag, so the RC lines' web stays closed
+rc_web = [h["command"] for e in json.loads(new["settings.json"])["hooks"]["PreToolUse"] if e.get("matcher") == "WebFetch|WebSearch" for h in e["hooks"]]
+if rc_web != ["node /config/web-guard.mjs"]: bad.append(f"{tag}: the RC settings hook WebFetch|WebSearch with {rc_web}, want node /config/web-guard.mjs (no flag)")
 # write-guard: only <root>/<HARNESS_WORKER>/, resolved; fails closed
 tag = "write-guard (run with --root) allows its own workspace and nothing else"
 wr = new.get("harness-write-guard.mjs", "")
@@ -497,7 +532,9 @@ else:
     open(os.path.join(ws, "naila", "old.md"), "w").write("x")
     os.link(os.path.join(v, "Naila", "Decisions.md"), os.path.join(ws, "naila", "hard.md"))
     W = lambda p, tool="Write": {"tool_name": tool, "tool_input": {"file_path": p, "content": "x"}}
-    R, N = ["--root", ws], {"HARNESS_WORKER": "naila"}
+    R, N = ["--root", ws], {"HARNESS_WORKER": "naila", "HARNESS_WEB_SLOTS": tempfile.mkdtemp()}
+    marked_ = tempfile.mkdtemp(); open(os.path.join(marked_, "researched"), "w").close()
+    M = {**N, "HARNESS_WEB_SLOTS": marked_}
     for what, ev, args, env_, want_ in (
         ("<ws>/x.md for its own worker", W(f"{ws}/naila/x.md"), R, N, "none"),
         ("<ws>/sub/new/x.md (folders not made yet)", W(f"{ws}/naila/sub/new/x.md"), R, N, "none"),
@@ -517,7 +554,15 @@ else:
         ("--root with no value", W(f"{ws}/naila/x.md"), ["--root"], N, "deny"),
         ("a call without HARNESS_WORKER", W(f"{ws}/naila/x.md"), R, {}, "deny"),
         ("a worker with no workspace", W(f"{ws}/ops-oncall/x.md"), R, {"HARNESS_WORKER": "ops-oncall"}, "deny"),
-        ("unreadable input", "{", R, N, "deny")):
+        ("unreadable input", "{", R, N, "deny"),
+        # researcher Task 10: a run marked researched writes nothing directly; a run with no slots folder neither (fail closed)
+        ("<ws>/x.md in a run marked researched", W(f"{ws}/naila/x.md"), R, M, "deny"),
+        ("<ws>/x.md with no HARNESS_WEB_SLOTS", W(f"{ws}/naila/x.md"), R, {"HARNESS_WORKER": "naila"}, "deny"),
+        ("the vault server's write_inbox, no marker (the settings decide)", {"tool_name": "mcp__vault__write_inbox", "tool_input": {"text": "x"}}, R, N, "none"),
+        ("the vault server's write_inbox in a run marked researched", {"tool_name": "mcp__vault__write_inbox", "tool_input": {"text": "x"}}, R, M, "deny"),
+        ("the vault server's append_daily in a run marked researched", {"tool_name": "mcp__vault__append_daily", "tool_input": {"text": "x"}}, R, M, "deny"),
+        ("the finance-notes server's write_note in a run marked researched", {"tool_name": "mcp__finance-notes__write_note", "tool_input": {"path": "x"}}, R, M, "deny"),
+        ("the finance-notes server's edit_note, no slots folder", {"tool_name": "mcp__finance-notes__edit_note", "tool_input": {"path": "x"}}, R, {"HARNESS_WORKER": "naila"}, "deny")):
         got = hook(wr, ev, args, env_)
         if got != want_: bad.append(f"{tag}: {what}: {got}, want {want_}")
 # docs-grant (final fix I1): with --by-caps it follows HARNESS_CAPS/HARNESS_WORKER under --uploads and --root, and opens only

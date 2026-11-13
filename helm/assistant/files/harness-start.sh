@@ -115,13 +115,13 @@ if (pre.some(every)) { console.error("harness-start: settings.json has a PreTool
 s.hooks.PreToolUse = pre.filter((e) => !/docs|Write|Edit|Read|Glob|Grep/.test(e.matcher))
 s.hooks.PreToolUse.push({ matcher: "Read|Glob|Grep", hooks: [{ type: "command", command: "node /config/read-guard.mjs --by-origin || exit 2" }] })
 s.hooks.PreToolUse.push({ matcher: "mcp__docs__convert", hooks: [{ type: "command", command: `node ${grant} --by-caps --uploads ${uploads} --root ${root}${docsExclude} || exit 2` }] })
-s.hooks.PreToolUse.push({ matcher: "Write|Edit|NotebookEdit", hooks: [{ type: "command", command: `node /config/harness-write-guard.mjs --root ${root}/Naila/Workspace || exit 2` }] })
+s.hooks.PreToolUse.push({ matcher: "^(Write|Edit|MultiEdit|NotebookEdit|mcp__vault__write_inbox|mcp__vault__append_daily|mcp__vault__workers_write|mcp__finance-notes__.*)$", hooks: [{ type: "command", command: `node /config/harness-write-guard.mjs --root ${root}/Naila/Workspace || exit 2` }] })
 fs.writeFileSync(dst, JSON.stringify(s, null, 2))' /config/settings.json /config/harness-settings.json "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/docs-grant.mjs "$C/uploads" "${VAULT_EXCLUDE:-}"
 # The check, failing startup: no test-phase rule reaches the real vault; docs conversion follows the run's switches under this
 # phase's roots (docs-grant.mjs --by-caps --root VAULT_ROOT); the deny holds the whole static floor (harness-settings.json, Agent and Bash among it) and, when the image has the capability
 # registry, the image's own FLOOR_DENY (a chart older than the image's floor fails closed); the allow holds nothing beyond the
 # static core tools (harness-settings.json's allow, mcp__core__ tools only: propose_plan, ask_worker, decision_status,
-# propose_capability_change and the self_note tools; engine_info and undo_vault_change come per run, naila only); Write and Edit go through the write guard rooted at this phase's workspace root;
+# propose_capability_change and the self_note tools; engine_info and undo_vault_change come per run, naila only); Write, Edit, MultiEdit, NotebookEdit and the vault and finance-notes servers' write tools go through the write guard rooted at this phase's workspace root (it refuses them all in a run marked researched);
 # Read, Glob and Grep through the read guard narrowed to the run's origin channel (--by-origin, Ruling 16). Phase 2: the image's
 # claude-code adapter states what these static settings must hold for every run (CLAUDE_STATIC_LAYER, compile.js): each of its
 # denies, and for each of its hooks every tool of the matcher hooked by exactly one command, matching the hook's regex. An image
@@ -179,7 +179,7 @@ if (missing.length) fail(`the runs\x27 settings do not deny the floor: ${missing
 const extra = allow.filter((r) => !h.allow.includes(r) || !/^mcp__core__[a-z_]+$/.test(r))
 if (extra.length) fail(`the static allow holds more than the core tools: ${extra.join(", ")}`)
 const guard = `node /config/harness-write-guard.mjs --root ${root}/Naila/Workspace || exit 2`
-for (const t of ["Write", "Edit", "NotebookEdit"]) { const c = hooked(t); if (c.length !== 1 || c[0] !== guard) fail(`${t} does not go through the write guard rooted at ${root}/Naila/Workspace`) }
+for (const t of ["Write", "Edit", "MultiEdit", "NotebookEdit", "mcp__vault__write_inbox", "mcp__vault__append_daily", "mcp__vault__workers_write", "mcp__finance-notes__write_note", "mcp__finance-notes__edit_note"]) { const c = hooked(t); if (c.length !== 1 || c[0] !== guard) fail(`${t} does not go through the write guard rooted at ${root}/Naila/Workspace`) }
 const rguard = "node /config/read-guard.mjs --by-origin || exit 2"
 for (const t of ["Read", "Glob", "Grep"]) { const c = hooked(t); if (c.length !== 1 || c[0] !== rguard) fail(`${t} does not go through the read guard narrowed to the run\x27s origin (read-guard.mjs --by-origin)`) }
 })().catch((e) => fail(e.message))' "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/harness-settings.json /naila/packages/harness/dist/capabilities.js /naila/packages/harness/dist/providers/claude-code/compile.js

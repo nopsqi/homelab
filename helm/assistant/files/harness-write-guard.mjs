@@ -1,4 +1,13 @@
-// PreToolUse hook for Write and Edit in the harness runs (files.write); NotebookEdit (floor-denied) is always refused. A run may write only inside its own workspace,
+// PreToolUse hook for the harness runs' writes: Write and Edit (files.write), MultiEdit and NotebookEdit (always refused), and
+// the vault and finance-notes servers' write tools (mcp__vault__write_inbox, mcp__vault__append_daily,
+// mcp__vault__workers_write, mcp__finance-notes__*).
+// Researched runs first: once a researcher report came back in a run's chain, the core puts an empty file named
+// `researched` (naila's WEB_RESEARCHED_MARKER) in the run's own web slots folder HARNESS_WEB_SLOTS, and from then on every
+// one of these tools is refused (web text may have shaped the call). The core sets HARNESS_WEB_SLOTS beside HARNESS_WORKER
+// and HARNESS_CAPS for every tools run, and this hook serves only those (it is in the harness settings alone), so a run with
+// no HARNESS_WORKER, or with one but no HARNESS_WEB_SLOTS naming a folder, is refused too (fail closed). With no marker,
+// the servers' tools are left to the run's settings (no decision here).
+// Write and Edit may then write only inside the run's own workspace,
 // <root>/<worker>/, where root (<VAULT_ROOT>/Naila/Workspace) comes from --root on the hook's command line, rendered by
 // harness-start.sh, never from the run's env (P18), and the worker from HARNESS_WORKER, which the core sets per run.
 // The path is resolved first: no `..`, the real path of its nearest existing ancestor (so a link can't lead out), the
@@ -8,6 +17,13 @@
 // write (files.write on), so this guard alone never opens a write.
 import { lstatSync, realpathSync, statSync } from 'node:fs'
 import { posix } from 'node:path'
+
+/** naila's WEB_RESEARCHED_MARKER (packages/harness/src/floor/web-rules.ts). */
+const RESEARCHED_MARKER = 'researched'
+const RESEARCHED_TEXT = "A web search happened in this message, so nothing can be written in it: file a plan, or ask again in a message of its own."
+/** The tools the marker stops. */
+const MARKED = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'mcp__vault__write_inbox', 'mcp__vault__append_daily', 'mcp__vault__workers_write'])
+const marked = (t) => typeof t === 'string' && (MARKED.has(t) || t.startsWith('mcp__finance-notes__'))
 
 const deny = (why) => {
   console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: why } }))
@@ -25,7 +41,14 @@ try {
   if (!/^[a-z][a-z0-9-]*$/.test(w)) deny('This run has no worker, so it has no workspace to write in.')
   let e = {}
   try { e = JSON.parse(input) } catch { deny('Unreadable tool call.') }
-  if (e.tool_name !== 'Write' && e.tool_name !== 'Edit') deny('Not a write tool.')
+  const t = e?.tool_name
+  if (!marked(t)) deny('Not a write tool.')
+  const slots = process.env.HARNESS_WEB_SLOTS
+  if (!plain(slots)) deny("This run has no web slots folder (HARNESS_WEB_SLOTS), so nothing may be written.")
+  if (!statSync(slots).isDirectory()) deny("This run's web slots folder is missing, so nothing may be written.")
+  try { lstatSync(posix.join(slots, RESEARCHED_MARKER)); deny(RESEARCHED_TEXT) } catch (x) { if (x?.code !== 'ENOENT') throw x }
+  if (t.startsWith('mcp__')) process.exit(0)   // a server's write tool, no marker: the run's settings decide
+  if (t !== 'Write' && t !== 'Edit') deny('Not a write tool.')
   const p = e.tool_input?.file_path
   const where = `${rootArg.replace(/\/+$/, '')}/${w}/`
   if (!plain(p)) deny(`Write only with a plain absolute path (no ..) inside your workspace ${where}`)

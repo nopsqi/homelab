@@ -4,6 +4,12 @@
 {{- define "assistant.agentFiles" -}}
 {{- range $p, $_ := .Files.Glob "files/agents/*.md" }}{{ $.Files.Get $p }}{{ end }}
 {{- end }}
+{{- /* The RC lines' agent files only (workers[]): a harness-only worker's (the researcher's) edit must not restart them. The
+       harness pod's checksum keeps every agent file (assistant.agentFiles). */ -}}
+{{- define "assistant.rcAgentFiles" -}}
+{{- $rc := list }}{{ range .Values.workers }}{{ $rc = append $rc (printf "files/agents/%s.md" .name) }}{{ end }}
+{{- range $p, $_ := .Files.Glob "files/agents/*.md" }}{{ if has $p $rc }}{{ $.Files.Get $p }}{{ end }}{{ end }}
+{{- end }}
 {{- /* RC mode files only: the checksum below restarts the RC lines, and a harness-only edit must not. */ -}}
 {{- define "assistant.modeFiles" -}}
 {{- range $p, $_ := .Files.Glob "files/modes/rc/**" }}{{ $.Files.Get $p }}{{ end }}
@@ -151,7 +157,7 @@ spec:
   template:
     metadata:
       labels: { app: assistant-claude }
-      annotations: { checksum/config: {{ printf "%s%s" (.Files.Get "files/CLAUDE.md") (print (include "assistant.agentFiles" .) (include "assistant.modeFiles" .) (toJson .Values.workers) (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/message-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/naila-trace.mjs") (.Files.Get "files/start.sh") (.Files.Get "files/naila-test.sh") .Values.finance.testBudget) | sha256sum | trunc 12 | quote }} }
+      annotations: { checksum/config: {{ printf "%s%s" (.Files.Get "files/CLAUDE.md") (print (include "assistant.rcAgentFiles" .) (include "assistant.modeFiles" .) (toJson .Values.workers) (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/message-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/naila-trace.mjs") (.Files.Get "files/start.sh") (.Files.Get "files/naila-test.sh") .Values.finance.testBudget) | sha256sum | trunc 12 | quote }} }
     spec:
       automountServiceAccountToken: false
       shareProcessNamespace: true   # the pause container becomes PID 1 and reaps exited processes (claude doesn't)

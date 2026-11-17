@@ -2,9 +2,9 @@
 {{- define "assistant.harnessModeFiles" -}}
 {{- range $p, $_ := .Files.Glob "files/modes/harness/**" }}{{ $.Files.Get $p }}{{ end }}
 {{- end }}
-{{- /* The roles config (harness.roleSpec; naila packages/harness/src/workers-spec.ts, ROLES_SPEC_VERSION 2) as
-       harness-workers.json for harness.phase: {"version":2,"roles":[…],"retired":[…],"summary":…}, the roles in values
-       order. One source per value: a role's model is its workers[].model, its description its files/agents/<id>.md
+{{- /* The roles config (harness.roleSpec; naila packages/harness/src/workers-spec.ts, ROLES_SPEC_VERSION 3) as
+       harness-workers.json for harness.phase: {"version":3,"roles":[…],"retired":[…],"summary":…}, the roles in values
+       order, each role's `paths` (its path grants) when it has them. One source per value: a role's model is its workers[].model, its description its files/agents/<id>.md
        frontmatter's, its ceiling files/modes/harness/<id>.<ceiling>.md split on ", ". The markers __FINANCE_HOST__ and
        __VAULT_ROOT__ resolve to this phase's finance server and vault root (Helm renders no values, so a template local
        can't be written into them). Fails the render on what the core would refuse at start: a duplicate id, no lead or two,
@@ -45,6 +45,7 @@
 {{- end }}
 {{- $x := dict "id" $w "display" $s.display "seed" ($s.seed | default list) "instructions" $s.instructions "brain" $brain "servers" ($s.servers | default list) }}
 {{- if $s.lead }}{{ $_ := set $x "lead" true }}{{ end }}
+{{- if hasKey $s "paths" }}{{ $_ := set $x "paths" $s.paths }}{{ end }}
 {{- if $s.ceiling }}
 {{- $fm := regexFind "(?s)\\A---\\n.*?\\n---\\n" ($.Files.Get (printf "files/agents/%s.md" $w)) }}
 {{- $d := regexFind "(?m)^description: .*$" $fm | trimPrefix "description: " }}
@@ -58,7 +59,7 @@
 {{- end }}
 {{- $roles = append $roles $x }}
 {{- end }}
-{{- $json := printf "{\"version\":2,\"roles\":%s,\"retired\":%s,\"summary\":%s}" (toJson $roles) (toJson $retired) (toJson $h.roleSpec.summary) | replace "__FINANCE_HOST__" $finance | replace "__VAULT_ROOT__" $vaultRoot }}
+{{- $json := printf "{\"version\":3,\"roles\":%s,\"retired\":%s,\"summary\":%s}" (toJson $roles) (toJson $retired) (toJson $h.roleSpec.summary) | replace "__FINANCE_HOST__" $finance | replace "__VAULT_ROOT__" $vaultRoot }}
 {{- with regexFind "__[A-Z_]+__" $json }}{{ fail (printf "harness.roleSpec: the marker %s is not resolved" .) }}{{ end }}
 {{- $json }}
 {{- end }}
@@ -87,12 +88,16 @@
 {{- if has (toString $c.secretKey) $keys }}{{ fail (printf "%s.secretKey %s is another channel's: each channel needs its own" $at (toString $c.secretKey)) }}{{ end }}
 {{- $keys = append $keys (toString $c.secretKey) }}
 {{- if not (has $c.settle (list "approve" "reject" "none")) }}{{ fail (printf "%s.settle must be approve, reject or none, got %q" $at (toString $c.settle)) }}{{ end }}
-{{- /* The core's HARNESS_TEST is never set in this pod, so the core refuses test+approve in either phase. */ -}}
-{{- if and (eq $name "test") (eq $c.settle "approve") }}{{ fail (printf "%s: the test channel may not approve: the pod's core is never a test instance" $at) }}{{ end }}
+{{- /* kind (pure-core phase 2): owner or test, required (the core refuses a channel without it). The name test is reserved for
+       a test channel (the live checks'). The core's HARNESS_TEST is never set in this pod, so the core refuses a test channel
+       that approves, in either phase, whatever its name. */ -}}
+{{- if not (has (toString $c.kind) (list "owner" "test")) }}{{ fail (printf "%s.kind must be owner or test" $at) }}{{ end }}
+{{- if and (eq $name "test") (ne (toString $c.kind) "test") }}{{ fail (printf "%s.kind must be test: the name test is the live checks' channel" $at) }}{{ end }}
+{{- if and (eq (toString $c.kind) "test") (eq $c.settle "approve") }}{{ fail (printf "%s: a test channel may not approve: the pod's core is never a test instance" $at) }}{{ end }}
 {{- $label := toString ($c.label | default "") }}
 {{- /* Go's \p{C} lacks Cn (unassigned code points), unlike the core's JS /\p{C}/u: such a label passes here and the core refuses it. */ -}}
 {{- if or (not (regexMatch "^[^\\p{C}\\p{Zl}\\p{Zp}]{1,40}$" $label)) (eq (trim $label) "") }}{{ fail (printf "%s.label must be 1-40 printable characters on one line" $at) }}{{ end }}
-{{- $spec := dict "name" $name "label" $label "settle" $c.settle }}
+{{- $spec := dict "name" $name "label" $label "kind" (toString $c.kind) "settle" $c.settle }}
 {{- if hasKey $c "retainMs" }}
 {{- $r := $c.retainMs }}
 {{- if not (and (or (kindIs "float64" $r) (kindIs "int64" $r) (kindIs "int" $r)) (gt (float64 $r) 0.0) (le (float64 $r) 9007199254740991.0) (eq (float64 $r) (float64 (int64 $r)))) }}{{ fail (printf "%s.retainMs must be a positive whole number of milliseconds, at most 9007199254740991" $at) }}{{ end }}

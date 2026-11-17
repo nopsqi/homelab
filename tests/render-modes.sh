@@ -58,9 +58,10 @@
 #  --disallowedTools among the CLI flags it checks.
 # Then the core's run metrics: 3102 open to monitoring only, its own Service and ServiceMonitor (job assistant-harness-core),
 #  the login Service and ServiceMonitor as at <git-ref>, and the three core alerts, scoped by job, none naming Discord.
-# Then the worker spec (harness-workers.json in ConfigMap assistant-harness, both phases): pure core Task 9, it is the roles spec
-#  v2 (version 2; the roles naila, finance-bookkeeper, finance-advisor, ops-oncall, researcher in that order, naila alone the
-#  lead and first; retired []; each role's display and seed the chart's literals), the render fails on a duplicate id, two
+# Then the worker spec (harness-workers.json in ConfigMap assistant-harness, both phases): pure core Task 9 and phase 2 Task 11,
+#  it is the roles spec v3 (version 3; the roles naila, finance-bookkeeper, finance-advisor, ops-oncall, researcher in that
+#  order, naila alone the lead and first; retired []; each role's display and seed the chart's literals; paths
+#  [finance-documents] on the two finance roles alone; no role key beyond the spec's, quarantined never one), the render fails on a duplicate id, two
 #  leads or none, a lead not first and a retired active role, and harness-start dies on an image without ROLES_SPEC_VERSION 3;
 #  naila's own validator accepts it and every seed entry applies (naila's checkSeeds, from its built dist) when
 #  NAILA_WORKTREE points at a naila checkout (skipped with a notice otherwise), no __MARKER__ survives, each model is the
@@ -145,7 +146,7 @@ done
 # The second channel, `example`, is synthetic: no naila package is named so (packages/channels/example does not exist); the
 # checks hold only the template's rule for its container (its command, env and secrets), never that its gateway exists.
 helm template "$tmp/helm/assistant" -f "$tmp/helm/assistant/values.yaml" -f "$tmp/helm/assistant/values.prod.yaml" --set harness.phase=test --set claude.rcLines=true > "$tmp/old-harness.yaml"
-helm template helm/assistant "${P[@]}" --set-json 'harness.channels.example={"enabled":true,"label":"Example","settle":"reject","secretKey":"GATEWAY_EXAMPLE_SECRET","gateway":{"uid":1003,"env":{"EXAMPLE_CHAT":"-100123"},"secretEnv":{"EXAMPLE_TOKEN":"EXAMPLE_TOKEN"}}}' > "$tmp/two.yaml"
+helm template helm/assistant "${P[@]}" --set-json 'harness.channels.example={"enabled":true,"kind":"owner","label":"Example","settle":"reject","secretKey":"GATEWAY_EXAMPLE_SECRET","gateway":{"uid":1003,"env":{"EXAMPLE_CHAT":"-100123"},"secretEnv":{"EXAMPLE_TOKEN":"EXAMPLE_TOKEN"}}}' > "$tmp/two.yaml"
 # The harness checksum follows what harness-start.sh takes from the RC ConfigMap (settings.json, finance-test-note), not a
 # direct-lines-only edit (phase 2: the worker spec replaced it at the harness pod's start).
 cp -a helm/assistant "$tmp/s" && sed -i 's/"mcp__claude_ai_Gmail"/"mcp__claude_ai_GmailX"/' "$tmp/s/templates/claude.yaml"
@@ -171,11 +172,11 @@ def keys(path):
     sys.exit(f"FAIL: ConfigMap assistant-claude not found in {path}")
 
 old, new = keys(sys.argv[1]), keys(sys.argv[2])
-# The worker spec (harness-workers.json, ConfigMap assistant-harness): each worker's ceiling and servers come from it. A v2
-# spec (the roles config: an ordered list of roles) reads into the same {id: role} dict as a v1 one ({workers: {id: worker}}).
+# The worker spec (harness-workers.json, ConfigMap assistant-harness): each worker's ceiling and servers come from it. A v2 or
+# v3 spec (the roles config: an ordered list of roles) reads into the same {id: role} dict as a v1 one ({workers: {id: worker}}).
 import json
 def spec_roles(spec):
-    if spec.get("version") == 2: return {r["id"]: {k: v for k, v in r.items() if k != "id"} for r in spec["roles"]}
+    if spec.get("version") in (2, 3): return {r["id"]: {k: v for k, v in r.items() if k != "id"} for r in spec["roles"]}
     return spec["workers"]
 def spec_workers(path):
     for d in yaml.safe_load_all(open(path)):
@@ -1433,7 +1434,7 @@ if bad:
 print("harness pod: renders only when enabled; phases wired; write bearer only in the core env; RC render identical")
 PY
 
-python3 - "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/oracle-test.yaml" "$tmp/oracle-real.yaml" "$oref" <<'PY'
+python3 - "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/oracle-test.yaml" "$tmp/oracle-real.yaml" "$oref" "$tmp/old-harness.yaml" "$ref" <<'PY'
 import sys, yaml, json, re, os, subprocess, tempfile, shutil, difflib
 def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
 def config(r):
@@ -1446,15 +1447,18 @@ bad = []
 AGENTS = ["finance-bookkeeper", "finance-advisor", "ops-oncall", "researcher"]   # the roles config's order, minus the lead
 WORKERS = ["naila", *AGENTS]
 def spec_roles(spec):
-    """A worker spec as {id: role}: a v2 one (the roles config: an ordered list of roles) or a v1 one ({workers: {id: worker}},
-    as ORACLE_REF has it)."""
-    if spec.get("version") == 2: return {r["id"]: {k: v for k, v in r.items() if k != "id"} for r in spec["roles"]}
+    """A worker spec as {id: role}: a v2 or v3 one (the roles config: an ordered list of roles) or a v1 one ({workers: {id:
+    worker}}, as ORACLE_REF has it)."""
+    if spec.get("version") in (2, 3): return {r["id"]: {k: v for k, v in r.items() if k != "id"} for r in spec["roles"]}
     return spec["workers"]
 # pure core Task 9: each role's display and seed in the roles config, literally (today's seeds and display names)
 DISPLAY = {"naila": "Naila", "finance-bookkeeper": "Finance Bookkeeper", "finance-advisor": "Finance Advisor", "ops-oncall": "Ops Oncall", "researcher": "Researcher"}
 FIN_SEED = ["files.read", "messaging.ask", "budget.read", "budget.write-plans", "docs.convert"]
 SEED = {"naila": ["files.read", "messaging.ask", "vault.read", "vault.write", "docs.convert", "vault.organize"], "finance-bookkeeper": FIN_SEED,
         "finance-advisor": FIN_SEED, "ops-oncall": ["messaging.ask", "cluster.read"], "researcher": ["web.search", "web.open"]}
+# phase 2 Task 11: the path grants (roles spec v3 `paths`): the vault's Finance/ folder through files.read, for the two finance
+# roles alone (absent on every other role)
+PATHS = {"finance-bookkeeper": ["finance-documents"], "finance-advisor": ["finance-documents"]}
 # researcher Task 12: the researcher is new since ORACLE_REF (no RC line: its model is the spec's, its description its chart
 # agent file's); the three agents of the ref lose WebSearch and WebFetch from their ceilings (their tools: lines)
 OLD_AGENTS = AGENTS[:3]
@@ -1491,20 +1495,34 @@ def sed(text, ph):
         if ph == "test": line = line.replace("//assistant-finance:", "//assistant-finance-test:", 1).replace("/vault/Finance/", "/vault/Harness-test/Finance/")
         out.append(line)
     return "".join(out)
-def test_copy(files, cfg, ph):
-    """The files after harness-start's test-phase TEST COPY append, run as this render's harness-start.sh has it."""
+TEST_COPY_MARK = "# TEST COPY: every role with a finance server"
+def test_copy(files, cfg, ph, spec=None):
+    """The files after harness-start's test-phase TEST COPY append, run as this render's harness-start.sh has it: phase 2
+    Task 11's block (from its marker comment to its closing `done`, over /config/harness-workers.json: `spec`, else this
+    /config's), or, in a start script before it (ORACLE_REF's), the bookkeeper's one `if … fi` append."""
     sl = cfg.get("harness-start.sh", "").splitlines()
-    a = [i for i, l in enumerate(sl) if l.startswith('if [ "$HARNESS_PHASE" = test ] && ! grep -q \'TEST COPY\' "$C/agents/finance-bookkeeper.md"; then')]
-    b = [i for i, l in enumerate(sl) if l == "fi" and a and i > a[0]]
-    if len(a) != 1 or not b: raise ValueError("harness-start.sh has no TEST COPY append")
     d = tempfile.mkdtemp(); os.makedirs(f"{d}/agents")
     for w, t in files.items(): open(f"{d}/agents/{w}.md", "w").write(t)
     open(f"{d}/note", "w").write(cfg["finance-test-note"])
-    snippet = "\n".join(sl[a[0]:b[0] + 1]).replace("/config/finance-test-note", f"{d}/note")
-    p = subprocess.run(["bash", "-c", "set -eu\n" + snippet], env={"PATH": "/usr/bin:/bin", "C": d, "HARNESS_PHASE": ph}, capture_output=True, text=True)
-    if p.returncode != 0: raise ValueError(f"the TEST COPY append exits {p.returncode}: {p.stderr.strip()}")
+    m = [i for i, l in enumerate(sl) if l == TEST_COPY_MARK]
+    if m:
+        b = [i for i, l in enumerate(sl) if l == "done" and i > m[0]]
+        if len(m) != 1 or not b: raise ValueError(f"harness-start.sh has {len(m)} {TEST_COPY_MARK!r} lines, or no done after it")
+        open(f"{d}/spec.json", "w").write(cfg["harness-workers.json"] if spec is None else spec)
+        snippet = "\n".join(sl[m[0]:b[0] + 1]).replace("/config/harness-workers.json", f"{d}/spec.json")
+    else:
+        a = [i for i, l in enumerate(sl) if l.startswith('if [ "$HARNESS_PHASE" = test ] && ! grep -q \'TEST COPY\' "$C/agents/finance-bookkeeper.md"; then')]
+        b = [i for i, l in enumerate(sl) if l == "fi" and a and i > a[0]]
+        if len(a) != 1 or not b: raise ValueError("harness-start.sh has no TEST COPY append")
+        snippet = "\n".join(sl[a[0]:b[0] + 1])
+    snippet = snippet.replace("/config/finance-test-note", f"{d}/note")
+    if "/config/" in snippet: raise ValueError(f"the TEST COPY append reads another /config file: {snippet!r}")
+    p = subprocess.run(["bash", "-c", 'set -eu; die() { echo "harness-start: $*" >&2; exit 2; }\n' + snippet], env={"PATH": os.environ["PATH"], "C": d, "HARNESS_PHASE": ph}, capture_output=True, text=True)
+    if p.returncode != 0: shutil.rmtree(d); raise ValueError(f"the TEST COPY append exits {p.returncode}: {p.stderr.strip()}")
     out = {w: open(f"{d}/agents/{w}.md").read() for w in files}
+    extra = sorted(set(os.listdir(f"{d}/agents")) - {f"{w}.md" for w in files})
     shutil.rmtree(d)
+    if extra: raise ValueError(f"the TEST COPY append wrote {extra}")
     return out
 def pod_files(cfg, ph, bodies=None):
     """The agent files as the pod writes them from this /config: rebuilt from a worker spec when there is one, else the keys
@@ -1561,10 +1579,11 @@ for ph in ("test", "real"):
     try: spec = json.loads(raw)
     except ValueError as e: bad.append(f"{tag}: harness-workers.json is not JSON: {e}"); continue
     specs[ph] = spec
-    # pure core Task 9: harness-workers.json is the roles spec v2: the five roles in order, naila alone the lead and first,
-    # nothing retired, each role's display and seed the literals above
-    t9 = f"harness-workers.json is the roles spec v2 ({ph} phase)"
-    if spec.get("version") != 2: bad.append(f"{t9}: version is {spec.get('version')!r}, want 2")
+    # pure core Task 9, phase 2 Task 11: harness-workers.json is the roles spec v3: the five roles in order, naila alone the
+    # lead and first, nothing retired, each role's display and seed the literals above, paths [finance-documents] on the two
+    # finance roles and on no other, and no role key beyond the spec's (quarantine is derived, never a key)
+    t9 = f"harness-workers.json is the roles spec v3 ({ph} phase)"
+    if spec.get("version") != 3: bad.append(f"{t9}: version is {spec.get('version')!r}, want 3")
     if sorted(spec) != ["retired", "roles", "summary", "version"]: bad.append(f"{t9}: its keys are {sorted(spec)}")
     roles_ = spec.get("roles") if isinstance(spec.get("roles"), list) else []
     if [r.get("id") for r in roles_] != WORKERS: bad.append(f"{t9}: the roles are {[r.get('id') for r in roles_]}, want {WORKERS} in that order"); continue
@@ -1573,6 +1592,9 @@ for ph in ("test", "real"):
     for r in roles_:
         if r.get("display") != {"name": DISPLAY[r["id"]], "avatar": r["id"]}: bad.append(f"{t9}: {r['id']}'s display is {r.get('display')!r}, want {DISPLAY[r['id']]!r} with avatar {r['id']}")
         if r.get("seed") != SEED[r["id"]]: bad.append(f"{t9}: {r['id']}'s seed is {r.get('seed')!r}, want {SEED[r['id']]!r}")
+        if r.get("paths") != PATHS.get(r["id"]): bad.append(f"{t9}: {r['id']}'s paths are {r.get('paths')!r}, want {PATHS.get(r['id'])!r}")
+        want_keys = {"id", "display", "seed", "instructions", "brain", "servers"} | ({"lead"} if r["id"] == "naila" else {"description", "ceiling"}) | ({"paths"} if r["id"] in PATHS else set())
+        if set(r) != want_keys: bad.append(f"{t9}: {r['id']}'s keys are {sorted(r)}, want {sorted(want_keys)}")
     ws = spec_roles(spec)
     if spec.get("summary") != {"brain": {"provider": "claude-subscription", "model": "default"}}: bad.append(f"{tag}: summary is {spec.get('summary')!r}")
     # one source for the models: the chart's per-worker model, as the RC lines' direct-lines has it; naila's is default
@@ -1630,6 +1652,64 @@ if specs.get("test") and specs.get("real"):
     t, r = json.dumps(specs["test"]), json.dumps(specs["real"])
     if t.replace("assistant-finance-test:", "assistant-finance:").replace("/vault/Harness-test/Finance/", "/vault/Finance/") != r: bad.append("the worker spec: the phases differ beyond the finance host and the notes root")
 
+# phase 2 Task 11: the test phase's TEST COPY note goes to every role with a server named finance (the bookkeeper today), by
+# the spec, and only once: harness-start's block (found by its marker comment) run on a temp agents dir. A second run adds
+# nothing, no other file changes, the real phase adds nothing, and the note follows the server, not the name: a renamed
+# bookkeeper gets it, and so would the advisor with a finance server; a listed role without an agent file fails the start.
+tag = "the test phase's TEST COPY note goes to every role with a finance server, and only once"
+if specs.get("test"):
+    cfg_t = new["test"]
+    base_files = {w: f"---\nname: {w}\n---\nbody of {w}\n" for w in AGENTS}
+    note_ = "\n" + cfg_t["finance-test-note"]
+    try:
+        once = test_copy(base_files, cfg_t, "test")
+        twice = test_copy(once, cfg_t, "test")
+        if once["finance-bookkeeper"] != base_files["finance-bookkeeper"] + note_ or once["finance-bookkeeper"].count("TEST COPY") != 1: bad.append(f"{tag}: the bookkeeper's file is {once['finance-bookkeeper'][-200:]!r} after one run")
+        for w in AGENTS:
+            if w != "finance-bookkeeper" and once[w] != base_files[w]: bad.append(f"{tag}: {w}.md changes")
+        if twice != once: bad.append(f"{tag}: a second run changes {[w for w in AGENTS if twice[w] != once[w]]}")
+        if test_copy(base_files, new["real"], "real") != base_files: bad.append(f"{tag}: the real phase changes an agent file")
+        sp = json.loads(cfg_t["harness-workers.json"])
+        ren = json.loads(json.dumps(sp)); [r.__setitem__("id", "ledger") for r in ren["roles"] if r["id"] == "finance-bookkeeper"]
+        bf = {("ledger" if w == "finance-bookkeeper" else w): t for w, t in base_files.items()}
+        got_ = test_copy(bf, cfg_t, "test", json.dumps(ren))
+        if got_["ledger"] != bf["ledger"] + note_ or any(got_[w] != bf[w] for w in bf if w != "ledger"): bad.append(f"{tag}: a bookkeeper renamed ledger is not told (or another file changes)")
+        two = json.loads(json.dumps(sp)); [r["servers"].append({"name": "finance", "transport": "http", "url": "http://x.example:8080/mcp"}) for r in two["roles"] if r["id"] == "finance-advisor"]
+        got_ = test_copy(base_files, cfg_t, "test", json.dumps(two))
+        if {w for w in AGENTS if got_[w] != base_files[w]} != {"finance-bookkeeper", "finance-advisor"} or got_["finance-advisor"] != base_files["finance-advisor"] + note_: bad.append(f"{tag}: with a finance server on the advisor too, the changed files are {[w for w in AGENTS if got_[w] != base_files[w]]}")
+        try:
+            test_copy({w: t for w, t in base_files.items() if w != "finance-bookkeeper"}, cfg_t, "test")
+            bad.append(f"{tag}: a role with a finance server but no agent file does not fail the start")
+        except ValueError as e:
+            if "no agent file" not in str(e): bad.append(f"{tag}: a role with a finance server but no agent file fails for another reason: {e}")
+    except (KeyError, ValueError) as e: bad.append(f"{tag}: {e}")
+    sl_ = cfg_t.get("harness-start.sh", "").splitlines()
+    if any("finance-bookkeeper" in l for l in sl_ if not l.lstrip().startswith("#")): bad.append(f"{tag}: harness-start.sh names finance-bookkeeper outside a comment")
+
+# phase 2 Task 11: harness-start makes the lead's work dir from the spec (its one role with lead: true), not a literal naila
+# dir, and dies naming the roles config when it has no lead (or two). Run as rendered.
+tag = "harness-start makes the lead's work dir from the spec"
+sl_ = new["test"].get("harness-start.sh", "").splitlines()
+lj = [i for i, l in enumerate(sl_) if l.startswith("LEAD=$(node -e '")]
+mk = [i for i, l in enumerate(sl_) if l == 'mkdir -p "$W/$LEAD" "$W/_summary" "$FINANCE_NOTES_ROOT"']
+if any(re.search(r'"\$W/naila"', l) for l in sl_ if not l.lstrip().startswith("#")): bad.append(f"{tag}: harness-start.sh still makes \"$W/naila\"")
+if len(lj) != 1 or len(mk) != 1 or not lj[0] < mk[0]: bad.append(f"{tag}: want one LEAD=$(node -e ...) and then one mkdir -p \"$W/$LEAD\" \"$W/_summary\" \"$FINANCE_NOTES_ROOT\" (got {len(lj)}, {len(mk)})")
+elif specs.get("test"):
+    def lead_dir(spec_json):
+        d = tempfile.mkdtemp(); open(f"{d}/spec.json", "w").write(spec_json)
+        snippet = "\n".join(sl_[lj[0]:mk[0] + 1]).replace("/config/harness-workers.json", f"{d}/spec.json")
+        p = subprocess.run(["bash", "-c", 'set -eu; die() { echo "harness-start: $*" >&2; exit 2; }\n' + snippet], env={"PATH": os.environ["PATH"], "W": f"{d}/w", "FINANCE_NOTES_ROOT": f"{d}/notes"}, capture_output=True, text=True)
+        made = sorted(os.listdir(f"{d}/w")) if os.path.isdir(f"{d}/w") else []
+        shutil.rmtree(d); return p, made
+    sp = json.loads(new["test"]["harness-workers.json"])
+    if (r_ := lead_dir(json.dumps(sp)))[0].returncode != 0 or r_[1] != ["_summary", "naila"]: bad.append(f"{tag}: the rendered spec makes {r_[1]} ({r_[0].stderr.strip()!r}), want _summary and naila")
+    ren = json.loads(json.dumps(sp)); ren["roles"][0]["id"] = "chief"
+    if (r_ := lead_dir(json.dumps(ren)))[0].returncode != 0 or r_[1] != ["_summary", "chief"]: bad.append(f"{tag}: a lead named chief makes {r_[1]} ({r_[0].stderr.strip()!r}), want _summary and chief")
+    for what, mut in (("no lead", lambda j: j["roles"][0].pop("lead")), ("two leads", lambda j: j["roles"][1].__setitem__("lead", True)), ("no roles", lambda j: j.pop("roles"))):
+        j = json.loads(json.dumps(sp)); mut(j)
+        p_, made = lead_dir(json.dumps(j))
+        if p_.returncode != 2 or "the roles config has no lead" not in p_.stderr or made: bad.append(f"{tag}: {what}: exit {p_.returncode} {p_.stderr.strip()!r}, made {made}; want 2 saying the roles config has no lead, nothing made")
+
 # pure core Task 9: the render fails on a duplicate id, two leads, a lead not first, and a retired active role, each with its
 # message (the core would refuse each at start: a crash-looping pod instead of a failed render)
 tag = "the render fails on a duplicate id, two leads, a lead not first, and a retired active role"
@@ -1668,7 +1748,7 @@ else:
         dist = f"{nw}/packages/harness/dist"
         seeds_js = ("const [d, f, bad] = process.argv.slice(1); const { loadWorkerSpecs, parseWorkerSpecs, ROLES_SPEC_VERSION } = await import(`${d}/workers-spec.js`); "
                     "const { checkSeeds } = await import(`${d}/capabilities.js`); const fs = await import('node:fs'); const path = await import('node:path'); "
-                    "if (ROLES_SPEC_VERSION !== 2) throw new Error(`ROLES_SPEC_VERSION ${ROLES_SPEC_VERSION}`); "
+                    "if (ROLES_SPEC_VERSION !== 3) throw new Error(`ROLES_SPEC_VERSION ${ROLES_SPEC_VERSION}`); "
                     "if (bad) { const j = JSON.parse(fs.readFileSync(f, 'utf8')); j.roles.find((r) => r.id === 'ops-oncall').seed.push('budget.read'); "
                     "checkSeeds(parseWorkerSpecs(JSON.stringify(j), (n) => fs.readFileSync(path.join(path.dirname(f), n), 'utf8'))) } "
                     "else checkSeeds(loadWorkerSpecs(f)); console.log('seeds apply')")
@@ -1705,6 +1785,23 @@ else:
             if p.returncode != 2 or os.listdir(e): bad.append(f"{tag}: prepare with {what}: exit {p.returncode}, wrote {os.listdir(e)}")
             shutil.rmtree(e)
         shutil.rmtree(d)
+    # phase 2 Task 11, the pairing guards (new image, old chart): naila's built core refuses the <git-ref> chart's roles spec
+    # (version 2, naming the chart as older) and its HARNESS_CHANNELS (no kind), and accepts this chart's; so a phase 2 image
+    # on a phase 1 chart refuses to start instead of running it
+    tag = "naila's built core refuses the <git-ref> chart's roles spec and channels, and accepts this chart's"
+    old_r = {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(sys.argv[6])) if d}
+    def chans(r): return next((e.get("value") for c in r[("Deployment", "assistant-harness")]["spec"]["template"]["spec"]["containers"] if c["name"] == "harness" for e in c.get("env", []) if e["name"] == "HARNESS_CHANNELS"), None)
+    new_r = {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(sys.argv[1])) if d}
+    guard_js = ("const [d, spec, ch] = process.argv.slice(1); const { parseWorkerSpecs } = await import(`${d}/workers-spec.js`); const { parseChannelTable } = await import(`${d}/channels.js`); "
+                "const out = []; try { parseWorkerSpecs(spec, () => ''); out.push('spec ok') } catch (e) { out.push(`spec: ${e.message}`) } "
+                "const secrets = Object.fromEntries((JSON.parse(ch) ?? []).map((c) => [c.name, 'x'])); "
+                "try { parseChannelTable(ch, { secrets, test: false }); out.push('channels ok') } catch (e) { out.push(`channels: ${e.message}`) } console.log(out.join('\\n'))")
+    for label, r_, want_spec, want_ch in ((sys.argv[7], old_r, "version must be 3 (got 2): the chart predates pure-core phase 2", "kind must be owner or test"), ("this chart", new_r, "spec ok", "channels ok")):
+        try: sj, cj = config(r_)["harness-workers.json"], chans(r_)
+        except (KeyError, StopIteration) as e: bad.append(f"{tag}: the {label} render has no spec or HARNESS_CHANNELS: {e!r}"); continue
+        p = subprocess.run(["node", "--input-type=module", "-e", guard_js, f"{nw}/packages/harness/dist", sj, cj or "[]"], capture_output=True, text=True)
+        o_ = p.stdout.splitlines()
+        if p.returncode != 0 or len(o_) != 2 or want_spec not in o_[0] or want_ch not in o_[1]: bad.append(f"{tag}: on the {label} render: {(p.stdout + p.stderr).strip()[-300:]!r}, want {want_spec!r} and {want_ch!r}")
     if specs: print(f"naila's validator accepts the rendered spec, every seed entry applies (checkSeeds), and prepare writes the same agent files as {oref} ({', '.join(specs)} phases)")
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
@@ -1804,7 +1901,7 @@ for label, r in (("test", test), ("real", real), ("two channels", two)):   # $(V
     for v in re.findall(r"\$\((\w+)\)", val(ctr(r, "harness"), "GATEWAY_SECRETS") or ""):
         if v not in before: bad.append(f"channel loop: GATEWAY_SECRETS names $({v}) before it is defined ({label})")
 
-want = {"label": "Discord", "name": "discord", "settle": "approve"}
+want = {"kind": "owner", "label": "Discord", "name": "discord", "settle": "approve"}
 for label, r in (("test", test), ("real", real), ("two channels", two)):
     h = ctr(r, "harness")
     listed = {c.get("name") for c in (channels(h) or [])}
@@ -1814,6 +1911,15 @@ for label, r in (("test", test), ("real", real), ("two channels", two)):
         v = "GATEWAY_" + str(nm).upper().replace("-", "_") + "_SECRET"
         if not key(h, v): bad.append(f"channel loop: the core has no {v} from a secret ({label})")
     if want not in (channels(ctr(r, "harness")) or []): bad.append(f"HARNESS_CHANNELS contains {compact(want)}: it is {val(ctr(r, 'harness'), 'HARNESS_CHANNELS')!r} ({label})")
+
+# phase 2 Task 11: HARNESS_CHANNELS carries each channel's kind (the core refuses an entry without it): prod's test channel is
+# kind test, discord kind owner; every entry has exactly the keys the core takes
+tag = "HARNESS_CHANNELS carries each channel's kind"
+for label, r in (("test", test), ("real", real)):
+    kinds = {c.get("name"): c.get("kind") for c in (channels(ctr(r, "harness")) or [])}
+    if kinds != {"test": "test", "discord": "owner"}: bad.append(f"{tag}: the kinds are {kinds}, want test: test, discord: owner ({label})")
+    for c in channels(ctr(r, "harness")) or []:
+        if not {"name", "label", "kind", "settle"} <= set(c) <= {"name", "label", "kind", "settle", "retainMs"}: bad.append(f"{tag}: {c.get('name')} has the keys {sorted(c)} ({label})")
 
 tag = "a second channel gets its own container, secret env and GATEWAY_SECRETS entry and no Discord env"
 t, th = ctr(two, "example"), ctr(two, "harness")
@@ -1832,12 +1938,12 @@ else:
 if key(th, "GATEWAY_EXAMPLE_SECRET") != "GATEWAY_EXAMPLE_SECRET": bad.append(f"{tag}: the core's GATEWAY_EXAMPLE_SECRET comes from {key(th, 'GATEWAY_EXAMPLE_SECRET')!r}")
 for e in ("discord:$(GATEWAY_DISCORD_SECRET)", "example:$(GATEWAY_EXAMPLE_SECRET)"):
     if e not in entries(th): bad.append(f"{tag}: GATEWAY_SECRETS lacks {e}: {val(th, 'GATEWAY_SECRETS')!r}")
-tw = {"label": "Example", "name": "example", "settle": "reject"}
+tw = {"kind": "owner", "label": "Example", "name": "example", "settle": "reject"}
 if tw not in (channels(th) or []): bad.append(f"{tag}: HARNESS_CHANNELS lacks {compact(tw)}: {val(th, 'HARNESS_CHANNELS')!r}")
 if ctr(two, "discord") != ctr(test, "discord"): bad.append(f"{tag}: the discord container changes when example is added")
 
 tag = "prod renders the test channel: settle reject, retainMs, its secret from assistant-harness-secret, no container"
-tc = {"label": "Test", "name": "test", "retainMs": 3600000, "settle": "reject"}
+tc = {"kind": "test", "label": "Test", "name": "test", "retainMs": 3600000, "settle": "reject"}
 for label, r in (("test", test), ("real", real)):
     h = ctr(r, "harness")
     if tc not in (channels(h) or []): bad.append(f"{tag}: HARNESS_CHANNELS lacks {compact(tc)}: {val(h, 'HARNESS_CHANNELS')!r} ({label})")
@@ -1851,36 +1957,43 @@ if not ss or "GATEWAY_TEST_SECRET" not in ss["spec"]["encryptedData"]: bad.appen
 tag = "a missing secretKey, an unknown settle, a failing check and test with approve in the real phase each fail the render"   # also: shared or borrowed gateway secrets
 P = ["helm", "template", "helm/assistant", "-f", "helm/assistant/values.yaml", "-f", "helm/assistant/values.prod.yaml", "--set", "claude.rcLines=true"]
 def render(*a): return subprocess.run(P + list(a), capture_output=True, text=True)
-T = lambda settle: ["--set-json", 'harness.channels.test={"enabled":true,"label":"test","settle":"%s","secretKey":"GATEWAY_TEST_SECRET"}' % settle]
+T = lambda settle: ["--set-json", 'harness.channels.test={"enabled":true,"kind":"test","label":"test","settle":"%s","secretKey":"GATEWAY_TEST_SECRET"}' % settle]
 for what, args, msg in (("a missing secretKey", ["--set", "harness.channels.discord.secretKey=null"], "harness.channels.discord.secretKey"),
                         ("an unknown settle", ["--set", "harness.channels.discord.settle=maybe"], "harness.channels.discord.settle"),
                         ("a failing check", ["--set", "harness.channels.discord.gateway.env.DISCORD_GUILD_ID=123"], "DISCORD_GUILD_ID"),
-                        ("test with approve in the real phase", ["--set", "harness.phase=real", *T("approve")], "the test channel may not approve: the pod's core is never a test instance"),
-                        ("test with approve in the test phase", ["--set", "harness.phase=test", *T("approve")], "the test channel may not approve: the pod's core is never a test instance"),
-                        ("a non-bool enabled", ["--set-json", 'harness.channels.tg={"enabled":"yes","label":"x","settle":"none","secretKey":"K"}'], "harness.channels.tg.enabled"),
-                        ("retainMs above 2^53-1", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"K","retainMs":9007199254740992}'], "harness.channels.tg.retainMs"),
+                        ("test with approve in the real phase", ["--set", "harness.phase=real", *T("approve")], "harness.channels.test: a test channel may not approve: the pod's core is never a test instance"),
+                        ("test with approve in the test phase", ["--set", "harness.phase=test", *T("approve")], "harness.channels.test: a test channel may not approve: the pod's core is never a test instance"),
+                        # phase 2 Task 11: kind is required (owner or test), the name test is a test channel's, and a test channel
+                        # of any name may not approve
+                        ("a channel without kind", ["--set-json", 'harness.channels.qa={"enabled":true,"label":"QA","settle":"none","secretKey":"GATEWAY_QA_SECRET"}'], "harness.channels.qa.kind must be owner or test"),
+                        ("a channel of an unknown kind", ["--set-json", 'harness.channels.qa={"enabled":true,"kind":"tester","label":"QA","settle":"none","secretKey":"GATEWAY_QA_SECRET"}'], "harness.channels.qa.kind must be owner or test"),
+                        ("a channel named test of kind owner", ["--set-json", 'harness.channels.test={"enabled":true,"kind":"owner","label":"Test","settle":"reject","secretKey":"GATEWAY_TEST_SECRET"}'], "harness.channels.test.kind must be test: the name test is the live checks' channel"),
+                        ("a test-kind channel named qa that approves", ["--set-json", 'harness.channels.qa={"enabled":true,"kind":"test","label":"QA","settle":"approve","secretKey":"GATEWAY_QA_SECRET"}'], "harness.channels.qa: a test channel may not approve: the pod's core is never a test instance"),
+                        ("a non-bool enabled", ["--set-json", 'harness.channels.tg={"enabled":"yes","kind":"owner","label":"x","settle":"none","secretKey":"K"}'], "harness.channels.tg.enabled"),
+                        ("retainMs above 2^53-1", ["--set-json", 'harness.channels.tg={"enabled":true,"kind":"owner","label":"x","settle":"none","secretKey":"K","retainMs":9007199254740992}'], "harness.channels.tg.retainMs"),
                         ("no channel enabled", ["--set", "harness.channels.discord.enabled=false", "--set", "harness.channels.test.enabled=false"], "no channel"),
                         ("a bad name", ["--set-json", 'harness.channels.Ops_x={"enabled":true,"label":"x","settle":"none","secretKey":"K"}'], "Ops_x"),
-                        ("two channels sharing a secretKey", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_DISCORD_SECRET"}'], "harness.channels.tg.secretKey"),
-                        ("a gateway handed another channel's secretKey", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"GATEWAY_DISCORD_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X"),
-                        ("a gateway handed a GATEWAY_*_SECRET key not its own", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"GATEWAY_OTHER_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X"),
+                        ("two channels sharing a secretKey", ["--set-json", 'harness.channels.tg={"enabled":true,"kind":"owner","label":"x","settle":"none","secretKey":"GATEWAY_DISCORD_SECRET"}'], "harness.channels.tg.secretKey"),
+                        ("a gateway handed another channel's secretKey", ["--set-json", 'harness.channels.tg={"enabled":true,"kind":"owner","label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"GATEWAY_DISCORD_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X"),
+                        ("a gateway handed a GATEWAY_*_SECRET key not its own", ["--set-json", 'harness.channels.tg={"enabled":true,"kind":"owner","label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"GATEWAY_OTHER_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X"),
                         ("a leftover gateway.uploads (the core owns uploads)", ["--set", "harness.channels.discord.gateway.uploads=true"], "harness.channels.discord.gateway.uploads"),
                         ("DISCORD_CHANNELS without decisions", ["--set", "harness.channels.discord.gateway.env.DISCORD_CHANNELS=naila:1566334318752567368\\,legal-clerk:1566334318752567369"], "DISCORD_CHANNELS"),
                         ("DISCORD_CHANNELS with an uppercase name", ["--set", "harness.channels.discord.gateway.env.DISCORD_CHANNELS=Naila:1566334318752567368\\,decisions:1566334318752567369"], "DISCORD_CHANNELS"),
-                        ("a gateway handed CORE_TOOLS_SECRET", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"CORE_TOOLS_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X")):
+                        ("a gateway handed CORE_TOOLS_SECRET", ["--set-json", 'harness.channels.tg={"enabled":true,"kind":"owner","label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"CORE_TOOLS_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X")):
     p = render("--set", "harness.phase=test", *args)
     if p.returncode == 0: bad.append(f"{tag}: {what} renders")
     elif msg not in p.stderr: bad.append(f"{tag}: {what} fails for another reason: {p.stderr.strip()[-300:]}")
-for what, args in (("a gateway handed its own channel's secretKey", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"GATEWAY_TG_SECRET"}}}']),
-                   ("retainMs at 2^53-1", ["--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"K","retainMs":9007199254740991}']),
+for what, args in (("a gateway handed its own channel's secretKey", ["--set-json", 'harness.channels.tg={"enabled":true,"kind":"owner","label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"GATEWAY_TG_SECRET"}}}']),
+                   ("retainMs at 2^53-1", ["--set-json", 'harness.channels.tg={"enabled":true,"kind":"owner","label":"x","settle":"none","secretKey":"K","retainMs":9007199254740991}']),
                    ("test with reject in the real phase", ["--set", "harness.phase=real", *T("reject")]),
+                   ("a test-kind channel named qa that rejects", ["--set-json", 'harness.channels.qa={"enabled":true,"kind":"test","label":"QA","settle":"reject","secretKey":"GATEWAY_QA_SECRET"}']),
                    # no fixed roster (final review F1): any lowercase names, decisions required, in any order
                    ("DISCORD_CHANNELS with a fifth worker", ["--set", "harness.channels.discord.gateway.env.DISCORD_CHANNELS=naila:1566334318752567368\\,legal-clerk:1566334318752567369\\,decisions:1566334318752567370"]),
                    ("DISCORD_CHANNELS with decisions first and one worker", ["--set", "harness.channels.discord.gateway.env.DISCORD_CHANNELS=decisions:1566334318752567370\\,naila:1566334318752567368"])):
     p = render(*args)
     if p.returncode != 0: bad.append(f"{tag}: {what} does not render: {p.stderr.strip()[-300:]}")
 
-p = render("--set", "harness.phase=test", "--set-json", 'harness.channels.tg={"enabled":true,"label":"x","settle":"none","secretKey":"K","gateway":{"uid":1005,"env":{"ZERO":0,"OFF":false,"EMPTY":""}}}')
+p = render("--set", "harness.phase=test", "--set-json", 'harness.channels.tg={"enabled":true,"kind":"owner","label":"x","settle":"none","secretKey":"K","gateway":{"uid":1005,"env":{"ZERO":0,"OFF":false,"EMPTY":""}}}')
 z = ctr({(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(p.stdout) if d}, "tg") if p.returncode == 0 else None
 if not z or (val(z, "ZERO"), val(z, "OFF"), "EMPTY" in envmap(z)) != ("0", "false", False): bad.append(f"gateway env drops only values that render as \"\": {sorted(envmap(z)) if z else p.stderr.strip()[-200:]}")
 

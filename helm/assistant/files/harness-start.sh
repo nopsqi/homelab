@@ -96,14 +96,26 @@ fi
 # phase's finance server and the ops one filled in from the env; its instructions file verbatim), writes each worker's work dir
 # (HARNESS_HOME/work/<worker>: the core runs it there) with its agent and model, naila's with her harness CLAUDE.md, and
 # _summary's, and prints the dirs to trust. It refuses (exit 2, nothing written) an unset bearer or an agent file that would
-# hold the finance write bearer. In the test phase the bookkeeper is also told its budget is a test copy.
+# hold the finance write bearer. In the test phase every role with a server named finance (the bookkeeper today) is also told
+# its budget is a test copy: the roles come from the spec, no file name is written here, and a listed role without an agent
+# file fails the start.
 W=$HARNESS_HOME/work
 out=$(node "$PREPARE" --spec /config/harness-workers.json --claude-dir "$C" --work-dir "$W") || die "prepare.js refused the worker spec (its reason is above)"
 [ -n "$out" ] || die "prepare.js printed no work dirs"
 mapfile -t dirs <<< "$out"
-if [ "$HARNESS_PHASE" = test ] && ! grep -q 'TEST COPY' "$C/agents/finance-bookkeeper.md"; then
-  { echo; cat /config/finance-test-note; } >> "$C/agents/finance-bookkeeper.md"
-fi
+# TEST COPY: every role with a finance server
+fin=$([ "$HARNESS_PHASE" != test ] || node -e '
+const s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))
+for (const r of s.roles ?? []) if ((r.servers ?? []).some((x) => x?.name === "finance")) {
+  if (typeof r.id !== "string" || !/^[a-z][a-z0-9-]{0,31}$/.test(r.id)) { console.error(`harness-start: a role with a finance server has the id ${JSON.stringify(r.id)}`); process.exit(2) }
+  console.log(r.id)
+}' /config/harness-workers.json) || die "could not list the roles with a finance server from /config/harness-workers.json"
+for id in $fin; do
+  [ -f "$C/agents/$id.md" ] || die "$id has a finance server but no agent file to tell its budget is a TEST COPY"
+  if ! grep -q 'TEST COPY' "$C/agents/$id.md"; then
+    { echo; cat /config/finance-test-note; } >> "$C/agents/$id.md"
+  fi
+done
 ! grep -l '__MCP_' "$C"/agents/*.md >/dev/null || die "unfilled bearer placeholder in $(grep -l '__MCP_' "$C"/agents/*.md | xargs -n1 basename)"
 if [ "$HARNESS_PHASE" = test ] && grep -q '//assistant-finance:' "$C"/agents/*.md; then die "a worker still points at the real finance server"; fi
 if grep -qF -- "$MCP_FINANCE_TOKEN" "$C"/agents/*.md; then die "a worker holds the finance write bearer"; fi
@@ -257,8 +269,13 @@ const rguard = "node /config/read-guard.mjs --by-origin || exit 2"
 for (const t of ["Read", "Glob", "Grep"]) { const c = hooked(t); if (c.length !== 1 || c[0] !== rguard) fail(`${t} does not go through the read guard narrowed to the run\x27s origin (read-guard.mjs --by-origin)`) }
 })().catch((e) => fail(e.message))' "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/harness-settings.json /naila/packages/harness/dist/capabilities.js /naila/packages/harness/dist/providers/claude-code/compile.js
 
-# The work dirs are prepare.js's (above); the test notes cabinet may not exist yet.
-mkdir -p "$W/naila" "$W/_summary" "$FINANCE_NOTES_ROOT"
+# The work dirs are prepare.js's (above), the lead's named by the spec (its one role with lead: true); the test notes cabinet
+# may not exist yet.
+LEAD=$(node -e '
+const leads = (JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).roles ?? []).filter((r) => r?.lead === true).map((r) => r.id)
+if (leads.length !== 1 || typeof leads[0] !== "string" || !/^[a-z][a-z0-9-]{0,31}$/.test(leads[0])) process.exit(2)
+console.log(leads[0])' /config/harness-workers.json) || die "the roles config has no lead"
+mkdir -p "$W/$LEAD" "$W/_summary" "$FINANCE_NOTES_ROOT"
 # The core reads the same spec: its workers, their models (engine_info) and servers.
 export HARNESS_WORKER_SPEC=/config/harness-workers.json
 

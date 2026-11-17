@@ -58,7 +58,11 @@
 #  --disallowedTools among the CLI flags it checks.
 # Then the core's run metrics: 3102 open to monitoring only, its own Service and ServiceMonitor (job assistant-harness-core),
 #  the login Service and ServiceMonitor as at <git-ref>, and the three core alerts, scoped by job, none naming Discord.
-# Then the worker spec (harness-workers.json in ConfigMap assistant-harness, both phases): naila's own validator accepts it when
+# Then the worker spec (harness-workers.json in ConfigMap assistant-harness, both phases): pure core Task 9, it is the roles spec
+#  v2 (version 2; the roles naila, finance-bookkeeper, finance-advisor, ops-oncall, researcher in that order, naila alone the
+#  lead and first; retired []; each role's display and seed the chart's literals), the render fails on a duplicate id, two
+#  leads or none, a lead not first and a retired active role, and harness-start dies on an image without ROLES_SPEC_VERSION 2;
+#  naila's own validator accepts it and every seed entry applies (naila's checkSeeds, from its built dist) when
 #  NAILA_WORKTREE points at a naila checkout (skipped with a notice otherwise), no __MARKER__ survives, each model is the
 #  chart's per-worker model (direct-lines), each description the RC agent file's, each ceiling its tools.md, the URLs and the
 #  notes root follow the phase, no server names the finance write bearer, and the harness body keys hold no frontmatter (nor,
@@ -138,8 +142,10 @@ for ph in test real; do
   helm template "$tmp/oracle/helm/assistant" -f "$tmp/oracle/helm/assistant/values.yaml" -f "$tmp/oracle/helm/assistant/values.prod.yaml" --set harness.enabled=true --set harness.phase=$ph --set claude.rcLines=true > "$tmp/oracle-$ph.yaml"
 done
 # The channels: the ref with the harness on (as the working tree's test-phase render), and a second channel next to discord.
+# The second channel, `example`, is synthetic: no naila package is named so (packages/channels/example does not exist); the
+# checks hold only the template's rule for its container (its command, env and secrets), never that its gateway exists.
 helm template "$tmp/helm/assistant" -f "$tmp/helm/assistant/values.yaml" -f "$tmp/helm/assistant/values.prod.yaml" --set harness.phase=test --set claude.rcLines=true > "$tmp/old-harness.yaml"
-helm template helm/assistant "${P[@]}" --set-json 'harness.channels.telegram={"enabled":true,"label":"Telegram","settle":"reject","secretKey":"GATEWAY_TELEGRAM_SECRET","gateway":{"uid":1003,"env":{"TELEGRAM_CHAT":"-100123"},"secretEnv":{"TELEGRAM_TOKEN":"TELEGRAM_TOKEN"}}}' > "$tmp/two.yaml"
+helm template helm/assistant "${P[@]}" --set-json 'harness.channels.example={"enabled":true,"label":"Example","settle":"reject","secretKey":"GATEWAY_EXAMPLE_SECRET","gateway":{"uid":1003,"env":{"EXAMPLE_CHAT":"-100123"},"secretEnv":{"EXAMPLE_TOKEN":"EXAMPLE_TOKEN"}}}' > "$tmp/two.yaml"
 # The harness checksum follows what harness-start.sh takes from the RC ConfigMap (settings.json, finance-test-note), not a
 # direct-lines-only edit (phase 2: the worker spec replaced it at the harness pod's start).
 cp -a helm/assistant "$tmp/s" && sed -i 's/"mcp__claude_ai_Gmail"/"mcp__claude_ai_GmailX"/' "$tmp/s/templates/claude.yaml"
@@ -165,12 +171,16 @@ def keys(path):
     sys.exit(f"FAIL: ConfigMap assistant-claude not found in {path}")
 
 old, new = keys(sys.argv[1]), keys(sys.argv[2])
-# The worker spec (harness-workers.json, ConfigMap assistant-harness): each worker's ceiling and servers come from it.
+# The worker spec (harness-workers.json, ConfigMap assistant-harness): each worker's ceiling and servers come from it. A v2
+# spec (the roles config: an ordered list of roles) reads into the same {id: role} dict as a v1 one ({workers: {id: worker}}).
 import json
+def spec_roles(spec):
+    if spec.get("version") == 2: return {r["id"]: {k: v for k, v in r.items() if k != "id"} for r in spec["roles"]}
+    return spec["workers"]
 def spec_workers(path):
     for d in yaml.safe_load_all(open(path)):
         if d and d.get("kind") == "ConfigMap" and d["metadata"]["name"] == "assistant-harness":
-            try: return json.loads(d["data"]["harness-workers.json"])["workers"]
+            try: return spec_roles(json.loads(d["data"]["harness-workers.json"]))
             except (KeyError, ValueError, TypeError): return {}
     return {}
 SPEC = spec_workers(sys.argv[2])
@@ -297,7 +307,8 @@ tag = "harness-workers.json has the researcher on claude-subscription/sonnet, ce
 rs = SPEC.get("researcher", {})
 fm_ = re.match(r"(?s)\A---\n(.*?)\n---\n", open("helm/assistant/files/agents/researcher.md").read()) if os.path.exists("helm/assistant/files/agents/researcher.md") else None
 rdesc = yaml.safe_load(fm_.group(1)).get("description") if fm_ else None
-if rs != {"instructions": "harness-agent-researcher.md", "brain": {"provider": "claude-subscription", "model": "sonnet"}, "ceiling": ["WebSearch", "WebFetch"], "servers": [], "description": rdesc} or not rdesc:
+if rs != {"display": {"name": "Researcher", "avatar": "researcher"}, "seed": ["web.search", "web.open"], "instructions": "harness-agent-researcher.md",
+          "brain": {"provider": "claude-subscription", "model": "sonnet"}, "ceiling": ["WebSearch", "WebFetch"], "servers": [], "description": rdesc} or not rdesc:
     bad.append(f"{tag}: it is {rs!r}")
 if set(rs.get("ceiling", [])) != WEB: bad.append(f"{tag}: its ceiling is not exactly the web capabilities' tools {sorted(WEB)}")
 if not os.path.exists(RESEARCHER_TOOLS) or open(RESEARCHER_TOOLS).read().strip().split(", ") != rs.get("ceiling"): bad.append(f"{tag}: its ceiling is not {RESEARCHER_TOOLS}")
@@ -1313,6 +1324,34 @@ else:
     if open(f"{d}/args").read() != "/p.js --spec /config/harness-workers.json --claude-dir /c --work-dir /h/work\n": bad.append(f"{tag}: prepare.js ran with {open(f'{d}/args').read()!r}")
     __import__("shutil").rmtree(d)
 
+# pure core Task 9: harness-start dies on an image without ROLES_SPEC_VERSION 2 (dist/workers-spec.js), before prepare.js reads
+# the roles config, naming the image as older and what to do. Run as rendered on stand-in images, and on naila's built dist.
+tag = "harness-start dies on an image without ROLES_SPEC_VERSION 2"
+sl = start.splitlines()
+sj = [i for i, l in enumerate(sl) if l == "SPEC_JS=/naila/packages/harness/dist/workers-spec.js"]
+OLD_SPEC = "this naila image predates the roles config (pure-core phase 1): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+sc = [i for i, l in enumerate(sl) if "ROLES_SPEC_VERSION" in l and l.startswith("node -e ") and l.endswith(f' "$SPEC_JS" || die "{OLD_SPEC}"')]
+pc9 = [i for i, l in enumerate(sl) if l.startswith('out=$(node "$PREPARE" ')]
+if len(sj) != 1 or len(sc) != 1 or len(pc9) != 1 or not sj[0] < sc[0] < pc9[0]: bad.append(f"{tag}: want one SPEC_JS= line, then one node -e check dying with {OLD_SPEC!r}, before prepare.js (got {len(sj)}, {len(sc)}, {len(pc9)})")
+else:
+    def spec_check(body=None, dist=None):
+        d = tempfile.mkdtemp()
+        if dist is None:
+            dist = d
+            open(os.path.join(d, "package.json"), "w").write('{"type":"module"}')
+            if body is not None: open(os.path.join(d, "workers-spec.js"), "w").write(body)
+        snippet = "\n".join(sl[sj[0]:sc[0] + 1]).replace("/naila/packages/harness/dist/", dist + "/")
+        p = subprocess.run(["bash", "-c", 'set -eu; die() { echo "harness-start: $*" >&2; exit 2; }\n' + snippet + "\necho started"], capture_output=True, text=True)
+        shutil.rmtree(d); return p
+    if (p := spec_check("export const ROLES_SPEC_VERSION = 2\n")).returncode != 0 or p.stdout.strip() != "started": bad.append(f"{tag}: refuses an image with ROLES_SPEC_VERSION 2: {p.stderr.strip()}")
+    for what, body in (("no workers-spec.js", None), ("no ROLES_SPEC_VERSION", "export const other = 1\n"), ("ROLES_SPEC_VERSION 1", "export const ROLES_SPEC_VERSION = 1\n"),
+                       ("ROLES_SPEC_VERSION \"2\"", "export const ROLES_SPEC_VERSION = '2'\n"), ("a workers-spec.js that throws", "throw new Error('boom')\n")):
+        p = spec_check(body)
+        if p.returncode != 2 or OLD_SPEC not in p.stderr or "started" in p.stdout: bad.append(f"{tag}: an image with {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {OLD_SPEC!r}")
+    nw9 = os.environ.get("NAILA_WORKTREE", "")
+    if nw9 and os.path.isfile(f"{nw9}/packages/harness/dist/workers-spec.js"):
+        if (p := spec_check(dist=f"{nw9}/packages/harness/dist")).returncode != 0: bad.append(f"{tag}: refuses naila's built dist: {p.stderr.strip()}")
+
 # The core keeps the read-only finance bearer and the ops bearer: its own loop opens the workers' servers with them (by name,
 # from its env). The gateway secrets: see the channel checks below.
 for v in ("MCP_FINANCE_READ_TOKEN", "MCP_OPS_TOKEN"):
@@ -1390,8 +1429,18 @@ new = {"test": config(load(sys.argv[1])), "real": config(load(sys.argv[2]))}
 orc = {"test": config(load(sys.argv[3])), "real": config(load(sys.argv[4]))}
 oref = sys.argv[5]
 bad = []
-AGENTS = ["finance-bookkeeper", "finance-advisor", "ops-oncall", "researcher"]   # naila roster.ts WORKERS order, minus the lead
+AGENTS = ["finance-bookkeeper", "finance-advisor", "ops-oncall", "researcher"]   # the roles config's order, minus the lead
 WORKERS = ["naila", *AGENTS]
+def spec_roles(spec):
+    """A worker spec as {id: role}: a v2 one (the roles config: an ordered list of roles) or a v1 one ({workers: {id: worker}},
+    as ORACLE_REF has it)."""
+    if spec.get("version") == 2: return {r["id"]: {k: v for k, v in r.items() if k != "id"} for r in spec["roles"]}
+    return spec["workers"]
+# pure core Task 9: each role's display and seed in the roles config, literally (today's seeds and display names)
+DISPLAY = {"naila": "Naila", "finance-bookkeeper": "Finance Bookkeeper", "finance-advisor": "Finance Advisor", "ops-oncall": "Ops Oncall", "researcher": "Researcher"}
+FIN_SEED = ["files.read", "messaging.ask", "budget.read", "budget.write-plans", "docs.convert"]
+SEED = {"naila": ["files.read", "messaging.ask", "vault.read", "vault.write", "docs.convert", "vault.organize"], "finance-bookkeeper": FIN_SEED,
+        "finance-advisor": FIN_SEED, "ops-oncall": ["messaging.ask", "cluster.read"], "researcher": ["web.search", "web.open"]}
 # researcher Task 12: the researcher is new since ORACLE_REF (no RC line: its model is the spec's, its description its chart
 # agent file's); the three agents of the ref lose WebSearch and WebFetch from their ceilings (their tools: lines)
 OLD_AGENTS = AGENTS[:3]
@@ -1449,7 +1498,7 @@ def pod_files(cfg, ph, bodies=None):
     each file's instructions, after its frontmatter, are that /config's harness-agent key instead (researcher Task 13 changed
     the workers' prompts: the oracle holds the frontmatter to the ref and the instructions to this chart's keys)."""
     if "harness-workers.json" in cfg:
-        spec = json.loads(cfg["harness-workers.json"])["workers"]
+        spec = spec_roles(json.loads(cfg["harness-workers.json"]))
         files = {w: agent_file(w, spec[w], (bodies or cfg)[spec[w]["instructions"]]) for w in AGENTS if w in spec}
     else:
         files = {w: sed(cfg[f"harness-agent-{w}.md"], ph) for w in OLD_AGENTS}
@@ -1498,9 +1547,19 @@ for ph in ("test", "real"):
     try: spec = json.loads(raw)
     except ValueError as e: bad.append(f"{tag}: harness-workers.json is not JSON: {e}"); continue
     specs[ph] = spec
-    if spec.get("version") != 1: bad.append(f"{tag}: version is {spec.get('version')!r}, want 1")
-    ws = spec.get("workers", {})
-    if sorted(ws) != sorted(WORKERS): bad.append(f"{tag}: the workers are {sorted(ws)}, want {sorted(WORKERS)}"); continue
+    # pure core Task 9: harness-workers.json is the roles spec v2: the five roles in order, naila alone the lead and first,
+    # nothing retired, each role's display and seed the literals above
+    t9 = f"harness-workers.json is the roles spec v2 ({ph} phase)"
+    if spec.get("version") != 2: bad.append(f"{t9}: version is {spec.get('version')!r}, want 2")
+    if sorted(spec) != ["retired", "roles", "summary", "version"]: bad.append(f"{t9}: its keys are {sorted(spec)}")
+    roles_ = spec.get("roles") if isinstance(spec.get("roles"), list) else []
+    if [r.get("id") for r in roles_] != WORKERS: bad.append(f"{t9}: the roles are {[r.get('id') for r in roles_]}, want {WORKERS} in that order"); continue
+    if [r["id"] for r in roles_ if "lead" in r] != ["naila"] or roles_[0].get("lead") is not True: bad.append(f"{t9}: the lead is not naila alone, first, lead: true")
+    if spec.get("retired") != []: bad.append(f"{t9}: retired is {spec.get('retired')!r}, want []")
+    for r in roles_:
+        if r.get("display") != {"name": DISPLAY[r["id"]], "avatar": r["id"]}: bad.append(f"{t9}: {r['id']}'s display is {r.get('display')!r}, want {DISPLAY[r['id']]!r} with avatar {r['id']}")
+        if r.get("seed") != SEED[r["id"]]: bad.append(f"{t9}: {r['id']}'s seed is {r.get('seed')!r}, want {SEED[r['id']]!r}")
+    ws = spec_roles(spec)
     if spec.get("summary") != {"brain": {"provider": "claude-subscription", "model": "default"}}: bad.append(f"{tag}: summary is {spec.get('summary')!r}")
     # one source for the models: the chart's per-worker model, as the RC lines' direct-lines has it; naila's is default
     lines = dict(l.split() for l in cfg.get("direct-lines", "").splitlines() if l.strip())
@@ -1557,6 +1616,24 @@ if specs.get("test") and specs.get("real"):
     t, r = json.dumps(specs["test"]), json.dumps(specs["real"])
     if t.replace("assistant-finance-test:", "assistant-finance:").replace("/vault/Harness-test/Finance/", "/vault/Finance/") != r: bad.append("the worker spec: the phases differ beyond the finance host and the notes root")
 
+# pure core Task 9: the render fails on a duplicate id, two leads, a lead not first, and a retired active role, each with its
+# message (the core would refuse each at start: a crash-looping pod instead of a failed render)
+tag = "the render fails on a duplicate id, two leads, a lead not first, and a retired active role"
+ROLES = yaml.safe_load(open("helm/assistant/values.yaml"))["harness"]["roleSpec"]["roles"]
+def render_fail(roles=None, retired=None):
+    sets = [*(["--set-json", f"harness.roleSpec.roles={json.dumps(roles)}"] if roles is not None else []),
+            *(["--set-json", f"harness.roleSpec.retired={json.dumps(retired)}"] if retired is not None else [])]
+    return subprocess.run(["helm", "template", "helm/assistant", "-f", "helm/assistant/values.yaml", "-f", "helm/assistant/values.prod.yaml",
+                           "--set", "harness.enabled=true", "--set", "harness.phase=test", *sets], capture_output=True, text=True)
+for what, kw, says in (("a duplicate id", {"roles": [*ROLES, ROLES[1]]}, "harness.roleSpec.roles: finance-bookkeeper is listed twice"),
+                       ("two leads", {"roles": [ROLES[0], {**ROLES[1], "lead": True}, *ROLES[2:]]}, "harness.roleSpec.roles: exactly one role must have lead: true"),
+                       ("no lead", {"roles": [{k: v for k, v in ROLES[0].items() if k != "lead"}, *ROLES[1:]]}, "harness.roleSpec.roles: exactly one role must have lead: true"),
+                       ("a lead not first", {"roles": [ROLES[1], ROLES[0], *ROLES[2:]]}, "harness.roleSpec.roles: the lead must be listed first"),
+                       ("a retired active role", {"retired": ["researcher"]}, "harness.roleSpec.retired lists researcher, which roles also lists")):
+    p = render_fail(**kw)
+    if p.returncode == 0 or says not in p.stderr: bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()[-300:]!r}, want a failed render saying {says!r}")
+if (p := render_fail(roles=ROLES, retired=["old-role"])).returncode != 0: bad.append(f"{tag}: a retired id no role holds fails the render: {p.stderr.strip()[-300:]}")
+
 # naila's own validator and the claude-code adapter's prepare, run with tsx on the rendered /config (optional: NAILA_WORKTREE)
 nw = os.environ.get("NAILA_WORKTREE", "")
 if not (nw and os.path.isfile(f"{nw}/packages/harness/src/providers/claude-code/prepare.ts")):
@@ -1571,6 +1648,20 @@ else:
         sf = f"{cdir}/harness-workers.json"
         p = tsx(["-e", "import { loadWorkerSpecs } from './packages/harness/src/workers-spec.ts'; loadWorkerSpecs(process.env.SPEC_FILE); console.log('valid')"], {"SPEC_FILE": sf}, d)
         if p.returncode != 0 or p.stdout.strip() != "valid": bad.append(f"{tag}: loadWorkerSpecs refuses it: {(p.stderr or p.stdout).strip()[-300:]}")
+        # pure core Task 9: every seed entry applies to its role under this spec's servers, by the core's own start check
+        # (checkSeeds, naila's built dist/capabilities.js, on the spec as dist/workers-spec.js loads it), so a bad seed fails
+        # here, not as a crash-looping pod; and the check bites (an ops-oncall seed with budget.read is refused)
+        dist = f"{nw}/packages/harness/dist"
+        seeds_js = ("const [d, f, bad] = process.argv.slice(1); const { loadWorkerSpecs, parseWorkerSpecs, ROLES_SPEC_VERSION } = await import(`${d}/workers-spec.js`); "
+                    "const { checkSeeds } = await import(`${d}/capabilities.js`); const fs = await import('node:fs'); const path = await import('node:path'); "
+                    "if (ROLES_SPEC_VERSION !== 2) throw new Error(`ROLES_SPEC_VERSION ${ROLES_SPEC_VERSION}`); "
+                    "if (bad) { const j = JSON.parse(fs.readFileSync(f, 'utf8')); j.roles.find((r) => r.id === 'ops-oncall').seed.push('budget.read'); "
+                    "checkSeeds(parseWorkerSpecs(JSON.stringify(j), (n) => fs.readFileSync(path.join(path.dirname(f), n), 'utf8'))) } "
+                    "else checkSeeds(loadWorkerSpecs(f)); console.log('seeds apply')")
+        p = subprocess.run(["node", "--input-type=module", "-e", seeds_js, dist, sf, ""], capture_output=True, text=True)
+        if p.returncode != 0 or p.stdout.strip() != "seeds apply": bad.append(f"{tag}: naila's checkSeeds refuses a seed entry: {(p.stderr or p.stdout).strip()[-300:]}")
+        p = subprocess.run(["node", "--input-type=module", "-e", seeds_js, dist, sf, "bad"], capture_output=True, text=True)
+        if p.returncode == 0 or "roles.ops-oncall.seed has budget.read, which does not apply to ops-oncall" not in p.stderr: bad.append(f"{tag}: naila's checkSeeds accepts an ops-oncall seed with budget.read: {(p.stderr or p.stdout).strip()[-300:]}")
         prep = ["packages/harness/src/providers/claude-code/prepare.ts", "--spec", sf, "--claude-dir", f"{d}/c", "--work-dir", f"{d}/w"]
         p = tsx(prep, {**ENV, "MCP_FINANCE_TOKEN": "placeholder-write-bearer"}, d)
         if p.returncode != 0: bad.append(f"{tag}: prepare exits {p.returncode}: {p.stderr.strip()[-300:]}"); continue
@@ -1600,7 +1691,7 @@ else:
             if p.returncode != 2 or os.listdir(e): bad.append(f"{tag}: prepare with {what}: exit {p.returncode}, wrote {os.listdir(e)}")
             shutil.rmtree(e)
         shutil.rmtree(d)
-    if specs: print(f"naila's validator accepts the rendered spec and prepare writes the same agent files as {oref} ({', '.join(specs)} phases)")
+    if specs: print(f"naila's validator accepts the rendered spec, every seed entry applies (checkSeeds), and prepare writes the same agent files as {oref} ({', '.join(specs)} phases)")
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
 print(f"worker spec: one source per value, phase-resolved, no marker; the pod's agent files are {oref}'s minus WebSearch and WebFetch, plus the advisor's NOTES_READONLY line and the web-only researcher (test and real)")
@@ -1668,7 +1759,7 @@ else:
 tag = "no gateway container mounts a volume"
 for label, r in (("test", test), ("real", real), ("two channels", two)):
     gws = [c for c in pod(r)["containers"] if (c.get("command") or [None, ""])[1:2] and str(c["command"][1]).startswith("packages/channels/")]
-    if {c["name"] for c in gws} != ({"discord", "telegram"} if label == "two channels" else {"discord"}): bad.append(f"{tag}: the gateways are {[c['name'] for c in gws]} ({label})")
+    if {c["name"] for c in gws} != ({"discord", "example"} if label == "two channels" else {"discord"}): bad.append(f"{tag}: the gateways are {[c['name'] for c in gws]} ({label})")
     for c in gws:
         if c.get("volumeMounts"): bad.append(f"{tag}: {c['name']} mounts {c['volumeMounts']!r} ({label})")
 tag = "HARNESS_UPLOADS is only the discord gateway's rollback leftover, marked for removal"
@@ -1711,25 +1802,25 @@ for label, r in (("test", test), ("real", real), ("two channels", two)):
     if want not in (channels(ctr(r, "harness")) or []): bad.append(f"HARNESS_CHANNELS contains {compact(want)}: it is {val(ctr(r, 'harness'), 'HARNESS_CHANNELS')!r} ({label})")
 
 tag = "a second channel gets its own container, secret env and GATEWAY_SECRETS entry and no Discord env"
-t, th = ctr(two, "telegram"), ctr(two, "harness")
-if t is None: bad.append(f"{tag}: no telegram container")
+t, th = ctr(two, "example"), ctr(two, "harness")
+if t is None: bad.append(f"{tag}: no example container")
 else:
-    if t.get("command") != ["node", "packages/channels/telegram/dist/main.js"]: bad.append(f"{tag}: telegram command is {t.get('command')!r}")
-    for k, w in (("GATEWAY_SECRET", "GATEWAY_TELEGRAM_SECRET"), ("TELEGRAM_TOKEN", "TELEGRAM_TOKEN")):
-        if key(t, k) != w: bad.append(f"{tag}: telegram {k} comes from {key(t, k)!r}, want {w!r}")
-    for k, w in (("CORE_URL", "http://127.0.0.1:3100"), ("TELEGRAM_CHAT", "-100123")):
-        if val(t, k) != w: bad.append(f"{tag}: telegram {k} is {val(t, k)!r}, want {w!r}")
-    if [k for k in envmap(t) if "DISCORD" in k]: bad.append(f"{tag}: telegram env has {[k for k in envmap(t) if 'DISCORD' in k]}")
-    if "HARNESS_UPLOADS" in envmap(t) or t.get("volumeMounts"): bad.append(f"{tag}: telegram (no uploads) gets HARNESS_UPLOADS or a mount")
+    if t.get("command") != ["node", "packages/channels/example/dist/main.js"]: bad.append(f"{tag}: example command is {t.get('command')!r}")
+    for k, w in (("GATEWAY_SECRET", "GATEWAY_EXAMPLE_SECRET"), ("EXAMPLE_TOKEN", "EXAMPLE_TOKEN")):
+        if key(t, k) != w: bad.append(f"{tag}: example {k} comes from {key(t, k)!r}, want {w!r}")
+    for k, w in (("CORE_URL", "http://127.0.0.1:3100"), ("EXAMPLE_CHAT", "-100123")):
+        if val(t, k) != w: bad.append(f"{tag}: example {k} is {val(t, k)!r}, want {w!r}")
+    if [k for k in envmap(t) if "DISCORD" in k]: bad.append(f"{tag}: example env has {[k for k in envmap(t) if 'DISCORD' in k]}")
+    if "HARNESS_UPLOADS" in envmap(t) or t.get("volumeMounts"): bad.append(f"{tag}: example (no uploads) gets HARNESS_UPLOADS or a mount")
     sc = t.get("securityContext", {})
     if (sc.get("runAsUser"), sc.get("runAsGroup"), sc.get("readOnlyRootFilesystem"), sc.get("allowPrivilegeEscalation")) != (1003, 1000, True, False):
-        bad.append(f"{tag}: telegram securityContext is {sc!r}")
-if key(th, "GATEWAY_TELEGRAM_SECRET") != "GATEWAY_TELEGRAM_SECRET": bad.append(f"{tag}: the core's GATEWAY_TELEGRAM_SECRET comes from {key(th, 'GATEWAY_TELEGRAM_SECRET')!r}")
-for e in ("discord:$(GATEWAY_DISCORD_SECRET)", "telegram:$(GATEWAY_TELEGRAM_SECRET)"):
+        bad.append(f"{tag}: example securityContext is {sc!r}")
+if key(th, "GATEWAY_EXAMPLE_SECRET") != "GATEWAY_EXAMPLE_SECRET": bad.append(f"{tag}: the core's GATEWAY_EXAMPLE_SECRET comes from {key(th, 'GATEWAY_EXAMPLE_SECRET')!r}")
+for e in ("discord:$(GATEWAY_DISCORD_SECRET)", "example:$(GATEWAY_EXAMPLE_SECRET)"):
     if e not in entries(th): bad.append(f"{tag}: GATEWAY_SECRETS lacks {e}: {val(th, 'GATEWAY_SECRETS')!r}")
-tw = {"label": "Telegram", "name": "telegram", "settle": "reject"}
+tw = {"label": "Example", "name": "example", "settle": "reject"}
 if tw not in (channels(th) or []): bad.append(f"{tag}: HARNESS_CHANNELS lacks {compact(tw)}: {val(th, 'HARNESS_CHANNELS')!r}")
-if ctr(two, "discord") != ctr(test, "discord"): bad.append(f"{tag}: the discord container changes when telegram is added")
+if ctr(two, "discord") != ctr(test, "discord"): bad.append(f"{tag}: the discord container changes when example is added")
 
 tag = "prod renders the test channel: settle reject, retainMs, its secret from assistant-harness-secret, no container"
 tc = {"label": "Test", "name": "test", "retainMs": 3600000, "settle": "reject"}
@@ -1780,7 +1871,7 @@ z = ctr({(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(p.std
 if not z or (val(z, "ZERO"), val(z, "OFF"), "EMPTY" in envmap(z)) != ("0", "false", False): bad.append(f"gateway env drops only values that render as \"\": {sorted(envmap(z)) if z else p.stderr.strip()[-200:]}")
 
 tag = "one NailaGatewayRestarting rule covers every gateway container; no alert text names Discord"
-for label, r, gws in (("prod", test, {"discord"}), ("two channels", two, {"discord", "telegram"})):
+for label, r, gws in (("prod", test, {"discord"}), ("two channels", two, {"discord", "example"})):
     rs = [x for g in (r.get(("PrometheusRule", "assistant-harness-login")) or {"spec": {"groups": []}})["spec"]["groups"] for x in g["rules"]]
     gr = [x for x in rs if x["alert"] == "NailaGatewayRestarting"]
     if len(gr) != 1: bad.append(f"{tag}: {len(gr)} NailaGatewayRestarting rules ({label})")
@@ -1969,7 +2060,7 @@ for label, path in zip(("test", "real", "two channels", "real, RC off"), sys.arg
             d = os.path.realpath(tempfile.mkdtemp())
             if (probe(d, server_py, listening) == 0) != ok: bad.append(f"{tag}: run as rendered, the probe {'fails' if ok else 'passes'} with {'the new' if server_py == NEW else 'an older'} docs and the socket {'accepting' if listening else 'stale' if listening is None else 'absent'}")
     gws = [c["name"] for c in ps["containers"] if any(str(a).startswith("packages/channels/") for a in c.get("command") or [])]
-    want_gws = ["discord", "telegram"] if label == "two channels" else ["discord"]
+    want_gws = ["discord", "example"] if label == "two channels" else ["discord"]
     if sorted(gws) != want_gws: bad.append(f"{tag}: the gateways are {gws}, want {want_gws}")
     for n in gws + ["login"]:
         if mounts.get(n): bad.append(f"{tag}: {n} mounts one")

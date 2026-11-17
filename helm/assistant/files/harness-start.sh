@@ -22,6 +22,11 @@ fi
 # The worker spec (chart) and the claude-code adapter that writes the agent files from it (image) come together: roll back both.
 [ -f "$PREPARE" ] || die "$PREPARE is missing: this naila image predates the worker spec"
 [ -f /config/harness-workers.json ] || die "/config/harness-workers.json is missing: this chart predates the worker spec"
+# The roles config (harness-workers.json version 2, pure-core phase 1) and the image that reads it come together: an image
+# whose ROLES_SPEC_VERSION is not 2 would refuse it at start, or misread it. The roles' instructions files are the spec's to
+# name: prepare.js refuses one that is missing.
+SPEC_JS=/naila/packages/harness/dist/workers-spec.js
+node -e 'import(process.argv[1]).then((m) => process.exit(m.ROLES_SPEC_VERSION === 2 ? 0 : 1), () => process.exit(1))' "$SPEC_JS" || die "this naila image predates the roles config (pure-core phase 1): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
 # The vault server must honour VAULT_EXCLUDE, or the real phase's runs would see the test folder (an image older than the
 # chart): fail closed. The phrase is the one the server logs at startup when VAULT_EXCLUDE is set.
 VAULT_SERVER=/naila/packages/vault-mcp/dist/server.js
@@ -32,7 +37,7 @@ if [ -n "${VAULT_EXCLUDE:-}" ] && ! grep -qF 'vault-mcp: VAULT_EXCLUDE supported
 NOTES_SERVER=/naila/packages/vault-mcp/dist/notes-server.js
 grep -qF 'vault-mcp: VAULT_WORKERS_WRITE supported' "$VAULT_SERVER" || die "$VAULT_SERVER doesn't support VAULT_WORKERS_WRITE: this naila image is older than the chart"
 grep -qF 'finance-notes: NOTES_READONLY supported' "$NOTES_SERVER" || die "$NOTES_SERVER doesn't support NOTES_READONLY: this naila image is older than the chart"
-for k in harness-CLAUDE.md harness-agent-finance-bookkeeper.md harness-agent-researcher.md harness-settings.json harness-write-guard.mjs settings.json docs-grant.mjs web-guard.mjs; do
+for k in harness-CLAUDE.md harness-settings.json harness-write-guard.mjs settings.json docs-grant.mjs web-guard.mjs; do
   [ -f "/config/$k" ] || die "/config/$k is missing: this chart predates harness mode"
 done
 # The researcher (one promote ships it in the image and the chart together): the chart's write guard refuses every write in a

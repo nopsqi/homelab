@@ -26,7 +26,7 @@ fi
 # whose ROLES_SPEC_VERSION is not 2 would refuse it at start, or misread it. The roles' instructions files are the spec's to
 # name: prepare.js refuses one that is missing.
 SPEC_JS=/naila/packages/harness/dist/workers-spec.js
-node -e 'import(process.argv[1]).then((m) => process.exit(m.ROLES_SPEC_VERSION === 2 ? 0 : 1), () => process.exit(1))' "$SPEC_JS" || die "this naila image predates the roles config (pure-core phase 1): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+node -e 'import(process.argv[1]).then((m) => process.exit(m.ROLES_SPEC_VERSION === 2 ? 0 : 1), (e) => { console.error(String(e?.message ?? e)); process.exit(1) })' "$SPEC_JS" || die "this naila image predates the roles config (pure-core phase 1): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
 # The vault server must honour VAULT_EXCLUDE, or the real phase's runs would see the test folder (an image older than the
 # chart): fail closed. The phrase is the one the server logs at startup when VAULT_EXCLUDE is set.
 VAULT_SERVER=/naila/packages/vault-mcp/dist/server.js

@@ -10,9 +10,12 @@
 #    --by-worker. The rendered /vault and /home/claude/.claude/uploads don't exist here, so --root and --uploads name T's
 #    (F14); a path under ~/.claude stays the literal /home/claude/.claude;
 #  - it pipes the Claude Code hook input {tool_name, tool_input, cwd} (cwd: T/work/<worker>, also the hook's own) into the hook, with
-#    HARNESS_CAPS (the case's capabilities, comma-joined; an asked run's without naila's ASKED_RUN_CAPS, as the core
-#    subtracts them), HARNESS_WORKER, HARNESS_ORIGIN (unset for a run from no channel) and HARNESS_WEB_SLOTS (a fresh, empty
-#    slots folder per case) in its env, and checks that it prints a deny exactly when the case says so: `hook` where a ruling
+#    the env the core gives the run: naila's hookEnv (packages/harness/dist/floor/hook-env.js, its roster installed from the
+#    roles spec fixture packages/harness/test/fixtures/workers.json; build naila first) for the case's worker, switches,
+#    origin and asked flag in the case's tree and phase (HARNESS_CAPS, HARNESS_WORKER, HARNESS_ORIGIN when the run has one,
+#    HARNESS_DOCS_ROOTS), plus HARNESS_WEB_SLOTS (a fresh, empty slots folder per case). Its HARNESS_CAPS must equal this
+#    script's own (the case's capabilities in naila's CAPABILITY_IDS order, comma-joined; an asked run's without naila's
+#    ASKED_RUN_CAPS), else the case fails as a drift. It checks that the hook prints a deny exactly when the case says so: `hook` where a ruling
 #    makes the core stricter than the hook (named in `ruling`), else `expect` (a case's `expectBy`, run.extraRead and
 #    run.extraWrite concern the naila runners' policies only: no hook reads them). A hook that exits non-zero fails the case
 #    (it would block, but no case expects a crash);
@@ -106,6 +109,14 @@ if (!wgSrc.includes(`const RESEARCHED_MARKER = '${WEB_RESEARCHED_MARKER}'`)) bad
 // an asked run's HARNESS_CAPS lacks these (naila compileClaudeCode)
 const askedCaps = listIn(join(naila, 'packages/harness/src/floor/policy.ts'), 'export const ASKED_RUN_CAPS = [')
 if (!askedCaps?.length) { bad('could not read naila ASKED_RUN_CAPS'); process.exit(1) }
+// the core's own env for a run (pure core Task 3): hookEnv, over the roster the core installs from its roles spec at start
+const dist = join(naila, 'packages/harness/dist')
+const { installRoster, rosterFrom } = await import(join(dist, 'roster.js'))
+const { parseWorkerSpecs } = await import(join(dist, 'workers-spec.js'))
+const { hookEnv } = await import(join(dist, 'floor/hook-env.js'))
+const { CAPABILITY_IDS } = await import(join(dist, 'capabilities.js'))
+if (typeof hookEnv !== 'function') { bad(`naila's built ${dist}/floor/hook-env.js has no hookEnv: build naila first (npm run build)`); process.exit(1) }
+installRoster(rosterFrom(parseWorkerSpecs(readFileSync(join(naila, 'packages/harness/test/fixtures/workers.json'), 'utf8'), () => '')))
 
 // the commands as the chart renders them (what the runs below reproduce with T's roots)
 const start = readFileSync(join(FILES, 'harness-start.sh'), 'utf8'), claudeYaml = readFileSync(join(repo, 'helm/assistant/templates/claude.yaml'), 'utf8')
@@ -171,9 +182,17 @@ for (const c of cases.filter((x) => x.claude.startsWith('hook:'))) {
   // the path tokens, as cases.json's `about` defines them ($S: Claude Code's project slug of the cwd)
   const tok = { $V: mount, $U: uploads, $W: posix.join(root, 'Naila', 'Workspace', c.run.worker), $H: tree.home, $S: cwd.replace(/[^a-zA-Z0-9]/g, '-') }
   const [hook, ...args] = hookArgs(c, root, exclude)
-  const caps = c.run.on.filter((x) => !(c.run.asked && askedCaps.includes(x))).join(',')
+  const unknownCap = c.run.on.find((x) => !CAPABILITY_IDS.includes(x))
+  if (unknownCap !== undefined) { bad(`${c.id} ${c.what}: ${unknownCap} is not a capability`); continue }
+  const caps = CAPABILITY_IDS.filter((x) => c.run.on.includes(x) && !(c.run.asked && askedCaps.includes(x))).join(',')
+  // the case's policy context, as naila's floor-conformance.test.ts ctxFor builds it
+  const ctx = { phase: c.run.phase, vaultRoot: root, vaultMount: mount, vaultExclude: ph.exclude, uploadsRoot: uploads, workRoot: join(t, tree.work), claudeHome: tree.home }
+  let core
+  try { core = hookEnv({ worker: c.run.worker, on: c.run.on, ...(c.run.origin === undefined ? {} : { origin: c.run.origin }), asked: c.run.asked }, ctx) }
+  catch (e) { bad(`${c.id} ${c.what}: hookEnv throws: ${e.message}`); continue }
+  if (core.HARNESS_CAPS !== caps) { bad(`${c.id}: HARNESS_CAPS drift (hookEnv ${JSON.stringify(core.HARNESS_CAPS)}, the case's ${JSON.stringify(caps)})`); continue }
   const slots = slotsWith(c.web?.used)
-  const env = { PATH: process.env.PATH, HARNESS_CAPS: caps, HARNESS_WORKER: c.run.worker, HARNESS_WEB_SLOTS: slots, ...(c.run.origin === undefined ? {} : { HARNESS_ORIGIN: c.run.origin }) }
+  const env = { PATH: process.env.PATH, ...core, HARNESS_WEB_SLOTS: slots }
   const input = JSON.stringify({ tool_name: c.tool, tool_input: subst(c.input, tok), cwd })
   const want = c.hook ?? c.expect
   // in the run's cwd, as Claude Code runs a hook command

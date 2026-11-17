@@ -47,6 +47,8 @@
 #    the start fails) and refuses settings without every layer deny or with a layer hook's tools not hooked by exactly one
 #    matching command; the advisor's finance-notes server env has NOTES_READONLY "1", and no container env names it (the
 #    core's own finance-notes executor never gets it);
+#  - pure core Task 8: the settings check dies on an image whose compile.js lacks DOCS_ROOTS_ENV ("HARNESS_DOCS_ROOTS": the
+#    run env the docs grant takes its folders from);
 #  - login alerts are per pod, and cloudflared routes naila.nopsqi.dev/harness to the harness login page.
 # Then the RC off switch (claude.rcLines, both phases): false stops the RC pod (replicas 0) and drops its login alerts;
 #  every other object, the harness pod and its checksum among them, renders exactly as with rcLines true.
@@ -679,7 +681,8 @@ else:
         if got != want_: bad.append(f"{tag}: {what}: {got}, want {want_}")
 # docs-grant (final fix I1): with --by-caps it follows HARNESS_CAPS/HARNESS_WORKER under --uploads and --root, and opens only
 # uploads/<HARNESS_ORIGIN>/ (Ruling 16: none without a well-formed origin); without flags (the RC lines) it denies nothing, as
-# at the ref. tests/docs-grant.sh has the full matrix; these run the rendered key.
+# at the ref. tests/docs-grant.sh has the full matrix; these run the rendered key. Pure core Task 8: its folders beyond the
+# uploads are the engine's (HARNESS_DOCS_ROOTS, as naila's docsRoots sets it: core_roots below); none without it.
 tag = "docs-grant follows the switches and the run's origin with --by-caps, and without flags behaves as at the ref"
 dg, dg_old = new.get("docs-grant.mjs", ""), old.get("docs-grant.mjs", "")
 v = os.path.join(gd, "dvault"); up = os.path.join(gd, "duploads")
@@ -690,6 +693,12 @@ for f in ("discord/u.pdf", "test/t.pdf"): open(os.path.join(up, f), "w").write("
 C = lambda p: {"tool_name": "mcp__docs__convert", "tool_input": {"path": p}}
 BC = ["--by-caps", "--uploads", up, "--root", v]
 BK = "docs.convert,files.read,messaging.ask,budget.read,budget.write-plans"
+def core_roots(caps, w):
+    """HARNESS_DOCS_ROOTS as naila's docsRoots sets it for these switches: the vault with vault.read, a finance worker's
+    Finance and the own workspace with files.read."""
+    on = set((caps or "").split(","))
+    return ",".join([*([v] if "vault.read" in on else []), *([f"{v}/Finance"] if "files.read" in on and w in ("finance-bookkeeper", "finance-advisor") else []),
+                     *([f"{v}/Naila/Workspace/{w}"] if "files.read" in on else [])])
 for what, p, caps, w, want_, *o_ in (   # o_: HARNESS_ORIGIN (default discord, the uploads' channel; None leaves it unset)
     ("the bookkeeper with vault.read off, a vault note", f"{v}/Daily/x.md", BK, "finance-bookkeeper", "deny"),
     ("the bookkeeper, an upload of its run's channel", f"{up}/discord/u.pdf", BK, "finance-bookkeeper", "none"),
@@ -710,9 +719,20 @@ for what, p, caps, w, want_, *o_ in (   # o_: HARNESS_ORIGIN (default discord, t
     ("a malformed HARNESS_ORIGIN, an upload", f"{up}/discord/u.pdf", BK, "finance-bookkeeper", "deny", "Discord"),
     ("a HARNESS_ORIGIN with a slash, an upload", f"{up}/discord/u.pdf", BK, "finance-bookkeeper", "deny", "discord/.")):
     o_ = o_[0] if o_ else "discord"
-    env_ = {**({"HARNESS_CAPS": caps} if caps is not None else {}), **({"HARNESS_WORKER": w} if w else {}), **({"HARNESS_ORIGIN": o_} if o_ is not None else {})}
+    env_ = {**({"HARNESS_CAPS": caps} if caps is not None else {}), **({"HARNESS_WORKER": w} if w else {}), **({"HARNESS_ORIGIN": o_} if o_ is not None else {}),
+            "HARNESS_DOCS_ROOTS": core_roots(caps, w)}
     got = hook(dg, C(p), BC, env_)
     if got != want_: bad.append(f"{tag}: {what}: {got}, want {want_}")
+for what, p, roots, want_ in (   # the engine decides the folders: the hook names no worker
+    ("no HARNESS_DOCS_ROOTS (an image older than the engine's docs roots), an upload", f"{up}/discord/u.pdf", None, "deny"),
+    ("HARNESS_DOCS_ROOTS '', an upload", f"{up}/discord/u.pdf", "", "none"),
+    ("HARNESS_DOCS_ROOTS '', a vault note", f"{v}/Daily/x.md", "", "deny"),
+    ("ops-oncall given Finance by the engine, Finance", f"{v}/Finance/s.pdf", f"{v}/Finance", "none"),
+    ("a docs root outside --root, an upload", f"{up}/discord/u.pdf", gd, "deny"),
+    ("an empty docs root entry, an upload", f"{up}/discord/u.pdf", f"{v},", "deny")):
+    env_ = {"HARNESS_CAPS": "docs.convert,files.read", "HARNESS_WORKER": "ops-oncall", "HARNESS_ORIGIN": "discord", **({} if roots is None else {"HARNESS_DOCS_ROOTS": roots})}
+    if (got := hook(dg, C(p), BC, env_)) != want_: bad.append(f"{tag}: {what}: {got}, want {want_}")
+if re.search(r"finance-bookkeeper|finance-advisor", dg): bad.append(f"{tag}: the rendered docs-grant.mjs names a finance worker (the engine decides the folders)")
 for p in (f"{v}/Daily/x.md", f"{up}/discord/u.pdf", "/etc/hostname"):
     for env_ in ({}, {"HARNESS_CAPS": "docs.convert", "HARNESS_WORKER": "ops-oncall"}, {"HARNESS_CAPS": "docs.convert", "HARNESS_WORKER": "ops-oncall", "HARNESS_ORIGIN": "test"}):
         if hook(dg, C(p), [], env_) != hook(dg_old, C(p), [], env_): bad.append(f"{tag}: without flags, {p} with {env_}: {hook(dg, C(p), [], env_)}, at the ref {hook(dg_old, C(p), [], env_)}")
@@ -1003,8 +1023,11 @@ for ph, r in (("test", test), ("real", real)):
     LAYER_JS = "/naila/packages/harness/dist/providers/claude-code/compile.js"
     if LAYER_JS not in shlex.split(ck[0].group(2)): bad.append(f"{tag}: harness-start's settings check is not given {LAYER_JS}")
     if "CLAUDE_STATIC_LAYER" not in ck[0].group(1): bad.append(f"{tag}: harness-start's settings check does not name CLAUDE_STATIC_LAYER")
-    def layer_file(body):
-        f = tempfile.NamedTemporaryFile("w", suffix=".mjs", dir=d, delete=False); f.write(body); f.close(); return f.name
+    # pure core Task 8: an image's compile.js also exports DOCS_ROOTS_ENV (the run env the docs grant takes its folders from);
+    # every stand-in has it unless a check leaves it out (docs=False)
+    DOCS_EXPORT = 'export const DOCS_ROOTS_ENV = "HARNESS_DOCS_ROOTS"\n'
+    def layer_file(body, docs=True):
+        f = tempfile.NamedTemporaryFile("w", suffix=".mjs", dir=d, delete=False); f.write(body + (DOCS_EXPORT if docs else "")); f.close(); return f.name
     LAYER = json.loads(os.environ["CLAUDE_STATIC_LAYER"])
     layer_default = layer_file(f"export const CLAUDE_STATIC_LAYER = {json.dumps(LAYER)}\n")
     def run_check(settings, floor_module=None, layer_module=None):
@@ -1134,6 +1157,15 @@ for ph, r in (("test", test), ("real", real)):
                          ("a layer hook with an empty onFailure", [{**LAYER["hooks"][0], "onFailure": ""}, *LAYER["hooks"][1:]]),
                          ("a layer pinning a timeout the read guard lacks", [{**LAYER["hooks"][0], "timeout": 10}, *LAYER["hooks"][1:]])):
         if run_check(s, None, layer_file(f"export const CLAUDE_STATIC_LAYER = {json.dumps({**LAYER, 'hooks': hooks_})}\n")).returncode == 0: bad.append(f"{tag2}: harness-start's check accepts {what}")
+    # pure core Task 8: harness-start dies on an image without DOCS_ROOTS_ENV (its runs would carry no HARNESS_DOCS_ROOTS, and the
+    # docs grant would deny every conversion), naming the image as older than the chart
+    tag8 = f"{tag}: pure core Task 8"
+    if "DOCS_ROOTS_ENV" not in ck[0].group(1): bad.append(f"{tag8}: harness-start's settings check does not name DOCS_ROOTS_ENV")
+    for what, body in (("harness-start dies on an image without DOCS_ROOTS_ENV", f"export const CLAUDE_STATIC_LAYER = {json.dumps(LAYER)}\n"),
+                       ("an image whose DOCS_ROOTS_ENV names another variable", f"export const CLAUDE_STATIC_LAYER = {json.dumps(LAYER)}\nexport const DOCS_ROOTS_ENV = \"HARNESS_DOCS\"\n")):
+        p = run_check(s, None, layer_file(body, docs=False))
+        if p.returncode != 2 or "has no DOCS_ROOTS_ENV: this naila image is older than the chart (the docs grant takes its folders from the engine)" not in p.stderr:
+            bad.append(f"{tag8}: {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 naming the image as older")
     nw_ = os.environ.get("NAILA_WORKTREE", "")
     real_layer = f"{nw_}/packages/harness/dist/providers/claude-code/compile.js"
     if nw_ and os.path.isfile(real_layer):

@@ -162,7 +162,8 @@ fs.writeFileSync(dst, JSON.stringify(s, null, 2))' /config/settings.json /config
 # a layer hook that names a timeout or onFailure, the hook object carries exactly that. Phase 2: the image's
 # claude-code adapter states what these static settings must hold for every run (CLAUDE_STATIC_LAYER, compile.js): each of its
 # denies, and for each of its hooks every tool of the matcher hooked by exactly one command, matching the hook's regex. An image
-# without it (older than the chart) fails the start. Phase 3: when the image exports CORE_ALWAYS_TOOLS (capabilities.js),
+# without it (older than the chart) fails the start, as does one without DOCS_ROOTS_ENV (pure core: the docs grant's folders
+# come from the engine, HARNESS_DOCS_ROOTS). Phase 3: when the image exports CORE_ALWAYS_TOOLS (capabilities.js),
 # harness-settings.json's allow must be exactly that list plus propose_plan and ask_worker.
 node -e '
 const fs = require("fs"), [f, phase, root, patch, capsjs, layerjs] = process.argv.slice(1)
@@ -208,6 +209,9 @@ const isStr = (x) => typeof x === "string" && x.length > 0
 const pin = (x) => (x.timeout === undefined || (Number.isFinite(x.timeout) && x.timeout > 0)) && (x.onFailure === undefined || isStr(x.onFailure))
 if (!L || !Array.isArray(L.deny) || !L.deny.length || !L.deny.every(isStr) || !Array.isArray(L.hooks) || !L.hooks.length || !L.hooks.every((x) => x && isStr(x.matcher) && isStr(x.command) && pin(x)))
   fail(`${layerjs} has no well-formed CLAUDE_STATIC_LAYER: this naila image is older than the chart`)
+// the docs grant (docs-grant.mjs --by-caps) takes its folders from each run\x27s HARNESS_DOCS_ROOTS, which only an image whose
+// adapter exports DOCS_ROOTS_ENV sets: an older image\x27s runs would convert nothing at all, quietly
+if ((await import(layerjs)).DOCS_ROOTS_ENV !== "HARNESS_DOCS_ROOTS") fail(`${layerjs} has no DOCS_ROOTS_ENV: this naila image is older than the chart (the docs grant takes its folders from the engine)`)
 floor.push(...L.deny)
 // a layer hook the settings miss means a chart older than the image (an older image fails the web-rules check before
 // this): say which hook, and what to do

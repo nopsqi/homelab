@@ -1,10 +1,11 @@
-// PreToolUse hook for WebSearch and WebFetch: only the researcher reads the web (the Rule of Two: the one worker with the
-// open web holds none of the user's data, and every other worker, which does, has no web).
-// - With --by-worker (the harness runs, as harness-start.sh renders it): the run's worker and its switches come from the
-//   run's env, set by the core alone (HARNESS_WORKER, and HARNESS_CAPS: the run's capabilities that are on, comma-separated),
-//   never from the tool input. Every worker but the researcher is refused, and so is a run with no HARNESS_CAPS. The
-//   researcher's call is then judged in the same steps, order and words as naila's decideWeb (packages/harness/src/floor/
-//   web.ts): a search needs web.search and a free search slot; a page needs web.open, an https address with no user name,
+// PreToolUse hook for WebSearch and WebFetch: only a quarantined role's run reads the web (the Rule of Two: a run with the
+// open web holds none of the user's data, and every other run, which may, has no web). Today that role is the researcher.
+// - With --by-worker (the harness runs, as harness-start.sh renders it; the flag keeps its name): the run's switches come
+//   from the run's env, set by the core alone (HARNESS_CAPS: the run's capabilities that are on, comma-separated), never
+//   from the tool input, and never from the role's name (HARNESS_WORKER is not read). A run whose switches are not web
+//   switches and nothing else, at least one (naila's webRun over WEB_CAPS), is refused, and so is a run with no or an
+//   empty HARNESS_CAPS. A web run's call is then judged in the same steps, order and words as naila's decideWeb
+//   (packages/harness/src/floor/web.ts): a search needs web.search and a free search slot; a page needs web.open, an https address with no user name,
 //   password or port, a path and query of at most WEB_LIMITS.pathQuery characters, a host that is no IP literal and no
 //   internal name (nor is its www./bare twin, which Claude Code's WebFetch follows by itself), a free page slot (peeked
 //   before any lookup), then the host and its twins looked up together (dns.promises.lookup, all addresses, each raced
@@ -24,8 +25,14 @@ import dns from 'node:dns'
 import { closeSync, lstatSync, openSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 // web-rules:begin
-/** The one worker that may read the web. */
-export const WEB_WORKER = 'researcher'
+/** The capabilities that read the open web (untrusted input): a run may reach the web only when the switches it has on
+ *  are web switches and nothing else (a quarantined role's run: the Rule of Two). */
+export const WEB_CAPS = Object.freeze(['web.search', 'web.open'])
+/** Whether a run whose on switches are `caps` (HARNESS_CAPS: comma-separated) may reach the web at all. */
+export function webRun(caps = '') {
+  const on = String(caps ?? '').split(',').map((c) => c.trim()).filter((c) => c !== '')
+  return on.length > 0 && on.every((c) => WEB_CAPS.includes(c))
+}
 
 /** The empty file the core writes into a run's web slots folder (HARNESS_WEB_SLOTS) once a researcher report came back in
  *  its chain: from then on the run's direct writes (the vault server's write tools, Write and Edit) are refused. */
@@ -278,10 +285,8 @@ const webTwins = (host) => {
 
 /** The refusal text for this call, or undefined to allow it (the steps of naila's decideWeb, in its order). */
 async function judge(e) {
-  if (!process.argv.includes('--by-worker')) return WEB_TEXT.askResearcher
-  const caps = process.env.HARNESS_CAPS
-  if (caps === undefined || process.env.HARNESS_WORKER !== WEB_WORKER) return WEB_TEXT.askResearcher
-  const on = new Set(caps.split(',').map((c) => c.trim()))
+  if (!process.argv.includes('--by-worker') || !webRun(process.env.HARNESS_CAPS ?? '')) return WEB_TEXT.askResearcher
+  const on = new Set((process.env.HARNESS_CAPS ?? '').split(',').map((c) => c.trim()))
   if (e === null || typeof e !== 'object' || Array.isArray(e)) return WEB_TEXT.unreadable
   const search = e.tool_name === 'WebSearch'
   if (!search && e.tool_name !== 'WebFetch') return WEB_TEXT.notWeb

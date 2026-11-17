@@ -36,10 +36,13 @@ harness:
   # real: the real budget (assistant-finance) and the whole vault. Switch only on the user's explicit go.
   phase: test
   # The channels the core talks to, by name (^[a-z][a-z0-9-]{0,31}$; the core's HARNESS_CHANNELS and GATEWAY_SECRETS list
-  # every enabled one). At least one must be enabled; anything the core would refuse fails the render.
+  # every enabled one). At least one must be enabled; anything the core would refuse fails the render. Each has a `kind`
+  # (required, pure-core phase 2): owner (the user's own channel) or test (the live checks': its decisions, vault changes and
+  # history stay out of the owner's views). The name test is reserved for a test channel, and a test channel may not approve.
   channels:
     discord:
       enabled: false
+      kind: owner                         # owner | test
       label: Discord                      # how the core names the channel to the workers and in the decision pool
       settle: approve                     # approve | reject | none: what it may do to a pending decision
       # retainMs: <ms>                    # optional: drop its unacked posts older than this (a channel nobody polls between runs)
@@ -62,19 +65,23 @@ harness:
     # Outside a test instance the core lets it only reject (or do nothing), and the render refuses settle approve.
     test:
       enabled: false
+      kind: test                          # the name test is always a test channel
       label: Test
       settle: reject
       retainMs: 3600000                   # nobody polls it between live runs
       secretKey: GATEWAY_TEST_SECRET
-  # The roles config (naila packages/harness/src/workers-spec.ts, ROLES_SPEC_VERSION 2): templates/harness.yaml renders it as
+  # The roles config (naila packages/harness/src/workers-spec.ts, ROLES_SPEC_VERSION 3): templates/harness.yaml renders it as
   # harness-workers.json beside each role's instructions (/config), the core installs its roles from it at start (in this
   # order, the lead first), and the claude-code adapter's prepare.js writes the agent files from it. `roles` is an ordered
   # list: each role's `id` (immutable once rows are written under it), `lead: true` on exactly one (listed first), `display`
   # (how every channel shows it: name, avatar key), `seed` (its switches on first sight; each must apply to it, as the core
-  # checks at start: tests/render-modes.sh runs naila's checkSeeds on the render), `instructions`, `brain`, `ceiling` and
-  # `servers`. Until pure-core phase 2 the roles are exactly naila, finance-bookkeeper, finance-advisor, ops-oncall and
-  # researcher, in that order, naila the lead. `retired`: ids removed from roles (their rows kept, never run). One source per
-  # value: a role's model is its workers[].model (naila has none there: hers is here), its description its
+  # checks at start: tests/render-modes.sh runs naila's checkSeeds on the render), `instructions`, `brain`, `ceiling`,
+  # `servers` and `paths` (spec 3: its path grants, e.g. finance-documents, the vault's Finance/ folder through files.read;
+  # absent is none). A role that holds the web (web.search or web.open in its seed, WebSearch or WebFetch in its ceiling) is
+  # quarantined, which the core derives (never a key here): it holds the web and nothing else. The roles are naila,
+  # finance-bookkeeper, finance-advisor, ops-oncall and researcher, in that order, naila the lead; a role with a server named
+  # finance is told in the test phase that its budget is a test copy. `retired`: ids removed from roles (their rows kept,
+  # never run). One source per value: a role's model is its workers[].model (naila has none there: hers is here), its description its
   # files/agents/<id>.md frontmatter's, and its ceiling (the tools its runs may ever have) files/modes/harness/<id>.<ceiling>.md,
   # split on ", ". Literal markers the template resolves per phase: __FINANCE_HOST__ (assistant-finance-test or
   # assistant-finance) and __VAULT_ROOT__ (/vault/Harness-test or /vault). No server string may hold a $ or MCP_FINANCE_TOKEN
@@ -92,6 +99,7 @@ harness:
       - id: finance-bookkeeper
         display: { name: Finance Bookkeeper, avatar: finance-bookkeeper }
         seed: [files.read, messaging.ask, budget.read, budget.write-plans, docs.convert]
+        paths: [finance-documents]
         instructions: harness-agent-finance-bookkeeper.md
         brain: { provider: claude-subscription }
         ceiling: tools
@@ -100,6 +108,7 @@ harness:
       - id: finance-advisor
         display: { name: Finance Advisor, avatar: finance-advisor }
         seed: [files.read, messaging.ask, budget.read, budget.write-plans, docs.convert]
+        paths: [finance-documents]
         instructions: harness-agent-finance-advisor.md
         brain: { provider: claude-subscription }
         ceiling: tools

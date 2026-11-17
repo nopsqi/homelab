@@ -9,10 +9,11 @@
 #    --uploads <uploads> --root <phase root> [--exclude <phase root>/<VAULT_EXCLUDE dir>,…] (real phase); web-guard.mjs
 #    --by-worker. The rendered /vault and /home/claude/.claude/uploads don't exist here, so --root and --uploads name T's
 #    (F14); a path under ~/.claude stays the literal /home/claude/.claude;
-#  - it pipes the Claude Code hook input {tool_name, tool_input, cwd} (cwd: T/work/<worker>, also the hook's own) into the hook, with
+#  - it pipes the Claude Code hook input {tool_name, tool_input, cwd} (cwd: T/work/<role>, also the hook's own) into the hook, with
 #    the env the core gives the run: naila's hookEnv (packages/harness/dist/floor/hook-env.js, its roster installed from the
-#    roles spec fixture packages/harness/test/fixtures/workers.json; build naila first) for the case's worker, switches,
-#    origin and asked flag in the case's tree and phase (HARNESS_CAPS, HARNESS_WORKER, HARNESS_ORIGIN when the run has one,
+#    cases' own role fixtures, cases.json `roles`: a roles spec v3 with the roles chief, ledger, planner, watch and scout; build
+#    naila first) for the case's role (run.role), switches, origin and asked flag in the case's tree and phase (HARNESS_CAPS,
+#    HARNESS_WORKER, HARNESS_ORIGIN when the run has one,
 #    HARNESS_DOCS_ROOTS), plus HARNESS_WEB_SLOTS (a fresh, empty slots folder per case). Its HARNESS_CAPS must equal this
 #    script's own (the case's capabilities in naila's CAPABILITY_IDS order, comma-joined; an asked run's without naila's
 #    ASKED_RUN_CAPS), else the case fails as a drift. It checks that the hook prints a deny exactly when the case says so: `hook` where a ruling
@@ -26,7 +27,9 @@
 #    word (WEB_TEXT imported from naila's block), look up exactly the names in `web.lookups` (as sets), and take one slot of
 #    its kind when allowed, none when refused. The allow cases name .example hosts, which never resolve: a stub that didn't
 #    take effect fails them;
-#  - homelab-only checks: the web guard without --by-worker or HARNESS_CAPS, a missing slots folder, the researched marker
+#  - homelab-only checks: the web guard without --by-worker, without or with an empty HARNESS_CAPS, with a web switch beside
+#    another one, with web switches named only in the tool input, with one web switch alone, and with HARNESS_WORKER naming
+#    the lead beside web switches (it decides by the run's switches alone, never by the role's name), a missing slots folder, the researched marker
 #    is no slot, a resolver that never answers (refused after the 5 s race), and the hook's own 15 s deadline (stdin never
 #    closes: a deny with exit 2, since Claude Code lets a call through when a hook times out); the write guard refuses every
 #    write tool (and the vault and finance-notes servers' write tools) in a run marked researched or with no slots folder, and
@@ -74,7 +77,7 @@ import { dirname, join, posix } from 'node:path'
 
 const [repo, naila, casesFile, stub] = process.argv.slice(2)
 const FILES = join(repo, 'helm/assistant/files')
-const { tree, cases } = JSON.parse(readFileSync(casesFile, 'utf8'))
+const { tree, roles, cases } = JSON.parse(readFileSync(casesFile, 'utf8'))
 let fail = 0
 const bad = (m) => { console.log(`FAIL: ${m}`); fail = 1 }
 
@@ -116,7 +119,12 @@ const { parseWorkerSpecs } = await import(join(dist, 'workers-spec.js'))
 const { hookEnv } = await import(join(dist, 'floor/hook-env.js'))
 const { CAPABILITY_IDS } = await import(join(dist, 'capabilities.js'))
 if (typeof hookEnv !== 'function') { bad(`naila's built ${dist}/floor/hook-env.js has no hookEnv: build naila first (npm run build)`); process.exit(1) }
-installRoster(rosterFrom(parseWorkerSpecs(readFileSync(join(naila, 'packages/harness/test/fixtures/workers.json'), 'utf8'), () => '')))
+// the cases' own role fixtures (cases.json `roles`, a roles spec v3), as naila's floor-conformance.test.ts installs them
+if (!roles || !Array.isArray(roles.roles)) { bad(`${casesFile} has no role fixtures (roles): naila predates pure-core phase 2`); process.exit(1) }
+installRoster(rosterFrom(parseWorkerSpecs(JSON.stringify(roles), () => '')))
+// the lead fixture: the write guard's homelab-only checks run as its run
+const LEAD = roles.roles.find((r) => r.lead === true)?.id
+if (typeof LEAD !== 'string') { bad('the role fixtures have no lead'); process.exit(1) }
 
 // the commands as the chart renders them (what the runs below reproduce with T's roots)
 const start = readFileSync(join(FILES, 'harness-start.sh'), 'utf8'), claudeYaml = readFileSync(join(repo, 'helm/assistant/templates/claude.yaml'), 'utf8')
@@ -178,9 +186,9 @@ for (const c of cases.filter((x) => x.claude.startsWith('hook:'))) {
   const ph = tree.phases[c.run.phase], root = join(t, ph.root)
   // only the real phase passes VAULT_EXCLUDE to the docs grant (harness-start.sh)
   const exclude = c.run.phase === 'real' ? ph.exclude : []
-  const cwd = join(t, tree.work, c.run.worker)
+  const cwd = join(t, tree.work, c.run.role)
   // the path tokens, as cases.json's `about` defines them ($S: Claude Code's project slug of the cwd)
-  const tok = { $V: mount, $U: uploads, $W: posix.join(root, 'Naila', 'Workspace', c.run.worker), $H: tree.home, $S: cwd.replace(/[^a-zA-Z0-9]/g, '-') }
+  const tok = { $V: mount, $U: uploads, $W: posix.join(root, 'Naila', 'Workspace', c.run.role), $H: tree.home, $S: cwd.replace(/[^a-zA-Z0-9]/g, '-') }
   const [hook, ...args] = hookArgs(c, root, exclude)
   const unknownCap = c.run.on.find((x) => !CAPABILITY_IDS.includes(x))
   if (unknownCap !== undefined) { bad(`${c.id} ${c.what}: ${unknownCap} is not a capability`); continue }
@@ -188,7 +196,7 @@ for (const c of cases.filter((x) => x.claude.startsWith('hook:'))) {
   // the case's policy context, as naila's floor-conformance.test.ts ctxFor builds it
   const ctx = { phase: c.run.phase, vaultRoot: root, vaultMount: mount, vaultExclude: ph.exclude, uploadsRoot: uploads, workRoot: join(t, tree.work), claudeHome: tree.home }
   let core
-  try { core = hookEnv({ worker: c.run.worker, on: c.run.on, ...(c.run.origin === undefined ? {} : { origin: c.run.origin }), asked: c.run.asked }, ctx) }
+  try { core = hookEnv({ worker: c.run.role, on: c.run.on, ...(c.run.origin === undefined ? {} : { origin: c.run.origin }), asked: c.run.asked }, ctx) }
   catch (e) { bad(`${c.id} ${c.what}: hookEnv throws: ${e.message}`); continue }
   if (core.HARNESS_CAPS !== caps) { bad(`${c.id}: HARNESS_CAPS drift (hookEnv ${JSON.stringify(core.HARNESS_CAPS)}, the case's ${JSON.stringify(caps)})`); continue }
   const slots = slotsWith(c.web?.used)
@@ -218,7 +226,7 @@ for (const c of cases.filter((x) => x.claude.startsWith('hook:'))) {
 console.log(`${agree}/${n} hook cases agree`)
 
 // Homelab-only checks of the web guard (what the shared cases can't state: its flag, its env, its slots folder, its deadline)
-const R = { HARNESS_CAPS: 'web.search,web.open', HARNESS_WORKER: 'researcher' }
+const R = { HARNESS_CAPS: 'web.search,web.open' }
 const PAGE = JSON.stringify({ tool_name: 'WebFetch', tool_input: { url: 'https://site.example/x' } })
 const SEARCH = JSON.stringify({ tool_name: 'WebSearch', tool_input: { query: 'BI rate' } })
 const PUBLIC = { 'site.example': ['93.184.215.14'], 'www.site.example': ['93.184.215.14'] }
@@ -234,12 +242,27 @@ const web = (what, args, env, input, dns, want, reason, lookups, check) => {
   if (why.length) bad(`web-guard.mjs ${what}: ${why.join('; ')}`)
 }
 const lookedUp = ['site.example', 'www.site.example']
-web('without --by-worker (the RC lines), the researcher\'s public page', [], { ...R, HARNESS_WEB_SLOTS: slotsWith() }, PAGE, PUBLIC, 'deny', WEB_TEXT.askResearcher, [])
-web('without --by-worker, the researcher\'s search', [], { ...R, HARNESS_WEB_SLOTS: slotsWith() }, SEARCH, {}, 'deny', WEB_TEXT.askResearcher, [])
-web('with --by-worker, no HARNESS_CAPS', ['--by-worker'], { HARNESS_WORKER: 'researcher', HARNESS_WEB_SLOTS: slotsWith() }, SEARCH, {}, 'deny', WEB_TEXT.askResearcher, [])
-web('with --by-worker, no HARNESS_WORKER', ['--by-worker'], { HARNESS_CAPS: R.HARNESS_CAPS, HARNESS_WEB_SLOTS: slotsWith() }, SEARCH, {}, 'deny', WEB_TEXT.askResearcher, [])
-web('the researcher\'s worker named in the tool input only', ['--by-worker'], { HARNESS_CAPS: R.HARNESS_CAPS, HARNESS_WORKER: 'naila', HARNESS_WEB_SLOTS: slotsWith() },
-  JSON.stringify({ tool_name: 'WebSearch', tool_input: { query: 'x' }, agent_type: 'researcher', worker: 'researcher' }), {}, 'deny', WEB_TEXT.askResearcher, [])
+web('without --by-worker (the RC lines), a web run\'s public page', [], { ...R, HARNESS_WEB_SLOTS: slotsWith() }, PAGE, PUBLIC, 'deny', WEB_TEXT.askResearcher, [])
+web('without --by-worker, a web run\'s search', [], { ...R, HARNESS_WEB_SLOTS: slotsWith() }, SEARCH, {}, 'deny', WEB_TEXT.askResearcher, [])
+web('with --by-worker, no HARNESS_CAPS', ['--by-worker'], { HARNESS_WEB_SLOTS: slotsWith() }, SEARCH, {}, 'deny', WEB_TEXT.askResearcher, [])
+web('with --by-worker, HARNESS_CAPS empty', ['--by-worker'], { HARNESS_CAPS: '', HARNESS_WEB_SLOTS: slotsWith() }, SEARCH, {}, 'deny', WEB_TEXT.askResearcher, [])
+web('web switches named in the tool input only', ['--by-worker'], { HARNESS_CAPS: 'files.read,vault.read', HARNESS_WEB_SLOTS: slotsWith() },
+  JSON.stringify({ tool_name: 'WebSearch', tool_input: { query: 'x', HARNESS_CAPS: R.HARNESS_CAPS, caps: ['web.search', 'web.open'] }, HARNESS_CAPS: R.HARNESS_CAPS, agent_type: 'scout', worker: 'scout' }), {}, 'deny', WEB_TEXT.askResearcher, [])
+{
+  const d = slotsWith()
+  web('HARNESS_CAPS web.search,files.read is refused (a web switch beside another one)', ['--by-worker'], { HARNESS_CAPS: 'web.search,files.read', HARNESS_WEB_SLOTS: d }, SEARCH, {}, 'deny', WEB_TEXT.askResearcher, [],
+    () => (slotCount(d).search === 0 ? [] : [`took a slot: ${JSON.stringify(slotCount(d))}`]))
+}
+{
+  const d = slotsWith()
+  web('HARNESS_CAPS web.search alone allows a search', ['--by-worker'], { HARNESS_CAPS: 'web.search', HARNESS_WEB_SLOTS: d }, SEARCH, {}, 'allow', undefined, [],
+    () => (JSON.stringify(slotCount(d)) === JSON.stringify({ search: 1, open: 0 }) ? [] : [`slots ${JSON.stringify(slotCount(d))} after, want one search`]))
+}
+{
+  const d = slotsWith()
+  web(`HARNESS_WORKER=naila with web switches still decides by switches`, ['--by-worker'], { ...R, HARNESS_WORKER: 'naila', HARNESS_WEB_SLOTS: d }, SEARCH, {}, 'allow', undefined, [],
+    () => (slotCount(d).search === 1 ? [] : [`slots ${JSON.stringify(slotCount(d))} after, want one search`]))
+}
 web('unreadable input', ['--by-worker'], { ...R, HARNESS_WEB_SLOTS: slotsWith() }, '{', {}, 'deny', WEB_TEXT.unreadable, [])
 web('a search with no HARNESS_WEB_SLOTS', ['--by-worker'], R, SEARCH, {}, 'deny', WEB_TEXT.noCounter, [])
 web('a page with a slots folder that is gone', ['--by-worker'], { ...R, HARNESS_WEB_SLOTS: join(slotsWith(), 'gone') }, PAGE, PUBLIC, 'deny', WEB_TEXT.noCounter, [])
@@ -275,7 +298,7 @@ const deadline = (what, args, env, part) => new Promise((resolve) => {
   })
 })
 const writeDeadline = deadline('harness-write-guard.mjs', [join(FILES, 'harness-write-guard.mjs'), '--root', '/vault/Naila/Workspace'],
-  { HARNESS_WORKER: 'naila', HARNESS_WEB_SLOTS: slotsWith() }, '{"tool_name":"Wri')
+  { HARNESS_WORKER: LEAD, HARNESS_WEB_SLOTS: slotsWith() }, '{"tool_name":"Wri')
 await deadline('web-guard.mjs', ['--import', stub, join(FILES, 'web-guard.mjs'), '--by-worker'], { ...R, HARNESS_WEB_SLOTS: slotsWith(), STUB_DNS: '{}' }, SEARCH.slice(0, 10))
 await writeDeadline
 
@@ -292,7 +315,7 @@ const wroot = join(t, tree.phases.real.root)
 const write = (what, tool, toolInput, env, want, reason) => {
   extra++
   const r = spawnSync(process.execPath, [join(FILES, 'harness-write-guard.mjs'), '--root', `${wroot}/Naila/Workspace`],
-    { cwd: join(t, tree.work, 'naila'), input: JSON.stringify({ tool_name: tool, tool_input: toolInput }), env: { PATH: process.env.PATH, HARNESS_WORKER: 'naila', ...env }, encoding: 'utf8', timeout: 20000 })
+    { cwd: join(t, tree.work, LEAD), input: JSON.stringify({ tool_name: tool, tool_input: toolInput }), env: { PATH: process.env.PATH, HARNESS_WORKER: LEAD, ...env }, encoding: 'utf8', timeout: 20000 })
   const o = out(r), got = r.stdout.trim() === '' ? 'none' : o?.permissionDecision, why = []
   if (r.status !== 0) why.push(`exit ${r.status}`)
   if (got !== want) why.push(`decision ${got}, want ${want}`)
@@ -302,13 +325,13 @@ const write = (what, tool, toolInput, env, want, reason) => {
 // every case the shared suite allows (a write in the run's own workspace) is refused once the run is marked, or has no slots
 for (const c of cases.filter((x) => x.claude === 'hook:write-guard' && (x.hook ?? x.expect) === 'allow')) {
   const root = join(t, tree.phases[c.run.phase].root)
-  const tok = { $V: mount, $U: uploads, $W: posix.join(root, 'Naila', 'Workspace', c.run.worker), $H: tree.home, $S: '' }
+  const tok = { $V: mount, $U: uploads, $W: posix.join(root, 'Naila', 'Workspace', c.run.role), $H: tree.home, $S: '' }
   write(`${c.id} (${c.what}) in a run marked researched`, c.tool, subst(c.input, tok), { HARNESS_WEB_SLOTS: slotsWith({}, true) }, 'deny', RESEARCHED_TEXT)
   write(`${c.id} (${c.what}) with no HARNESS_WEB_SLOTS`, c.tool, subst(c.input, tok), {}, 'deny')
   write(`${c.id} (${c.what}) with a slots folder that is gone`, c.tool, subst(c.input, tok), { HARNESS_WEB_SLOTS: join(slotsWith(), 'gone') }, 'deny')
   write(`${c.id} (${c.what}) with a relative HARNESS_WEB_SLOTS`, c.tool, subst(c.input, tok), { HARNESS_WEB_SLOTS: 'web' }, 'deny')
 }
-const ws = `${wroot}/Naila/Workspace/naila`
+const ws = `${wroot}/Naila/Workspace/${LEAD}`
 for (const [tool, ti] of [['MultiEdit', { file_path: `${ws}/x.md`, edits: [] }], ['NotebookEdit', { notebook_path: `${ws}/x.ipynb`, new_source: 'x' }]]) {
   write(`${tool} in a run marked researched`, tool, ti, { HARNESS_WEB_SLOTS: slotsWith({}, true) }, 'deny', RESEARCHED_TEXT)
   write(`${tool} without the marker (never a workspace write)`, tool, ti, { HARNESS_WEB_SLOTS: slotsWith() }, 'deny')

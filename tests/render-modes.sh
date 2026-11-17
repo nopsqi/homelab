@@ -61,7 +61,7 @@
 # Then the worker spec (harness-workers.json in ConfigMap assistant-harness, both phases): pure core Task 9, it is the roles spec
 #  v2 (version 2; the roles naila, finance-bookkeeper, finance-advisor, ops-oncall, researcher in that order, naila alone the
 #  lead and first; retired []; each role's display and seed the chart's literals), the render fails on a duplicate id, two
-#  leads or none, a lead not first and a retired active role, and harness-start dies on an image without ROLES_SPEC_VERSION 2;
+#  leads or none, a lead not first and a retired active role, and harness-start dies on an image without ROLES_SPEC_VERSION 3;
 #  naila's own validator accepts it and every seed entry applies (naila's checkSeeds, from its built dist) when
 #  NAILA_WORKTREE points at a naila checkout (skipped with a notice otherwise), no __MARKER__ survives, each model is the
 #  chart's per-worker model (direct-lines), each description the RC agent file's, each ceiling its tools.md, the URLs and the
@@ -595,11 +595,12 @@ def hook(src, ev, args=(), env=None):
     if p.returncode != 0: return f"exit {p.returncode}"
     try: return json.loads(p.stdout)["hookSpecificOutput"]["permissionDecision"] if p.stdout.strip() else "none"
     except ValueError: return f"bad output {p.stdout!r}"
-# web-guard: with --by-worker (the harness runs) only the researcher reads the web, the worker and its switches from the
-# run's env; without it (the RC lines' settings, and an older harness render) every call is refused. tests/floor-conformance.sh
+# web-guard: with --by-worker (the harness runs) only a run whose switches are web switches and nothing else reads the web
+# (pure core phase 2 Task 10: by HARNESS_CAPS alone, never the role's name in HARNESS_WORKER); without it (the RC lines'
+# settings, and an older harness render) every call is refused. tests/floor-conformance.sh
 # runs the full case matrix; these run the rendered key, the resolver stubbed (no network): the stub answers only the
 # .example names below, which never resolve for real, so a stub that doesn't take effect fails the allow.
-tag = "web-guard decides by worker with --by-worker, and refuses everything without it"
+tag = "web-guard decides by the run's switches with --by-worker, and refuses everything without it"
 wg = new.get("web-guard.mjs", "")
 stub = os.path.join(gd, "dns-stub.mjs")
 open(stub, "w").write("""import dns from 'node:dns'
@@ -636,6 +637,9 @@ for what, ev, env_, want_, looked, slots_ in (
         ("the advisor searches", S, {"HARNESS_CAPS": "budget.read,web.search,web.open", "HARNESS_WORKER": "finance-advisor"}, "deny", [], []),
         ("the advisor opens a page", F, {"HARNESS_CAPS": "budget.read,web.search,web.open", "HARNESS_WORKER": "finance-advisor"}, "deny", [], []),
         ("the researcher with no HARNESS_CAPS (an older image)", S, {"HARNESS_WORKER": "researcher"}, "deny", [], []),
+        ("a web run without HARNESS_WORKER searches (the switches decide)", S, {"HARNESS_CAPS": RS}, "allow", [], ["search-1"]),
+        ("a web run named naila searches (the switches decide, not the name)", S, {"HARNESS_CAPS": RS, "HARNESS_WORKER": "naila"}, "allow", [], ["search-1"]),
+        ("web.search,files.read is refused (a web switch beside another one)", S, {"HARNESS_CAPS": "web.search,files.read", "HARNESS_WORKER": "researcher"}, "deny", [], []),
         ("the advisor subagent of the RC lines (agent_type, no harness env)", {**F, "agent_type": "finance-advisor"}, {}, "deny", [], [])):
     for args in (["--by-worker"], []):
         w_ = want_ if args else "deny"   # without --by-worker every call is refused, before any lookup or slot
@@ -1271,7 +1275,16 @@ else:
                            ("an image without the claude-code adapter", {"adapter": None}, OLD_IMG),
                            ("dies when the image's web texts differ from the chart's", {"block": tw(BLOCK, "'Only https addresses can be opened.'", "'Only https.'")}, DIFFER),
                            ("an image whose web limits differ", {"block": tw(BLOCK, "searches: 20,", "searches: 21,")}, DIFFER),
-                           ("an image whose web worker differs", {"block": tw(BLOCK, "export const WEB_WORKER = 'researcher'", "export const WEB_WORKER = 'surfer'")}, DIFFER),
+                           # pure core phase 2 Task 10: the web rules decide by the run's switches (WEB_CAPS, webRun); an image whose
+                           # rules have no WEB_CAPS (the phase 1 block, which names a web worker instead) or whose webRun judges a run's
+                           # switches otherwise differs from the chart's web guard, and fails the start
+                           ("harness-start dies on an image whose web rules have no WEB_CAPS", {"block": tw(BLOCK, "export const WEB_CAPS", "const WEB_CAPS")}, "WEB_CAPS: " + DIFFER),
+                           ("harness-start dies on an image whose web rules are phase 1's (WEB_WORKER, no WEB_CAPS or webRun)",
+                            {"block": tw(BLOCK, BLOCK[:BLOCK.index("\n\n/** The empty file")], "/** The one worker that may read the web. */\nexport const WEB_WORKER = 'researcher'")}, "WEB_CAPS: " + DIFFER),
+                           ("harness-start dies on an image whose web switches differ", {"block": tw(BLOCK, "Object.freeze(['web.search', 'web.open'])", "Object.freeze(['web.search', 'web.open', 'files.read'])")}, "WEB_CAPS: " + DIFFER),
+                           ("harness-start dies on an image whose webRun judges otherwise (a web switch beside another one)", {"block": tw(BLOCK, "return on.length > 0 && on.every((c) => WEB_CAPS.includes(c))", "return on.some((c) => WEB_CAPS.includes(c))")}, 'webRun("web.search,files.read"): ' + DIFFER),
+                           ("harness-start dies on an image whose webRun judges otherwise (no switches)", {"block": tw(BLOCK, "return on.length > 0 && on.every(", "return on.every(")}, 'webRun(""): ' + DIFFER),
+                           ("harness-start dies on an image whose web rules export no webRun", {"block": tw(BLOCK, "export function webRun(", "function webRun(")}, "webRun(" ),
                            ("an image whose figure guard differs", {"block": tw(BLOCK, "export function carriesFigures(text = '') {", "export function carriesFigures(text = '') { return false;")}, DIFFER),
                            # researcher Task 12 (Task 11 Minor 5): the probe asks "12 juta" too, so a guard without magnitude words differs
                            ("an image whose figure guard misses magnitude words (12 juta)", {"block": tw(BLOCK, "MAGNITUDE_AFTER.test(n) || ", "")}, "carriesFigures(\"12 juta\")"),
@@ -1324,12 +1337,13 @@ else:
     if open(f"{d}/args").read() != "/p.js --spec /config/harness-workers.json --claude-dir /c --work-dir /h/work\n": bad.append(f"{tag}: prepare.js ran with {open(f'{d}/args').read()!r}")
     __import__("shutil").rmtree(d)
 
-# pure core Task 9: harness-start dies on an image without ROLES_SPEC_VERSION 2 (dist/workers-spec.js), before prepare.js reads
-# the roles config, naming the image as older and what to do. Run as rendered on stand-in images, and on naila's built dist.
-tag = "harness-start dies on an image without ROLES_SPEC_VERSION 2"
+# pure core Task 9, phase 2 Task 10: harness-start dies on an image without ROLES_SPEC_VERSION 3 (dist/workers-spec.js), before
+# prepare.js reads the roles config, naming the image as older and what to do. Run as rendered on stand-in images (none, 2, 3
+# and a few broken ones), and on naila's built dist.
+tag = "harness-start dies on an image without ROLES_SPEC_VERSION 3"
 sl = start.splitlines()
 sj = [i for i, l in enumerate(sl) if l == "SPEC_JS=/naila/packages/harness/dist/workers-spec.js"]
-OLD_SPEC = "this naila image predates the roles config (pure-core phase 1): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+OLD_SPEC = "this naila image predates pure-core phase 2 (roles spec 3): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
 sc = [i for i, l in enumerate(sl) if "ROLES_SPEC_VERSION" in l and l.startswith("node -e ") and l.endswith(f' "$SPEC_JS" || die "{OLD_SPEC}"')]
 pc9 = [i for i, l in enumerate(sl) if l.startswith('out=$(node "$PREPARE" ')]
 if len(sj) != 1 or len(sc) != 1 or len(pc9) != 1 or not sj[0] < sc[0] < pc9[0]: bad.append(f"{tag}: want one SPEC_JS= line, then one node -e check dying with {OLD_SPEC!r}, before prepare.js (got {len(sj)}, {len(sc)}, {len(pc9)})")
@@ -1343,9 +1357,9 @@ else:
         snippet = "\n".join(sl[sj[0]:sc[0] + 1]).replace("/naila/packages/harness/dist/", dist + "/")
         p = subprocess.run(["bash", "-c", 'set -eu; die() { echo "harness-start: $*" >&2; exit 2; }\n' + snippet + "\necho started"], capture_output=True, text=True)
         shutil.rmtree(d); return p
-    if (p := spec_check("export const ROLES_SPEC_VERSION = 2\n")).returncode != 0 or p.stdout.strip() != "started": bad.append(f"{tag}: refuses an image with ROLES_SPEC_VERSION 2: {p.stderr.strip()}")
+    if (p := spec_check("export const ROLES_SPEC_VERSION = 3\n")).returncode != 0 or p.stdout.strip() != "started": bad.append(f"{tag}: refuses an image with ROLES_SPEC_VERSION 3: {p.stderr.strip()}")
     for what, body in (("no workers-spec.js", None), ("no ROLES_SPEC_VERSION", "export const other = 1\n"), ("ROLES_SPEC_VERSION 1", "export const ROLES_SPEC_VERSION = 1\n"),
-                       ("ROLES_SPEC_VERSION \"2\"", "export const ROLES_SPEC_VERSION = '2'\n"), ("a workers-spec.js that throws", "throw new Error('boom')\n")):
+                       ("ROLES_SPEC_VERSION 2 (pure-core phase 1)", "export const ROLES_SPEC_VERSION = 2\n"), ("ROLES_SPEC_VERSION \"3\"", "export const ROLES_SPEC_VERSION = '3'\n"), ("a workers-spec.js that throws", "throw new Error('boom')\n")):
         p = spec_check(body)
         if p.returncode != 2 or OLD_SPEC not in p.stderr or "started" in p.stdout: bad.append(f"{tag}: an image with {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {OLD_SPEC!r}")
     nw9 = os.environ.get("NAILA_WORKTREE", "")

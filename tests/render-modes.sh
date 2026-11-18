@@ -1317,9 +1317,9 @@ else:
     nw4 = os.environ.get("NAILA_WORKTREE", "")
     rules_ts = f"{nw4}/packages/harness/src/floor/web-rules.ts"
     BLOCK = between(open(rules_ts).read()) if nw4 and os.path.isfile(rules_ts) else between(cdata["web-guard.mjs"])
-    def image_check(block=BLOCK, adapter="const env = { HARNESS_WEB_SLOTS: dir }\n", wguard=None, dist=None, setup=None):
+    def image_check(block=BLOCK, adapter="const env = { HARNESS_WEB_SLOTS: dir }\n", wguard=None, dist=None, setup=None, guard=None):
         d = tempfile.mkdtemp(); cfg = os.path.join(d, "config"); os.makedirs(cfg)
-        open(os.path.join(cfg, "web-guard.mjs"), "w").write(cdata["web-guard.mjs"])
+        open(os.path.join(cfg, "web-guard.mjs"), "w").write(cdata["web-guard.mjs"] if guard is None else guard)
         # pure core phase 4 Task 13: the profile's figure words come from the setup file (the test render's by default)
         open(os.path.join(cfg, "harness-setup.json"), "w").write(cdata["harness-setup.json"] if setup is None else setup)
         open(os.path.join(cfg, "harness-write-guard.mjs"), "w").write(cdata["harness-write-guard.mjs"] if wguard is None else wguard)
@@ -1383,6 +1383,11 @@ else:
     says = 'carriesFigures("12 perak"): ' + DIFFER
     if (p := image_check(block=tw(BLOCK, "const added = extraPatterns(extra)", "const added = extraPatterns()"), setup=perak)).returncode != 2 or says not in p.stderr:
         bad.append(f"{tag}: an image whose guard ignores the profile's words: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {says!r}")
+    # review Minor 1: each profile probe must be refused by both copies, not only alike: a chart web guard and an image that
+    # both ignore the profile's words agree on "12 perak" (both allow it), and still fail the start
+    IGNORE = ("const added = extraPatterns(extra)", "const added = extraPatterns()")
+    if (p := image_check(block=tw(BLOCK, *IGNORE), guard=tw(cdata["web-guard.mjs"], *IGNORE), setup=perak)).returncode != 2 or says not in p.stderr:
+        bad.append(f"{tag}: a chart web guard and an image that both ignore the profile's words: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {says!r}")
 
 # The worker spec replaces the sed loop, direct-lines and HARNESS_MODELS: harness-start refuses an image without the claude-code
 # adapter's prepare.js and a chart without the spec, runs prepare.js on /config/harness-workers.json (its exit status and an empty

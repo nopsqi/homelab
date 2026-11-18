@@ -218,8 +218,9 @@ for k in $wcreds; do [ -z "${!k:-}" ] || ! grep -qF -- "${!k}" "$C"/agents/*.md 
 # the finance reads, Finance/, every session's tool-results/) are dropped here, since a static allow would reach every run
 # (P28). Bare Write and Edit are not denied (a static bare deny beats a run's allow, so files.write could never work): they
 # stay closed unless the run's settings allow its own workspace, and the write guard holds them to
-# <VAULT_ROOT>/<workspace root>/<worker>/ (the profile's: Naila/Workspace in production), rooted on its command line (P18); it also takes NotebookEdit (floor-denied), which
-# it always refuses. Roll back the chart together with the image: this chart on an image older than naila 82db432 leaves runs
+# <VAULT_ROOT>/<workspace root>/<worker>/ (the profile's: Naila/Workspace in production), rooted on its command line
+# (P18); it also takes NotebookEdit (floor-denied), which it always refuses. Roll back the chart together with the image:
+# this chart on an image older than naila 82db432 leaves runs
 # without vault, finance or ops reads (safe, degraded), since only the per-run settings allow them; it also converts no documents
 # at all (an older image sets no HARNESS_CAPS, and docs-grant --by-caps then denies every path). Docs conversion follows each
 # run's switches (docs-grant.mjs --by-caps, failing closed): its own channel's uploads (uploads/<HARNESS_ORIGIN>/, Ruling 16;

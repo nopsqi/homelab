@@ -42,15 +42,16 @@ const util = require("util"), [file] = process.argv.slice(1)
 const fail = (m) => { console.error(`harness-start: ${m}`); process.exit(2) }
 const old = "this naila image predates pure-core phase 3 (services as plug-ins): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
 const differ = "HARNESS_SERVICES and the image\x27s services differ: ship them together"
+const broken = "this naila image\x27s registry is inconsistent"
 const NAME = /^[A-Z][A-Z0-9_]*$/
 ;(async () => {
 let img
 try { img = await import(file) } catch (e) { fail(`cannot load ${file}: ${e?.message ?? e}: ${old}`) }
 if (img.SERVICES_SPEC_VERSION !== 1) fail(old)
 const names = (x) => Array.isArray(x) && x.every((n) => typeof n === "string" && NAME.test(n))
-if (!Array.isArray(img.SERVICES) || !img.SERVICES.every((x) => typeof x?.id === "string" && names(x.writeCredentials))) fail(`${file} has malformed SERVICES: ${differ}`)
+if (!Array.isArray(img.SERVICES) || !img.SERVICES.every((x) => typeof x?.id === "string" && names(x.writeCredentials))) fail(`${file} has malformed SERVICES: ${broken}`)
 // the leak check below reads WRITE_CREDENTIALS: it must hold every declared write credential
-if (!names(img.WRITE_CREDENTIALS) || img.SERVICES.some((x) => x.writeCredentials.some((n) => !img.WRITE_CREDENTIALS.includes(n)))) fail(`${file} has a WRITE_CREDENTIALS without every declared write credential: ${differ}`)
+if (!names(img.WRITE_CREDENTIALS) || img.SERVICES.some((x) => x.writeCredentials.some((n) => !img.WRITE_CREDENTIALS.includes(n)))) fail(`${file} has a WRITE_CREDENTIALS without every declared write credential: ${broken}`)
 let cfg
 try { cfg = JSON.parse(process.env.HARNESS_SERVICES ?? "") } catch { fail(`HARNESS_SERVICES is missing or not JSON: ${differ}`) }
 if (!cfg || typeof cfg.services !== "object" || cfg.services === null || Array.isArray(cfg.services)) fail(`HARNESS_SERVICES has no services: ${differ}`)
@@ -329,7 +330,7 @@ mkdir -p "$W/$LEAD" "$W/_summary"
 [ -z "${FINANCE_NOTES_ROOT:-}" ] || mkdir -p "$FINANCE_NOTES_ROOT"
 # P17: the chart's write guard stops every tool the image says it must (WRITE_GUARD_TOOLS) in a run marked researched, with the
 # image's own refusal (RESEARCHED_WRITE_REFUSED): run as the lead, in a slots folder holding the marker. A tool it lets through
-# means a write guard older than the image: fail the start.
+# means a write guard older than the image: fail the start (after the slots folder is removed).
 node -e '
 const { spawnSync } = require("child_process"), fs = require("fs"), os = require("os"), path = require("path")
 const [reg, research, guard, root, lead] = process.argv.slice(1)
@@ -339,6 +340,7 @@ const { WRITE_GUARD_TOOLS } = await import(reg), { RESEARCHED_WRITE_REFUSED } = 
 if (typeof RESEARCHED_WRITE_REFUSED !== "string" || !RESEARCHED_WRITE_REFUSED) fail(`${research} has no RESEARCHED_WRITE_REFUSED: this naila image is older than the chart`)
 if (!Array.isArray(WRITE_GUARD_TOOLS) || !WRITE_GUARD_TOOLS.length) fail(`${reg} has no WRITE_GUARD_TOOLS: this naila image is older than the chart`)
 const slots = fs.mkdtempSync(path.join(os.tmpdir(), "write-guard-slots-"))
+let open
 try {
   fs.writeFileSync(path.join(slots, "researched"), "")
   for (const t of WRITE_GUARD_TOOLS) {
@@ -346,9 +348,10 @@ try {
       env: { PATH: process.env.PATH, HARNESS_WORKER: lead, HARNESS_WEB_SLOTS: slots } })
     let o
     try { o = JSON.parse(r.stdout).hookSpecificOutput } catch {}
-    if (r.status !== 0 || o?.permissionDecision !== "deny" || o?.permissionDecisionReason !== RESEARCHED_WRITE_REFUSED) fail(`harness-write-guard.mjs does not stop ${t} in a run marked researched: ship them together`)
+    if (r.status !== 0 || o?.permissionDecision !== "deny" || o?.permissionDecisionReason !== RESEARCHED_WRITE_REFUSED) { open = t; break }
   }
 } finally { fs.rmSync(slots, { recursive: true, force: true }) }
+if (open !== undefined) fail(`harness-write-guard.mjs does not stop ${open} in a run marked researched: ship them together`)
 })().catch((e) => fail(`${e?.message ?? e}: harness-write-guard.mjs and the image\x27s WRITE_GUARD_TOOLS could not be compared`))' "$SERVICES_JS" /naila/packages/harness/dist/research.js /config/harness-write-guard.mjs "$VAULT_ROOT" "$LEAD"
 # The core reads the same spec: its workers, their models (engine_info) and servers.
 export HARNESS_WORKER_SPEC=/config/harness-workers.json

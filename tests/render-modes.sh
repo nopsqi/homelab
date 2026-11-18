@@ -107,7 +107,7 @@
 #  writeCredentials differ from the image's; the prod render pairs with the built image (NAILA_WORKTREE); the bearers are the
 #  roles' plus the enabled services' write credentials (a finance-less chart starts), the leak check covers every declared write
 #  credential, and the settings check and a write-guard parity check take the image's WRITE_GUARD_TOOLS (the rendered matcher
-#  unchanged); the settings harness-start writes are byte-identical to the PHASE2_REF chart's.
+#  unchanged); the settings harness-start writes are byte-identical to the SETTINGS_REF chart's (default aefa661).
 set -euo pipefail
 ref="${1:-origin/master}"
 root="$(git rev-parse --show-toplevel)"
@@ -2570,16 +2570,19 @@ PY
 #    not;
 #  - P17: after LEAD, the chart's write guard, run as the lead in a run marked researched, refuses each of the image's
 #    WRITE_GUARD_TOOLS with the image's RESEARCHED_WRITE_REFUSED;
-#  - call 9: the settings harness-start writes are byte-identical to those the PHASE2_REF chart (the prod chart before phase 3)
-#    writes, both phases (the write-guard matcher unchanged, so ~/.claude/settings.json hashes the same after the ship).
+#  - call 9: the settings harness-start writes are byte-identical to those the SETTINGS_REF chart (default aefa661, the prod
+#    chart before phase 3; fixed, apart from PHASE2_REF) writes, both phases (the write-guard matcher unchanged, so ~/.claude/settings.json hashes the same after the ship).
+# SETTINGS_REF (default aefa661, the prod chart before phase 3) is the settings baseline, fixed, apart from PHASE2_REF.
+sref="${SETTINGS_REF:-aefa661}"
+mkdir -p "$tmp/settings-ref" && git archive "$sref" helm/assistant | tar -x -C "$tmp/settings-ref"
 for ph in test real; do
-  helm template "$tmp/phase2/helm/assistant" -f "$tmp/phase2/helm/assistant/values.yaml" -f "$tmp/phase2/helm/assistant/values.prod.yaml" --set harness.enabled=true --set harness.phase=$ph --set claude.rcLines=true > "$tmp/phase2-$ph.yaml"
+  helm template "$tmp/settings-ref/helm/assistant" -f "$tmp/settings-ref/helm/assistant/values.yaml" -f "$tmp/settings-ref/helm/assistant/values.prod.yaml" --set harness.enabled=true --set harness.phase=$ph --set claude.rcLines=true > "$tmp/settings-ref-$ph.yaml"
 done
-python3 - "$tmp/prod.yaml" "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/phase2-test.yaml" "$tmp/phase2-real.yaml" "$p2ref" <<'PY'
+python3 - "$tmp/prod.yaml" "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/settings-ref-test.yaml" "$tmp/settings-ref-real.yaml" "$sref" <<'PY'
 import sys, yaml, json, os, re, subprocess, tempfile, shutil, shlex, copy
 def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
 def loads(s): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(s) if d}
-prod, test, real, p2t, p2r = (load(p) for p in sys.argv[1:6]); p2ref = sys.argv[6]
+prod, test, real, srt, srr = (load(p) for p in sys.argv[1:6]); sref = sys.argv[6]
 H, CMH, CMC = ("Deployment", "assistant-harness"), ("ConfigMap", "assistant-harness"), ("ConfigMap", "assistant-claude")
 def ctr(r, n): return next((c for c in r[H]["spec"]["template"]["spec"]["containers"] if c["name"] == n), None)
 def val(r, k): return next((e.get("value") for e in (ctr(r, "harness") or {}).get("env", []) if e["name"] == k), None)
@@ -2664,7 +2667,10 @@ if pb:
         if not died(p := stub_pairing(registry(), services)[0], DIFFER): bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {DIFFER!r}")
     for what, services in (("HARNESS_SERVICES unset", None), ("HARNESS_SERVICES not JSON", "{"), ("HARNESS_SERVICES without services", '{"version":1}')):
         if not died(p := stub_pairing(registry(), services)[0], "HARNESS_SERVICES"): bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 naming HARNESS_SERVICES")
-    if not died(p := stub_pairing(registry(creds=[]))[0], "WRITE_CREDENTIALS"): bad.append(f"{tag}: an image whose WRITE_CREDENTIALS lacks a declared write credential (MCP_FINANCE_TOKEN): exit {p.returncode} {p.stderr.strip()!r}, want 2 naming WRITE_CREDENTIALS")
+    BROKEN = "this naila image's registry is inconsistent"
+    for what, reg, says in (("an image whose WRITE_CREDENTIALS lacks a declared write credential (MCP_FINANCE_TOKEN)", registry(creds=[]), "WRITE_CREDENTIALS"),
+                            ("an image whose SERVICES are malformed (a lowercase write credential)", registry(decl={**DECL, "web": ["mcp_web"]}, creds=["MCP_FINANCE_TOKEN"]), "malformed SERVICES")):
+        if not died(p := stub_pairing(reg)[0], says, BROKEN) or DIFFER in p.stderr: bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {says!r} and {BROKEN!r}, not {DIFFER!r}")
     if not started(p := stub_pairing(registry(), cfg_with(lambda c: c["services"].pop("finance")))[0]): bad.append(f"{tag}: refuses HARNESS_SERVICES with finance disabled (the image declares more than the chart enables): {p.stderr.strip()!r}")
     tag = "the prod render pairs with the built image"
     if HAVE_DIST:
@@ -2735,9 +2741,12 @@ elif pb:
     if not mkdir_at[0] < ps[0] < pe[0] < spec_export[0]: bad.append(f"{tag}: the parity check is not after LEAD and its mkdir, and before the core is told the spec")
     WG = {**test[CMC]["data"], **test[CMH]["data"]}["harness-write-guard.mjs"]
     def parity(dist, wguard=WG, lead="naila"):
-        cfg = tempfile.mkdtemp(); open(f"{cfg}/harness-write-guard.mjs", "w").write(wguard)
+        """runs the check with its own TMPDIR, which must be empty again afterwards, passed or died (the slots folder removed)"""
+        cfg, tmp_ = tempfile.mkdtemp(), tempfile.mkdtemp(); open(f"{cfg}/harness-write-guard.mjs", "w").write(wguard)
         lines = [l.replace("/naila/packages/harness/dist/", dist + "/").replace("/config/", cfg + "/") for l in sl[ps[0]:pe[0] + 1]]
-        p = sh(lines, {}, f"SERVICES_JS={dist}/services/registry.js; VAULT_ROOT=/vault; LEAD={shlex.quote(lead)}\n"); shutil.rmtree(cfg); return p
+        p = sh(lines, {"TMPDIR": tmp_}, f"SERVICES_JS={dist}/services/registry.js; VAULT_ROOT=/vault; LEAD={shlex.quote(lead)}\n")
+        if os.listdir(tmp_): bad.append(f"{tag}: the check leaves {os.listdir(tmp_)} in its TMPDIR (exit {p.returncode})")
+        shutil.rmtree(cfg); shutil.rmtree(tmp_); return p
     def stub_parity(reg=registry(), research=RESEARCH, **kw):
         d = stub_dist(reg, research); p = parity(d, **kw); shutil.rmtree(d); return p
     if not started(p := stub_parity()): bad.append(f"{tag}: refuses the chart's write guard against the image's WRITE_GUARD_TOOLS: {p.stderr.strip()!r}")
@@ -2754,8 +2763,8 @@ elif pb:
         if q.returncode != 0 or json.loads(q.stdout or "null") != REFUSED: bad.append(f"{tag}: the built naila RESEARCHED_WRITE_REFUSED differs from this file's copy: {(q.stdout or q.stderr)[:300]}")
         if not started(p := parity(REAL_DIST)): bad.append(f"{tag}: refuses the chart's write guard against naila's built dist: {p.stderr.strip()!r}")
 
-# call 9: the settings harness-start writes are byte-identical to the PHASE2_REF chart's, both phases
-tag = f"the rendered settings.json is byte-identical to the PHASE2_REF ({p2ref}) chart's"
+# call 9: the settings harness-start writes are byte-identical to the SETTINGS_REF chart's (default aefa661), both phases
+tag = f"the rendered settings.json is byte-identical to the SETTINGS_REF ({sref}) chart's"
 def written(r, ph, d):
     data = {**r[CMC]["data"], **r[CMH]["data"]}
     m = re.search(r"^# Settings:.*?^node -e '(.*?)' (/config/settings\.json[^\n]*)$", data["harness-start.sh"], re.M | re.S)
@@ -2769,7 +2778,7 @@ def written(r, ph, d):
         return a
     p = subprocess.run(["node", "-e", m.group(1), *[expand(a) for a in shlex.split(m.group(2))]], capture_output=True, text=True)
     return open(os.path.join(d, "settings.json"), "rb").read() if p.returncode == 0 else None
-for ph, now_, then_ in (("test", test, p2t), ("real", real, p2r)):
+for ph, now_, then_ in (("test", test, srt), ("real", real, srr)):
     d = tempfile.mkdtemp()   # one folder for both, so the paths in the hooks are the same
     a, b = written(now_, ph, d), written(then_, ph, d)
     shutil.rmtree(d)
@@ -2779,5 +2788,5 @@ for ph, now_, then_ in (("test", test, p2t), ("real", real, p2r)):
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
 print("pairing: harness-start pairs with the image's services (spec version, write credentials" + (", the built image" if HAVE_DIST else "")
-      + "), its bearers follow the roles and the enabled services, the leak check every declared write credential, the write guard the image's tools; settings.json as at " + p2ref)
+      + "), its bearers follow the roles and the enabled services, the leak check every declared write credential, the write guard the image's tools; settings.json as at " + sref)
 PY

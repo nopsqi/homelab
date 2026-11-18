@@ -95,6 +95,19 @@
 #  predates DOCS_SOCKET: P24); the runs' static settings deny the folder; harness-start.sh registers no user-scope docs entry
 #  on an image with the docs relay and the old unauthenticated one on an older image (P24), run as rendered, and never
 #  handles the bearer itself.
+# Then the services (pure core phase 3 Task 12, harness.services): HARNESS_SERVICES lists each enabled service with its write
+#  credentials (naila's parseServicesConfig accepts it, and the image declares the same lists); finance's env, its
+#  finance.enabled/testServer rules and its egress peer follow services.finance, the ops peer services.cluster, and with neither
+#  the egress rule is gone; any listed service's write credential in a server string fails the render (P11), as do bad
+#  services config and the vault disabled; naila's core refuses the PHASE2_REF chart (default aefa661: no HARNESS_SERVICES);
+#  prod, test phase, harness off and staging render as at <git-ref> but for the harness Deployment's HARNESS_SERVICES env and
+#  checksum, and harness-start.sh (skipped with a notice once <git-ref> renders HARNESS_SERVICES itself).
+# Then the pairing (pure core phase 3 Task 13): harness-start dies on an image without SERVICES_SPEC_VERSION 1 (printing the
+#  import error when it has no registry), and when HARNESS_SERVICES names a service the image doesn't declare or one whose
+#  writeCredentials differ from the image's; the prod render pairs with the built image (NAILA_WORKTREE); the bearers are the
+#  roles' plus the enabled services' write credentials (a finance-less chart starts), the leak check covers every declared write
+#  credential, and the settings check and a write-guard parity check take the image's WRITE_GUARD_TOOLS (the rendered matcher
+#  unchanged); the settings harness-start writes are byte-identical to the SETTINGS_REF chart's (default aefa661).
 set -euo pipefail
 ref="${1:-origin/master}"
 root="$(git rev-parse --show-toplevel)"
@@ -114,6 +127,10 @@ export CLAUDE_STATIC_LAYER='{"deny":["Read(//run/docs-token/**)","Edit(//run/doc
 # harness-start's settings check requires harness-settings.json's allow to be exactly these plus propose_plan and ask_worker
 # when the image exports them. With NAILA_WORKTREE the built dist export must equal it. A change there changes this.
 export CORE_ALWAYS_TOOLS='["mcp__core__decision_status","mcp__core__propose_capability_change","mcp__core__self_note_history","mcp__core__self_note_set","mcp__core__self_note_undo"]'
+# The tools the write guard stops, verbatim from naila packages/harness/src/services/registry.ts WRITE_GUARD_TOOLS (generated
+# from the service declarations since pure-core phase 3, naila 4b65364): harness-start's settings check and its write-guard
+# parity check take them from the image. With NAILA_WORKTREE the built dist export must equal it. A change there changes this.
+export WRITE_GUARD_TOOLS='["Write","Edit","MultiEdit","NotebookEdit","mcp__vault__write_inbox","mcp__vault__append_daily","mcp__vault__workers_write","mcp__finance-notes__write_note","mcp__finance-notes__edit_note"]'
 
 git archive "$ref" helm/assistant | tar -x -C "$tmp"
 # harness off: a ref that already has the harness pod compares like one that predates it
@@ -1046,10 +1063,19 @@ for ph, r in (("test", test), ("real", real)):
         f = tempfile.NamedTemporaryFile("w", suffix=".mjs", dir=d, delete=False); f.write(body + (DOCS_EXPORT if docs else "")); f.close(); return f.name
     LAYER = json.loads(os.environ["CLAUDE_STATIC_LAYER"])
     layer_default = layer_file(f"export const CLAUDE_STATIC_LAYER = {json.dumps(LAYER)}\n")
-    def run_check(settings, floor_module=None, layer_module=None):
+    # phase 3 Task 13: the write guard's tools are the image's WRITE_GUARD_TOOLS (dist/services/registry.js, SERVICES_JS); by
+    # default a module with this file's verbatim copy
+    REG_JS = "/naila/packages/harness/dist/services/registry.js"
+    vars_["SERVICES_JS"] = REG_JS
+    WGT = json.loads(os.environ["WRITE_GUARD_TOOLS"])
+    def reg_file(tools):
+        f = tempfile.NamedTemporaryFile("w", suffix=".mjs", dir=d, delete=False); f.write(f"export const WRITE_GUARD_TOOLS = {json.dumps(tools)}\n"); f.close(); return f.name
+    reg_default = reg_file(WGT)
+    def run_check(settings, floor_module=None, layer_module=None, registry_module=None):
         open(os.path.join(d, "settings.json"), "w").write(json.dumps(settings))
         args = [re.sub(r"\$\{(\w+)(?::-[^}]*)?\}|\$(\w+)", lambda x: vars_.get(x.group(1) or x.group(2), ""), a) for a in shlex.split(ck[0].group(2))]
         args = [os.path.join(d, a[len("/config/"):]) if a.startswith("/config/") else (layer_module or layer_default) if a == LAYER_JS
+                else (registry_module or reg_default) if a == REG_JS
                 else (floor_module or os.path.join(d, "absent.js")) if a.startswith("/naila/") else a for a in args]
         return subprocess.run(["node", "-e", ck[0].group(1), *args], capture_output=True, text=True)
     p = run_check(s)
@@ -1182,7 +1208,24 @@ for ph, r in (("test", test), ("real", real)):
         p = run_check(s, None, layer_file(body, docs=False))
         if p.returncode != 2 or "has no DOCS_ROOTS_ENV: this naila image is older than the chart (the docs grant takes its folders from the engine)" not in p.stderr:
             bad.append(f"{tag8}: {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 naming the image as older")
+    # phase 3 Task 13 (P9): the write guard's tools are the image's WRITE_GUARD_TOOLS, not a list of the chart's own; the
+    # rendered matcher stays byte for byte (call 9), so a tool the image adds that it misses fails the start
+    tag13 = f"{tag}: phase 3 Task 13 (WRITE_GUARD_TOOLS)"
+    if "$SERVICES_JS" not in shlex.split(ck[0].group(2)): bad.append(f"{tag13}: harness-start's settings check is not given $SERVICES_JS")
+    if "WRITE_GUARD_TOOLS" not in ck[0].group(1) or '"mcp__finance-notes__edit_note"]' in ck[0].group(1): bad.append(f"{tag13}: harness-start's settings check still lists the write tools itself, not the image's WRITE_GUARD_TOOLS")
+    if (p := run_check(s, None, None, reg_file(WGT))).returncode != 0: bad.append(f"{tag13}: harness-start's check refuses the image's own WRITE_GUARD_TOOLS: {p.stderr.strip()}")
+    for what, body, says in (("an image whose WRITE_GUARD_TOOLS adds mcp__x__y", f"export const WRITE_GUARD_TOOLS = {json.dumps(WGT + ['mcp__x__y'])}\n", "mcp__x__y does not go through the write guard"),
+                             ("an empty WRITE_GUARD_TOOLS", "export const WRITE_GUARD_TOOLS = []\n", "WRITE_GUARD_TOOLS"),
+                             ("no WRITE_GUARD_TOOLS", "export const other = 1\n", "WRITE_GUARD_TOOLS")):
+        f_ = tempfile.NamedTemporaryFile("w", suffix=".mjs", dir=d, delete=False); f_.write(body); f_.close()
+        p = run_check(s, None, None, f_.name)
+        if p.returncode != 2 or says not in p.stderr: bad.append(f"{tag13}: {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {says!r}")
     nw_ = os.environ.get("NAILA_WORKTREE", "")
+    real_reg = f"{nw_}/packages/harness/dist/services/registry.js"
+    if nw_ and os.path.isfile(real_reg):
+        p = subprocess.run(["node", "--input-type=module", "-e", f"const m = await import({json.dumps(real_reg)}); process.stdout.write(JSON.stringify(m.WRITE_GUARD_TOOLS))"], capture_output=True, text=True)
+        if p.returncode != 0 or json.loads(p.stdout or "null") != WGT: bad.append(f"{tag13}: the built naila WRITE_GUARD_TOOLS ({nw_}) differs from this file's copy: {(p.stdout or p.stderr)[:300]}")
+        if (p := run_check(s, None, None, real_reg)).returncode != 0: bad.append(f"{tag13}: harness-start's check refuses the settings it wrote against naila's built registry: {p.stderr.strip()}")
     real_layer = f"{nw_}/packages/harness/dist/providers/claude-code/compile.js"
     if nw_ and os.path.isfile(real_layer):
         p = subprocess.run(["node", "--input-type=module", "-e", f"const m = await import({json.dumps(real_layer)}); process.stdout.write(JSON.stringify(m.CLAUDE_STATIC_LAYER))"], capture_output=True, text=True)
@@ -1315,7 +1358,8 @@ if not any(re.fullmatch(r'\[ -f "\$PREPARE" \] \|\| die ".*this naila image pred
 if not any(re.fullmatch(r'\[ -f /config/harness-workers\.json \] \|\| die ".*predates the worker spec.*"', l) for l in sl): bad.append(f"{tag}: no die when /config/harness-workers.json is missing")
 for gone in ("HARNESS_MODELS", "direct-lines", "s/__MCP_FINANCE_READ_TOKEN__/", "cp /config/harness-CLAUDE.md"):
     if gone in "\n".join(l for l in sl if not l.lstrip().startswith("#")): bad.append(f"{tag}: harness-start still has {gone!r}")
-if not any(re.fullmatch(r'mkdir -p .*"\$FINANCE_NOTES_ROOT".*', l) for l in sl): bad.append(f"{tag}: harness-start no longer makes $FINANCE_NOTES_ROOT")
+# phase 3 Task 13: with finance disabled the chart renders no FINANCE_NOTES_ROOT, so the notes root is made only when set
+if '[ -z "${FINANCE_NOTES_ROOT:-}" ] || mkdir -p "$FINANCE_NOTES_ROOT"' not in sl: bad.append(f"{tag}: harness-start no longer makes $FINANCE_NOTES_ROOT when it is set ([ -z \"${{FINANCE_NOTES_ROOT:-}}\" ] || mkdir -p \"$FINANCE_NOTES_ROOT\")")
 wl = [i for i, l in enumerate(sl) if l == "W=$HARNESS_HOME/work"]
 pc = [i for i, l in enumerate(sl) if l.startswith('out=$(node "$PREPARE" --spec /config/harness-workers.json --claude-dir "$C" --work-dir "$W") || die ')]
 ck = [i for i, l in enumerate(sl) if l.startswith('[ -n "$out" ] || die ')]
@@ -1324,7 +1368,7 @@ if len(wl) != 1 or len(pc) != 1 or len(ck) != 1 or len(mf) != 1 or not wl[0] < p
     bad.append(f"{tag}: want one W=$HARNESS_HOME/work, then one prepare call into $out with || die, then one empty-output die and one mapfile into dirs (got {len(wl)}, {len(pc)}, {len(ck)}, {len(mf)})")
 else:
     for what, pat in (("the TEST COPY append", "TEST COPY"), ("the placeholder check", "grep -l '__MCP_'"), ("the real-server check", "'//assistant-finance:'"),
-                      ("the write-bearer check", '"$MCP_FINANCE_TOKEN"'), ("the trusted dirs", '"${dirs[@]}"')):
+                      ("the write-credential check", 'a worker holds a write credential'), ("the trusted dirs", '"${dirs[@]}"')):
         at_ = [i for i, l in enumerate(sl) if pat in l and not l.lstrip().startswith("#")]
         if not at_ or min(at_) < pc[0]: bad.append(f"{tag}: {what} is missing or comes before prepare.js")
     d = tempfile.mkdtemp(); os.makedirs(f"{d}/bin")
@@ -1434,7 +1478,12 @@ if bad:
 print("harness pod: renders only when enabled; phases wired; write bearer only in the core env; RC render identical")
 PY
 
-python3 - "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/oracle-test.yaml" "$tmp/oracle-real.yaml" "$oref" "$tmp/old-harness.yaml" "$ref" <<'PY'
+# The phase 2 pairing guard's old chart: the last phase 1 chart (roles spec 2, channels without kind), fixed, since <git-ref>
+# (origin/master) has been a phase 2 chart since aefa661. PHASE1_REF defaults to 937d2d3 (76a57b1's parent).
+p1ref="${PHASE1_REF:-937d2d3}"
+mkdir -p "$tmp/phase1" && git archive "$p1ref" helm/assistant | tar -x -C "$tmp/phase1"
+helm template "$tmp/phase1/helm/assistant" -f "$tmp/phase1/helm/assistant/values.yaml" -f "$tmp/phase1/helm/assistant/values.prod.yaml" --set harness.enabled=true --set harness.phase=test --set claude.rcLines=true > "$tmp/phase1.yaml"
+python3 - "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/oracle-test.yaml" "$tmp/oracle-real.yaml" "$oref" "$tmp/phase1.yaml" "$p1ref" <<'PY'
 import sys, yaml, json, re, os, subprocess, tempfile, shutil, difflib
 def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
 def config(r):
@@ -1691,23 +1740,27 @@ if specs.get("test"):
 tag = "harness-start makes the lead's work dir from the spec"
 sl_ = new["test"].get("harness-start.sh", "").splitlines()
 lj = [i for i, l in enumerate(sl_) if l.startswith("LEAD=$(node -e '")]
-mk = [i for i, l in enumerate(sl_) if l == 'mkdir -p "$W/$LEAD" "$W/_summary" "$FINANCE_NOTES_ROOT"']
+mk = [i for i, l in enumerate(sl_) if l == 'mkdir -p "$W/$LEAD" "$W/_summary"']
 if any(re.search(r'"\$W/naila"', l) for l in sl_ if not l.lstrip().startswith("#")): bad.append(f"{tag}: harness-start.sh still makes \"$W/naila\"")
-if len(lj) != 1 or len(mk) != 1 or not lj[0] < mk[0]: bad.append(f"{tag}: want one LEAD=$(node -e ...) and then one mkdir -p \"$W/$LEAD\" \"$W/_summary\" \"$FINANCE_NOTES_ROOT\" (got {len(lj)}, {len(mk)})")
+# phase 3 Task 13: the notes root follows on the next line, made only when FINANCE_NOTES_ROOT is set (finance disabled: unset)
+NOTES_MK = '[ -z "${FINANCE_NOTES_ROOT:-}" ] || mkdir -p "$FINANCE_NOTES_ROOT"'
+if len(lj) != 1 or len(mk) != 1 or not lj[0] < mk[0] or sl_[mk[0] + 1:mk[0] + 2] != [NOTES_MK]: bad.append(f"{tag}: want one LEAD=$(node -e ...) and then one mkdir -p \"$W/$LEAD\" \"$W/_summary\", then {NOTES_MK} (got {len(lj)}, {len(mk)})")
 elif specs.get("test"):
-    def lead_dir(spec_json):
+    def lead_dir(spec_json, notes=True):
         d = tempfile.mkdtemp(); open(f"{d}/spec.json", "w").write(spec_json)
-        snippet = "\n".join(sl_[lj[0]:mk[0] + 1]).replace("/config/harness-workers.json", f"{d}/spec.json")
-        p = subprocess.run(["bash", "-c", 'set -eu; die() { echo "harness-start: $*" >&2; exit 2; }\n' + snippet], env={"PATH": os.environ["PATH"], "W": f"{d}/w", "FINANCE_NOTES_ROOT": f"{d}/notes"}, capture_output=True, text=True)
+        snippet = "\n".join(sl_[lj[0]:mk[0] + 2]).replace("/config/harness-workers.json", f"{d}/spec.json")
+        p = subprocess.run(["bash", "-c", 'set -eu; die() { echo "harness-start: $*" >&2; exit 2; }\n' + snippet], env={"PATH": os.environ["PATH"], "W": f"{d}/w", **({"FINANCE_NOTES_ROOT": f"{d}/notes"} if notes else {})}, capture_output=True, text=True)
         made = sorted(os.listdir(f"{d}/w")) if os.path.isdir(f"{d}/w") else []
-        shutil.rmtree(d); return p, made
+        has_notes = os.path.isdir(f"{d}/notes")
+        shutil.rmtree(d); return p, made, has_notes
     sp = json.loads(new["test"]["harness-workers.json"])
-    if (r_ := lead_dir(json.dumps(sp)))[0].returncode != 0 or r_[1] != ["_summary", "naila"]: bad.append(f"{tag}: the rendered spec makes {r_[1]} ({r_[0].stderr.strip()!r}), want _summary and naila")
+    if (r_ := lead_dir(json.dumps(sp)))[0].returncode != 0 or r_[1] != ["_summary", "naila"] or not r_[2]: bad.append(f"{tag}: the rendered spec makes {r_[1]}, notes root {r_[2]} ({r_[0].stderr.strip()!r}), want _summary and naila and the notes root")
+    if (r_ := lead_dir(json.dumps(sp), notes=False))[0].returncode != 0 or r_[1] != ["_summary", "naila"] or r_[2]: bad.append(f"{tag}: with no FINANCE_NOTES_ROOT (finance disabled): exit {r_[0].returncode} {r_[0].stderr.strip()!r}, made {r_[1]}, notes root {r_[2]}; want 0, _summary and naila, no notes root")
     ren = json.loads(json.dumps(sp)); ren["roles"][0]["id"] = "chief"
     if (r_ := lead_dir(json.dumps(ren)))[0].returncode != 0 or r_[1] != ["_summary", "chief"]: bad.append(f"{tag}: a lead named chief makes {r_[1]} ({r_[0].stderr.strip()!r}), want _summary and chief")
     for what, mut in (("no lead", lambda j: j["roles"][0].pop("lead")), ("two leads", lambda j: j["roles"][1].__setitem__("lead", True)), ("no roles", lambda j: j.pop("roles"))):
         j = json.loads(json.dumps(sp)); mut(j)
-        p_, made = lead_dir(json.dumps(j))
+        p_, made, _ = lead_dir(json.dumps(j))
         if p_.returncode != 2 or "the roles config has no lead" not in p_.stderr or made: bad.append(f"{tag}: {what}: exit {p_.returncode} {p_.stderr.strip()!r}, made {made}; want 2 saying the roles config has no lead, nothing made")
 
 # pure core Task 9: the render fails on a duplicate id, two leads, a lead not first, and a retired active role, each with its
@@ -1785,10 +1838,10 @@ else:
             if p.returncode != 2 or os.listdir(e): bad.append(f"{tag}: prepare with {what}: exit {p.returncode}, wrote {os.listdir(e)}")
             shutil.rmtree(e)
         shutil.rmtree(d)
-    # phase 2 Task 11, the pairing guards (new image, old chart): naila's built core refuses the <git-ref> chart's roles spec
+    # phase 2 Task 11, the pairing guards (new image, old chart): naila's built core refuses the PHASE1_REF chart's roles spec
     # (version 2, naming the chart as older) and its HARNESS_CHANNELS (no kind), and accepts this chart's; so a phase 2 image
     # on a phase 1 chart refuses to start instead of running it
-    tag = "naila's built core refuses the <git-ref> chart's roles spec and channels, and accepts this chart's"
+    tag = "naila's built core refuses the PHASE1_REF chart's roles spec and channels, and accepts this chart's"
     old_r = {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(sys.argv[6])) if d}
     def chans(r): return next((e.get("value") for c in r[("Deployment", "assistant-harness")]["spec"]["template"]["spec"]["containers"] if c["name"] == "harness" for e in c.get("env", []) if e["name"] == "HARNESS_CHANNELS"), None)
     new_r = {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(sys.argv[1])) if d}
@@ -2332,4 +2385,408 @@ for label, path in zip(("harness off", "staging"), sys.argv[5:7]):
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
 print("provider keys: assistant-provider-keys sealed (strict: its name, assistant), mounted 0440 read-only at /run/provider-keys by the harness container alone; none with harness off or in staging; no harness-pod container listens on 443")
+PY
+# Pure core phase 3 Task 12: the services the core enables (harness.services) as HARNESS_SERVICES, {"version":1,"services":
+# {"<id>":{"writeCredentials":[…]}}} for each enabled service (naila services/config.ts parseServicesConfig; the lists equal
+# the image's declarations, [] included); finance's env, its finance.enabled and testServer rules and its egress peer follow
+# services.finance, the ops peer services.cluster, and with neither the egress rule is gone (an empty `to` matches every
+# destination); a server string holding any listed service's write credential, enabled or not, fails the render (P11), as do
+# a bad writeCredentials, a missing one, a non-boolean enabled and the vault disabled. Prod, test phase, harness off and
+# staging render exactly as at <git-ref> but for the harness Deployment's HARNESS_SERVICES env and checksum (skipped with a
+# notice once <git-ref> renders HARNESS_SERVICES itself). The pairing guard's old chart (no HARNESS_SERVICES: naila's core
+# refuses it) is a fixed PHASE2_REF, default aefa661 (the last phase 2 chart), as PHASE1_REF is for phase 2's.
+helm template helm/assistant -f helm/assistant/values.yaml -f helm/assistant/values.prod.yaml > "$tmp/prod.yaml"
+p2ref="${PHASE2_REF:-aefa661}"
+mkdir -p "$tmp/phase2" && git archive "$p2ref" helm/assistant | tar -x -C "$tmp/phase2"
+helm template "$tmp/phase2/helm/assistant" -f "$tmp/phase2/helm/assistant/values.yaml" -f "$tmp/phase2/helm/assistant/values.prod.yaml" > "$tmp/phase2.yaml"
+helm template "$tmp/helm/assistant" -f "$tmp/helm/assistant/values.yaml" -f "$tmp/helm/assistant/values.prod.yaml" > "$tmp/prod-ref.yaml"
+helm template "$tmp/helm/assistant" -f "$tmp/helm/assistant/values.yaml" -f "$tmp/helm/assistant/values.staging.yaml" > "$tmp/staging-ref.yaml"
+python3 - "$ref" "$tmp/prod.yaml" "$tmp/prod-ref.yaml" "$tmp/new.yaml" "$tmp/old-harness.yaml" "$tmp/off.yaml" "$tmp/old.yaml" "$tmp/staging.yaml" "$tmp/staging-ref.yaml" "$tmp/real.yaml" "$p2ref" "$tmp/phase2.yaml" <<'PY'
+import sys, yaml, json, os, subprocess, copy
+ref, p2ref = sys.argv[1], sys.argv[11]
+def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
+def loads(s): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(s) if d}
+H, NP = ("Deployment", "assistant-harness"), ("NetworkPolicy", "assistant-harness")
+def pod(r): return r[H]["spec"]["template"]["spec"] if H in r else {"containers": [], "initContainers": []}
+def ctr(r, n): return next((c for c in pod(r)["containers"] if c["name"] == n), None)
+def val(c, k): return next((e.get("value") for e in (c or {}).get("env", []) if e["name"] == k), None)
+def services(r):
+    v = val(ctr(r, "harness"), "HARNESS_SERVICES")
+    try: return json.loads(v) if v is not None else None
+    except ValueError: return f"not JSON: {v!r}"
+WANT = {"finance": ["MCP_FINANCE_TOKEN"], "vault": [], "docs": [], "cluster": [], "web": []}
+def want(ids): return {"version": 1, "services": {i: {"writeCredentials": WANT[i]} for i in ids}}
+bad = []
+
+# the whole render, as at <git-ref> but for the harness Deployment's HARNESS_SERVICES env and checksum, and harness-start.sh
+# (Task 13: it pairs with the image's services; its own checks are below)
+def strip(r):
+    r = copy.deepcopy(r)
+    if ("ConfigMap", "assistant-harness") in r: r[("ConfigMap", "assistant-harness")]["data"].pop("harness-start.sh", None)
+    if H in r:
+        t = r[H]["spec"]["template"]
+        t["metadata"].get("annotations", {}).pop("checksum/config", None)
+        for c in t["spec"]["containers"]:
+            if c["name"] == "harness": c["env"] = [e for e in c.get("env", []) if e["name"] != "HARNESS_SERVICES"]
+    return r
+# (Task 12's own change: once <git-ref> is a chart that renders HARNESS_SERVICES, there is nothing of it left to compare)
+diffs = (("prod", 2, 3, True), ("test phase", 4, 5, True), ("harness off", 6, 7, False), ("staging", 8, 9, False))
+if services(load(sys.argv[3])) is not None:
+    print(f"NOTICE: the {ref} render already has HARNESS_SERVICES: the whole-render diff against it (Task 12's change alone) was skipped")
+    diffs = ()
+for label, now_, then_, on in diffs:
+    tag = f"the {label} render differs from {ref}'s only in the harness Deployment's HARNESS_SERVICES env and checksum, and harness-start.sh"
+    a, b = load(sys.argv[now_]), load(sys.argv[then_])
+    if on:
+        if H not in a: bad.append(f"{tag}: no harness Deployment"); continue
+        if services(a) is None: bad.append(f"{tag}: no HARNESS_SERVICES")
+    elif any("HARNESS_SERVICES" in json.dumps(d) for d in a.values()): bad.append(f"{tag}: it names HARNESS_SERVICES")
+    sa, sb = strip(a), strip(b)
+    for k in sorted(set(sa) | set(sb)):
+        if sa.get(k) != sb.get(k): bad.append(f"{tag}: {k[0]}/{k[1]} differs{'' if k in sa and k in sb else ' (on one side only)'}")
+
+# HARNESS_SERVICES lists the enabled services with their write credentials: prod's five, compared as a set by id
+tag = "HARNESS_SERVICES lists the enabled services with their write credentials"
+for label, i in (("prod", 2), ("test phase", 4), ("real phase", 10)):
+    got = services(load(sys.argv[i]))
+    if got != want(WANT): bad.append(f"{tag}: it is {got!r} ({label}), want {want(WANT)!r}")
+    for c in pod(load(sys.argv[i]))["containers"] + pod(load(sys.argv[i])).get("initContainers", []):
+        if c["name"] != "harness" and "HARNESS_SERVICES" in json.dumps(c): bad.append(f"{tag}: {c['name']} has it too ({label})")
+
+BASE = ["helm", "template", "helm/assistant", "-f", "helm/assistant/values.yaml", "-f", "helm/assistant/values.prod.yaml", "--set", "claude.rcLines=true"]
+def render(*a): return subprocess.run(BASE + list(a), capture_output=True, text=True)
+ROLES = yaml.safe_load(open("helm/assistant/values.yaml"))["harness"]["roleSpec"]["roles"]
+def roles_without(*hosts):
+    """The roles with every server naming one of hosts (a marker or a host) taken out."""
+    out = copy.deepcopy(ROLES)
+    for r in out: r["servers"] = [s for s in r.get("servers") or [] if not any(h in json.dumps(s) for h in hosts)]
+    return out
+OFF = lambda *ids: [x for i in ids for x in ("--set", f"harness.services.{i}.enabled=false")]
+NOFIN = ["--set", "finance.enabled=false", "--set", "finance.testServer=false"]
+def egress(r): return ((r.get(NP) or {}).get("spec") or {}).get("egress") or []
+def peers(r): return {f["podSelector"]["matchLabels"]["app"] for rule in egress(r) for f in rule.get("to") or [] if "podSelector" in f}
+def empty_to(r): return [rule for rule in egress(r) if not rule.get("to")]
+def fails(p, says): return p.returncode != 0 and says in p.stderr
+
+# services.finance disabled: no finance egress, no MCP_FINANCE_* env, and finance.enabled (and testServer) not needed.
+# Render behaviour only: the finance roles keep their budget seeds and finance-documents path here, which naila's
+# checkServiceUse would refuse at start (a real finance-less config drops or rewrites those roles too).
+tag = "services.finance disabled renders no finance egress, no MCP_FINANCE_* env and needs no finance.enabled"
+nofin = {}
+for ph in ("test", "real"):
+    p = render("--set", f"harness.phase={ph}", *OFF("finance"), *NOFIN, "--set-json", f"harness.roleSpec.roles={json.dumps(roles_without('__FINANCE_HOST__'))}")
+    if p.returncode != 0: bad.append(f"{tag}: the render fails ({ph}): {p.stderr.strip()[-300:]}"); continue
+    r = nofin[ph] = loads(p.stdout)
+    for c in pod(r)["containers"] + pod(r).get("initContainers", []):
+        names = [e["name"] for e in c.get("env", []) if e["name"].startswith("MCP_FINANCE_")]
+        if names: bad.append(f"{tag}: {c['name']} has {names} ({ph})")
+    if peers(r) != {"assistant-ops"}: bad.append(f"{tag}: the harness egress reaches {sorted(peers(r))}, want assistant-ops alone ({ph})")
+    if empty_to(r): bad.append(f"{tag}: an egress rule has an empty or missing to ({ph})")
+    if services(r) != want([i for i in WANT if i != "finance"]): bad.append(f"{tag}: HARNESS_SERVICES is {services(r)!r} ({ph})")
+tag = "with services.finance disabled, a role server naming the finance host fails the render"
+p = render(*OFF("finance"), *NOFIN)
+if not fails(p, "a role server holds __FINANCE_HOST__, which needs harness.services.finance"): bad.append(f"{tag}: exit {p.returncode} {p.stderr.strip()[-300:]!r}")
+tag = "with services.finance enabled, harness still needs finance.enabled, and the test phase finance.testServer"
+for what, args, says in (("finance.enabled false", ["--set", "finance.enabled=false"], "harness.enabled needs finance.enabled"),
+                         ("testServer false, test phase", ["--set", "harness.phase=test", "--set", "finance.testServer=false"], "harness.phase test needs finance.testServer")):
+    if not fails(p := render(*args), says): bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()[-300:]!r}")
+
+# finance and cluster both disabled: the egress rule to the tool servers is gone, not left with an empty `to`
+tag = "finance and cluster both disabled omit the egress rule entirely"
+p = render(*OFF("finance", "cluster"), *NOFIN, "--set-json", f"harness.roleSpec.roles={json.dumps(roles_without('__FINANCE_HOST__', 'assistant-ops'))}")
+if p.returncode != 0: bad.append(f"{tag}: the render fails: {p.stderr.strip()[-300:]}")
+else:
+    r = loads(p.stdout)
+    if empty_to(r) or peers(r) or len(egress(r)) != 2: bad.append(f"{tag}: the egress is {egress(r)!r}, want DNS and 443 alone")
+    if services(r) != want(["vault", "docs", "web"]): bad.append(f"{tag}: HARNESS_SERVICES is {services(r)!r}")
+tag = "services.cluster disabled drops the ops peer and keeps finance's"
+p = render(*OFF("cluster"), "--set-json", f"harness.roleSpec.roles={json.dumps(roles_without('assistant-ops'))}")
+if p.returncode != 0: bad.append(f"{tag}: the render fails: {p.stderr.strip()[-300:]}")
+elif peers(r := loads(p.stdout)) != {"assistant-finance"} or empty_to(r): bad.append(f"{tag}: the harness egress reaches {sorted(peers(r))}")
+
+# P11: every listed service's write credentials, enabled or not, are refused in a server string
+tag = "a disabled service's listed write credential is still refused in a server string"
+leak = copy.deepcopy(ROLES)
+next(r for r in leak if r["id"] == "ops-oncall")["servers"][0]["bearer"] = "MCP_DOCS_WRITE"
+DOCS = ["--set-json", 'harness.services.docs={"enabled":false,"writeCredentials":["MCP_DOCS_WRITE"]}']
+if not fails(p := render(*DOCS, "--set-json", f"harness.roleSpec.roles={json.dumps(leak)}"), "a server holds MCP_DOCS_WRITE"): bad.append(f"{tag}: exit {p.returncode} {p.stderr.strip()[-300:]!r}")
+if (p := render(*DOCS)).returncode != 0: bad.append(f"{tag}: without the leak the render fails: {p.stderr.strip()[-300:]}")
+leak = copy.deepcopy(ROLES)
+next(r for r in leak if r["id"] == "finance-advisor")["servers"][1]["env"]["X"] = "MCP_FINANCE_TOKEN"
+if not fails(p := render("--set-json", f"harness.roleSpec.roles={json.dumps(leak)}"), "a server holds MCP_FINANCE_TOKEN"): bad.append(f"{tag}: the finance write bearer in a server env: exit {p.returncode} {p.stderr.strip()[-300:]!r}")
+
+# the render fails on a bad writeCredentials name, a missing or non-list writeCredentials, a non-boolean enabled and the vault disabled
+tag = "the render fails on a bad writeCredentials name, a missing writeCredentials and vault disabled"
+for what, args, says in (
+        ("a lowercase name", ["--set-json", 'harness.services.web.writeCredentials=["mcp_web"]'], "harness.services.web.writeCredentials entry mcp_web must match ^MCP_[A-Z0-9_]+$"),
+        ("a name without MCP_", ["--set-json", 'harness.services.finance.writeCredentials=["FINANCE_TOKEN"]'], "harness.services.finance.writeCredentials entry FINANCE_TOKEN must match ^MCP_[A-Z0-9_]+$"),
+        ("a missing writeCredentials", ["--set-json", "harness.services.web.writeCredentials=null"], "harness.services.web.writeCredentials must be a list"),
+        ("a disabled service's missing writeCredentials", ["--set-json", 'harness.services.docs={"enabled":false,"writeCredentials":null}'], "harness.services.docs.writeCredentials must be a list"),
+        ("a string writeCredentials", ["--set-json", 'harness.services.web.writeCredentials="MCP_WEB"'], "harness.services.web.writeCredentials must be a list"),
+        ("enabled yes", ["--set-json", 'harness.services.web.enabled="yes"'], "harness.services.web.enabled must be true or false"),
+        ("vault disabled", ["--set", "harness.services.vault.enabled=false"], "harness.services.vault must be enabled (the core's views and change log)"),
+        ("vault left out", ["--set-json", "harness.services.vault=null"], "harness.services.vault must be enabled (the core's views and change log)")):
+    if not fails(p := render(*args), says): bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()[-300:]!r}, want a failed render saying {says!r}")
+
+# naila's own parser (its built dist) accepts what the chart renders and refuses the <git-ref> chart's (none), and the image's
+# declared write credentials are the chart's
+nw = os.environ.get("NAILA_WORKTREE", "")
+cfg_js, reg_js = f"{nw}/packages/harness/dist/services/config.js", f"{nw}/packages/harness/dist/services/registry.js"
+if not (nw and os.path.isfile(cfg_js) and os.path.isfile(reg_js)):
+    print("NOTICE: NAILA_WORKTREE has no built dist/services: naila's parseServicesConfig was not run on HARNESS_SERVICES")
+else:
+    tag = f"naila's parseServicesConfig accepts the rendered HARNESS_SERVICES and refuses the PHASE2_REF ({p2ref}) chart's (none)"
+    js = ("const [c, r, ...raws] = process.argv.slice(1); const { parseServicesConfig } = await import(c); const { SERVICES, SERVICES_SPEC_VERSION } = await import(r); "
+          "const out = [JSON.stringify({ v: SERVICES_SPEC_VERSION, decl: Object.fromEntries(SERVICES.map((s) => [s.id, s.writeCredentials])) })]; "
+          "for (const raw of raws) { try { out.push(`ok ${parseServicesConfig(raw === '-' ? undefined : raw).ids.join(',')}`) } catch (e) { out.push(e.message) } } console.log(out.join('\\n'))")
+    p2 = load(sys.argv[12])
+    if H not in p2 or services(p2) is not None: bad.append(f"{tag}: the PHASE2_REF ({p2ref}) render has no harness pod, or already has HARNESS_SERVICES")
+    cases = [("prod", val(ctr(load(sys.argv[2]), "harness"), "HARNESS_SERVICES"), "ok finance,vault,docs,cluster,web"),
+             ("finance disabled", val(ctr(nofin.get("real", {}), "harness"), "HARNESS_SERVICES"), "ok vault,docs,cluster,web"),
+             (f"the PHASE2_REF ({p2ref}) render (none)", val(ctr(p2, "harness"), "HARNESS_SERVICES"), "services: HARNESS_SERVICES is missing: the chart predates pure-core phase 3 (services as plug-ins)")]
+    p = subprocess.run(["node", "--input-type=module", "-e", js, cfg_js, reg_js, *[c[1] if c[1] is not None else "-" for c in cases]], capture_output=True, text=True)
+    o = p.stdout.splitlines()
+    if p.returncode != 0 or len(o) != 1 + len(cases): bad.append(f"{tag}: node failed: {(p.stderr or p.stdout).strip()[-300:]}")
+    else:
+        d = json.loads(o[0])
+        if d != {"v": 1, "decl": WANT}: bad.append(f"{tag}: the image declares {d!r}, want version 1 and {WANT!r}")
+        for (what, _, w), g in zip(cases, o[1:]):
+            if g != w: bad.append(f"{tag}: {what}: {g!r}, want {w!r}")
+if bad:
+    print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
+print("services: HARNESS_SERVICES lists the enabled services (naila's parser accepts it); finance and ops follow them; bad config fails"
+      + ("; the render is the ref's but for HARNESS_SERVICES, the checksum and harness-start.sh" if diffs else ""))
+PY
+
+# Pure core phase 3 Task 13: harness-start pairs with the image's services (dist/services/registry.js), run as rendered on
+# stand-in images and on naila's built dist:
+#  - the pairing block (marker `# PAIRING: the image's services`, after the roles-spec check) dies unless the image's
+#    SERVICES_SPEC_VERSION is 1 (an image without the registry dies printing the import error), and when HARNESS_SERVICES
+#    names a service the image doesn't declare, or one whose writeCredentials differ from the image's exactly ([] included);
+#    the prod render pairs with the built image, so a mismatch fails here, not as Recreate downtime;
+#  - P6: the bearers are every role server's bearer (/config/harness-workers.json) plus every enabled service's write
+#    credentials, each set; a chart with finance disabled starts without the finance env;
+#  - the leak check: no agent file holds the value of any write credential the image declares (WRITE_CREDENTIALS), enabled or
+#    not;
+#  - P17: after LEAD, the chart's write guard, run as the lead in a run marked researched, refuses each of the image's
+#    WRITE_GUARD_TOOLS with the image's RESEARCHED_WRITE_REFUSED;
+#  - call 9: the settings harness-start writes are byte-identical to those the SETTINGS_REF chart (default aefa661, the prod
+#    chart before phase 3; fixed, apart from PHASE2_REF) writes, both phases (the write-guard matcher unchanged, so ~/.claude/settings.json hashes the same after the ship).
+# SETTINGS_REF (default aefa661, the prod chart before phase 3) is the settings baseline, fixed, apart from PHASE2_REF.
+sref="${SETTINGS_REF:-aefa661}"
+mkdir -p "$tmp/settings-ref" && git archive "$sref" helm/assistant | tar -x -C "$tmp/settings-ref"
+for ph in test real; do
+  helm template "$tmp/settings-ref/helm/assistant" -f "$tmp/settings-ref/helm/assistant/values.yaml" -f "$tmp/settings-ref/helm/assistant/values.prod.yaml" --set harness.enabled=true --set harness.phase=$ph --set claude.rcLines=true > "$tmp/settings-ref-$ph.yaml"
+done
+python3 - "$tmp/prod.yaml" "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/settings-ref-test.yaml" "$tmp/settings-ref-real.yaml" "$sref" <<'PY'
+import sys, yaml, json, os, re, subprocess, tempfile, shutil, shlex, copy
+def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
+def loads(s): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(s) if d}
+prod, test, real, srt, srr = (load(p) for p in sys.argv[1:6]); sref = sys.argv[6]
+H, CMH, CMC = ("Deployment", "assistant-harness"), ("ConfigMap", "assistant-harness"), ("ConfigMap", "assistant-claude")
+def ctr(r, n): return next((c for c in r[H]["spec"]["template"]["spec"]["containers"] if c["name"] == n), None)
+def val(r, k): return next((e.get("value") for e in (ctr(r, "harness") or {}).get("env", []) if e["name"] == k), None)
+bad = []
+sl = test[CMH]["data"]["harness-start.sh"].splitlines()
+OLD = "this naila image predates pure-core phase 3 (services as plug-ins): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+DIFFER = "HARNESS_SERVICES and the image's services differ: ship them together"
+DECL = {"finance": ["MCP_FINANCE_TOKEN"], "vault": [], "docs": [], "cluster": [], "web": []}
+WGT = json.loads(os.environ["WRITE_GUARD_TOOLS"])
+# naila's RESEARCHED_WRITE_REFUSED (packages/harness/src/research.ts), verbatim; with NAILA_WORKTREE the built dist export must equal it
+REFUSED = "A web search happened in this message, so files can't be written in it: ask again in a message of its own."
+NW = os.environ.get("NAILA_WORKTREE", "")
+REAL_DIST = f"{NW}/packages/harness/dist"
+HAVE_DIST = bool(NW) and os.path.isfile(f"{REAL_DIST}/services/registry.js") and os.path.isfile(f"{REAL_DIST}/research.js")
+if not HAVE_DIST: print("NOTICE: NAILA_WORKTREE has no built dist/services/registry.js: harness-start's pairing was not run against naila's built image")
+PROD_SERVICES = val(prod, "HARNESS_SERVICES")
+ALL = {"MCP_FINANCE_TOKEN": "placeholder-write-bearer", "MCP_FINANCE_READ_TOKEN": "placeholder-read-bearer", "MCP_OPS_TOKEN": "placeholder-ops-bearer"}
+
+def registry(version=1, decl=DECL, tools=WGT, creds=None):
+    """A stand-in dist/services/registry.js: the version (None: no export), the declared services, WRITE_CREDENTIALS (by default
+    every declared write credential) and WRITE_GUARD_TOOLS."""
+    wc = sorted({c for w in decl.values() for c in w}) if creds is None else creds
+    return ((f"export const SERVICES_SPEC_VERSION = {json.dumps(version)}\n" if version is not None else "")
+            + f"export const SERVICES = Object.freeze({json.dumps([{'id': i, 'writeCredentials': w} for i, w in decl.items()])})\n"
+            + f"export const WRITE_CREDENTIALS = {json.dumps(wc)}\nexport const WRITE_GUARD_TOOLS = {json.dumps(tools)}\n")
+RESEARCH = f"export const RESEARCHED_WRITE_REFUSED = {json.dumps(REFUSED)}\n"
+def stub_dist(reg, research=RESEARCH):
+    d = tempfile.mkdtemp(); os.makedirs(f"{d}/services")
+    open(f"{d}/package.json", "w").write('{"type":"module"}')
+    if reg is not None: open(f"{d}/services/registry.js", "w").write(reg)
+    if research is not None: open(f"{d}/research.js", "w").write(research)
+    return d
+def span(first, last, what):
+    """(i, j): the one line `first` matches, and the first line from it on that `last` matches; None (and a failure) otherwise"""
+    a = [i for i, l in enumerate(sl) if first(l)]
+    b = [j for j in range(a[0], len(sl)) if last(sl[j])] if len(a) == 1 else []
+    if not b: bad.append(f"harness-start.sh: want one {what} (got {len(a)} starts, {'an' if b else 'no'} end)"); return None
+    return a[0], b[0]
+def one(pred): return [i for i, l in enumerate(sl) if pred(l)]
+def sh(lines, env, prefix=""):
+    return subprocess.run(["bash", "-c", 'set -eu; die() { echo "harness-start: $*" >&2; exit 2; }\n' + prefix + "\n".join(lines) + "\necho started"],
+                          env={"PATH": os.environ["PATH"], **env}, capture_output=True, text=True)
+def died(p, *says): return p.returncode == 2 and "started" not in p.stdout and all(s in p.stderr for s in says)
+def started(p): return p.returncode == 0 and p.stdout.strip() == "started"
+
+roles_check = one(lambda l: l.startswith("node -e ") and "ROLES_SPEC_VERSION" in l)
+prepare_at = one(lambda l: l.startswith('out=$(node "$PREPARE" '))
+settings_at = one(lambda l: l.startswith("# Settings:"))
+lead_at = one(lambda l: l.startswith("LEAD=$(node -e '"))
+mkdir_at = one(lambda l: l == 'mkdir -p "$W/$LEAD" "$W/_summary"')
+spec_export = one(lambda l: l == "export HARNESS_WORKER_SPEC=/config/harness-workers.json")
+if not (len(roles_check) == len(prepare_at) == len(settings_at) == len(lead_at) == len(mkdir_at) == len(spec_export) == 1):
+    bad.append("harness-start.sh: the roles-spec check, prepare.js, the settings, LEAD, its mkdir or the HARNESS_WORKER_SPEC export is not there once")
+    roles_check, prepare_at, settings_at, lead_at, mkdir_at, spec_export = [-1], [10**6], [10**6], [10**6], [10**6], [10**6]
+
+# the pairing block: the image's spec version, then HARNESS_SERVICES against the image's declarations
+tag = "harness-start dies on an image without SERVICES_SPEC_VERSION 1"
+pb = span(lambda l: l == "# PAIRING: the image's services", lambda l: l.startswith("})().catch(") and l.endswith(' "$SERVICES_JS"'), "pairing block (# PAIRING: the image's services ... \"$SERVICES_JS\")")
+if pb:
+    if not roles_check[0] < pb[0] < pb[1] < prepare_at[0]: bad.append(f"{tag}: the pairing block is not after the roles-spec check and before prepare.js")
+    if "SERVICES_JS=/naila/packages/harness/dist/services/registry.js" not in sl[pb[0]:pb[1]]: bad.append(f"{tag}: the pairing block does not set SERVICES_JS=/naila/packages/harness/dist/services/registry.js")
+    def pairing(dist, services=PROD_SERVICES):
+        lines = [l.replace("/naila/packages/harness/dist/", dist + "/") for l in sl[pb[0]:pb[1] + 1]]
+        return sh(lines, {} if services is None else {"HARNESS_SERVICES": services})
+    def stub_pairing(reg, services=PROD_SERVICES):
+        d = stub_dist(reg); p = pairing(d, services); shutil.rmtree(d); return p, d
+    if not started(p := stub_pairing(registry())[0]): bad.append(f"{tag}: refuses an image with SERVICES_SPEC_VERSION 1 and the chart's services: exit {p.returncode} {p.stderr.strip()!r}")
+    p, d = stub_pairing(None)
+    if not died(p, OLD, f"cannot load {d}/services/registry.js: ", "Cannot find module"): bad.append(f"{tag}: an image without services/registry.js: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying cannot load <path>: <the import error>: {OLD}")
+    p, d = stub_pairing("throw new Error('registry boom')\n")
+    if not died(p, OLD, f"cannot load {d}/services/registry.js: registry boom"): bad.append(f"{tag}: a registry.js that throws: exit {p.returncode} {p.stderr.strip()!r}, want 2 printing the error and {OLD!r}")
+    for what, reg in (("SERVICES_SPEC_VERSION 0", registry(0)), ("no SERVICES_SPEC_VERSION", registry(None)), ("SERVICES_SPEC_VERSION 2", registry(2)), ('SERVICES_SPEC_VERSION "1"', registry("1"))):
+        if not died(p := stub_pairing(reg)[0], OLD): bad.append(f"{tag}: an image with {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {OLD!r}")
+    tag = "harness-start dies when HARNESS_SERVICES and the image's services differ"
+    prod_cfg = json.loads(PROD_SERVICES)
+    def cfg_with(f): c = copy.deepcopy(prod_cfg); f(c); return json.dumps(c)
+    for what, services in (("HARNESS_SERVICES names a service the image does not declare (mail)", cfg_with(lambda c: c["services"].__setitem__("mail", {"writeCredentials": []}))),
+                           ("a service's writeCredentials differ (finance [] against the image's MCP_FINANCE_TOKEN)", cfg_with(lambda c: c["services"]["finance"].__setitem__("writeCredentials", []))),
+                           ("a service's writeCredentials differ (vault [MCP_X] against the image's [])", cfg_with(lambda c: c["services"]["vault"].__setitem__("writeCredentials", ["MCP_X"]))),
+                           ("a service without writeCredentials (web)", cfg_with(lambda c: c["services"]["web"].pop("writeCredentials"))),
+                           ("HARNESS_SERVICES version 2", cfg_with(lambda c: c.__setitem__("version", 2)))):
+        if not died(p := stub_pairing(registry(), services)[0], DIFFER): bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {DIFFER!r}")
+    for what, services in (("HARNESS_SERVICES unset", None), ("HARNESS_SERVICES not JSON", "{"), ("HARNESS_SERVICES without services", '{"version":1}')):
+        if not died(p := stub_pairing(registry(), services)[0], "HARNESS_SERVICES"): bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 naming HARNESS_SERVICES")
+    BROKEN = "this naila image's registry is inconsistent"
+    for what, reg, says in (("an image whose WRITE_CREDENTIALS lacks a declared write credential (MCP_FINANCE_TOKEN)", registry(creds=[]), "WRITE_CREDENTIALS"),
+                            ("an image whose SERVICES are malformed (a lowercase write credential)", registry(decl={**DECL, "web": ["mcp_web"]}, creds=["MCP_FINANCE_TOKEN"]), "malformed SERVICES")):
+        if not died(p := stub_pairing(reg)[0], says, BROKEN) or DIFFER in p.stderr: bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {says!r} and {BROKEN!r}, not {DIFFER!r}")
+    if not started(p := stub_pairing(registry(), cfg_with(lambda c: c["services"].pop("finance")))[0]): bad.append(f"{tag}: refuses HARNESS_SERVICES with finance disabled (the image declares more than the chart enables): {p.stderr.strip()!r}")
+    tag = "the prod render pairs with the built image"
+    if HAVE_DIST:
+        for label, r in (("prod", prod), ("test phase", test), ("real phase", real)):
+            if not started(p := pairing(REAL_DIST, val(r, "HARNESS_SERVICES"))): bad.append(f"{tag}: the {label} render's HARNESS_SERVICES against {REAL_DIST}: exit {p.returncode} {p.stderr.strip()!r}")
+
+# P6: the bearers follow the roles config and the enabled services
+tag = "harness-start dies when a role's bearer or an enabled write credential is unset"
+if any("a bearer is missing (MCP_FINANCE_TOKEN, MCP_FINANCE_READ_TOKEN, MCP_OPS_TOKEN)" in l for l in sl): bad.append(f"{tag}: harness-start.sh still requires the three literal bearers")
+bb = span(lambda l: l.startswith("bearers=$(node -e '"), lambda l: l == '[ -z "$missing" ] || die "a bearer is missing ($missing)"', "bearer check (bearers=$(node -e ... a bearer is missing ($missing))")
+BASE = ["helm", "template", "helm/assistant", "-f", "helm/assistant/values.yaml", "-f", "helm/assistant/values.prod.yaml", "--set", "claude.rcLines=true"]
+ROLES = yaml.safe_load(open("helm/assistant/values.yaml"))["harness"]["roleSpec"]["roles"]
+nofin_roles = copy.deepcopy(ROLES)
+for r_ in nofin_roles: r_["servers"] = [x for x in r_.get("servers") or [] if "__FINANCE_HOST__" not in json.dumps(x)]
+p = subprocess.run(BASE + ["--set", "harness.phase=real", "--set", "harness.services.finance.enabled=false", "--set", "finance.enabled=false", "--set", "finance.testServer=false",
+                           "--set-json", f"harness.roleSpec.roles={json.dumps(nofin_roles)}"], capture_output=True, text=True)
+nofin = loads(p.stdout) if p.returncode == 0 else None
+if nofin is None: bad.append(f"{tag}: the finance-disabled render fails: {p.stderr.strip()[-300:]}")
+if bb and pb:
+    if not pb[1] < bb[0] < prepare_at[0]: bad.append(f"{tag}: the bearer check is not after the pairing block and before prepare.js")
+    def bearers(r, env, services=None):
+        d = tempfile.mkdtemp(); open(f"{d}/spec.json", "w").write(r[CMH]["data"]["harness-workers.json"])
+        p = sh([l.replace("/config/harness-workers.json", f"{d}/spec.json") for l in sl[bb[0]:bb[1] + 1]], {"HARNESS_SERVICES": services or val(r, "HARNESS_SERVICES"), **env})
+        shutil.rmtree(d); return p
+    for label, r in (("test phase", test), ("real phase", real)):
+        if not started(p := bearers(r, ALL)): bad.append(f"{tag}: refuses the {label} render with every bearer set: {p.stderr.strip()!r}")
+        for k in ALL:
+            if not died(p := bearers(r, {x: v for x, v in ALL.items() if x != k}), f"a bearer is missing ({k})"): bad.append(f"{tag}: {k} unset ({label}): exit {p.returncode} {p.stderr.strip()!r}, want 2 saying a bearer is missing ({k})")
+        if not died(p := bearers(r, {**ALL, "MCP_OPS_TOKEN": ""}), "a bearer is missing (MCP_OPS_TOKEN)"): bad.append(f"{tag}: MCP_OPS_TOKEN empty ({label}): exit {p.returncode} {p.stderr.strip()!r}")
+    web_cred = json.dumps({**json.loads(val(real, "HARNESS_SERVICES")), "services": {**json.loads(val(real, "HARNESS_SERVICES"))["services"], "web": {"writeCredentials": ["MCP_WEB_WRITE"]}}})
+    if not died(p := bearers(real, ALL, web_cred), "a bearer is missing (MCP_WEB_WRITE)"): bad.append(f"{tag}: an enabled service's write credential (MCP_WEB_WRITE) unset: exit {p.returncode} {p.stderr.strip()!r}")
+    if not started(p := bearers(real, {**ALL, "MCP_WEB_WRITE": "w2"}, web_cred)): bad.append(f"{tag}: refuses an enabled service's write credential that is set: {p.stderr.strip()!r}")
+    odd = copy.deepcopy(real); spec_ = json.loads(odd[CMH]["data"]["harness-workers.json"])
+    next(r_ for r_ in spec_["roles"] if r_["id"] == "ops-oncall")["servers"][0]["bearer"] = "MCP_OPS_TOKEN; true"
+    odd[CMH]["data"]["harness-workers.json"] = json.dumps(spec_)
+    if not died(p := bearers(odd, ALL)): bad.append(f"{tag}: a role bearer that is no env name: exit {p.returncode} {p.stderr.strip()!r}, want 2")
+    if nofin is not None:
+        tag = "a chart with finance disabled starts without the finance env (P6)"
+        if not started(p := bearers(nofin, {"MCP_OPS_TOKEN": ALL["MCP_OPS_TOKEN"]})): bad.append(f"{tag}: the bearer check refuses it: {p.stderr.strip()!r}")
+        if not died(p := bearers(nofin, {}), "a bearer is missing (MCP_OPS_TOKEN)"): bad.append(f"{tag}: MCP_OPS_TOKEN unset: exit {p.returncode} {p.stderr.strip()!r}")
+        if pb and HAVE_DIST and not started(p := pairing(REAL_DIST, val(nofin, "HARNESS_SERVICES"))): bad.append(f"{tag}: the pairing refuses it against the built image: {p.stderr.strip()!r}")
+
+# the leak check: no agent file holds the value of a write credential the image declares, enabled or not
+tag = "harness-start dies when an agent file holds a declared write credential's value, enabled or not"
+if any('"$MCP_FINANCE_TOKEN"' in l for l in sl if not l.lstrip().startswith("#")): bad.append(f"{tag}: harness-start.sh still checks the literal $MCP_FINANCE_TOKEN")
+lb = span(lambda l: l.startswith("wcreds=$(node -e '"), lambda l: l.startswith("for k in $wcreds; do"), "leak check (wcreds=$(node -e ... for k in $wcreds; do ...)")
+if lb and pb:
+    if not prepare_at[0] < lb[0] < settings_at[0]: bad.append(f"{tag}: the leak check is not after prepare.js and before the settings")
+    def leak(reg, env, files):
+        d = stub_dist(reg); c = tempfile.mkdtemp(); os.makedirs(f"{c}/agents")
+        for n, t in files.items(): open(f"{c}/agents/{n}.md", "w").write(t)
+        p = sh(sl[lb[0]:lb[1] + 1], env, f"SERVICES_JS={d}/services/registry.js; C={c}\n"); shutil.rmtree(d); shutil.rmtree(c); return p
+    clean = {"naila": "body", "finance-bookkeeper": f"bearer {ALL['MCP_FINANCE_READ_TOKEN']}", "ops-oncall": f"bearer {ALL['MCP_OPS_TOKEN']}"}
+    if not started(p := leak(registry(), ALL, clean)): bad.append(f"{tag}: refuses agent files holding only the read and ops bearers: {p.stderr.strip()!r}")
+    if not died(p := leak(registry(), ALL, {**clean, "finance-advisor": f"x {ALL['MCP_FINANCE_TOKEN']} y"}), "a worker holds a write credential (MCP_FINANCE_TOKEN)"): bad.append(f"{tag}: the finance write bearer in an agent file: exit {p.returncode} {p.stderr.strip()!r}")
+    docs_decl = {**DECL, "docs": ["MCP_DOCS_WRITE"]}
+    if not died(p := leak(registry(decl=docs_decl), {**ALL, "MCP_DOCS_WRITE": "placeholder-docs-write"}, {**clean, "naila": "placeholder-docs-write"}), "a worker holds a write credential (MCP_DOCS_WRITE)"): bad.append(f"{tag}: a declared write credential of a service HARNESS_SERVICES leaves out (docs): exit {p.returncode} {p.stderr.strip()!r}")
+    if not started(p := leak(registry(), {"MCP_OPS_TOKEN": ALL["MCP_OPS_TOKEN"]}, clean)): bad.append(f"{tag}: refuses a start with the finance write bearer unset (finance disabled): {p.stderr.strip()!r}")
+    if not started(p := leak(registry(), {**ALL, "MCP_FINANCE_TOKEN": ""}, clean)): bad.append(f"{tag}: an empty write credential matches every agent file: {p.stderr.strip()!r}")
+    if not died(p := leak(None, ALL, clean)): bad.append(f"{tag}: an image without the registry passes the leak check: exit {p.returncode} {p.stderr.strip()!r}")
+
+# P17: the chart's write guard stops every WRITE_GUARD_TOOLS tool of the image in a run marked researched
+tag = "harness-start dies when the write guard does not stop a WRITE_GUARD_TOOLS tool"
+pe = one(lambda l: l.startswith("})().catch(") and l.endswith(' "$SERVICES_JS" /naila/packages/harness/dist/research.js /config/harness-write-guard.mjs "$VAULT_ROOT" "$LEAD"'))
+ps = [i for i in range(pe[0], -1, -1) if sl[i].startswith("node -e '")][:1] if len(pe) == 1 else []
+if len(pe) != 1 or not ps: bad.append(f"{tag}: want one write-guard parity check (node -e ... \"$SERVICES_JS\" /naila/packages/harness/dist/research.js /config/harness-write-guard.mjs \"$VAULT_ROOT\" \"$LEAD\"), got {len(pe)}")
+elif pb:
+    if not mkdir_at[0] < ps[0] < pe[0] < spec_export[0]: bad.append(f"{tag}: the parity check is not after LEAD and its mkdir, and before the core is told the spec")
+    WG = {**test[CMC]["data"], **test[CMH]["data"]}["harness-write-guard.mjs"]
+    def parity(dist, wguard=WG, lead="naila"):
+        """runs the check with its own TMPDIR, which must be empty again afterwards, passed or died (the slots folder removed)"""
+        cfg, tmp_ = tempfile.mkdtemp(), tempfile.mkdtemp(); open(f"{cfg}/harness-write-guard.mjs", "w").write(wguard)
+        lines = [l.replace("/naila/packages/harness/dist/", dist + "/").replace("/config/", cfg + "/") for l in sl[ps[0]:pe[0] + 1]]
+        p = sh(lines, {"TMPDIR": tmp_}, f"SERVICES_JS={dist}/services/registry.js; VAULT_ROOT=/vault; LEAD={shlex.quote(lead)}\n")
+        if os.listdir(tmp_): bad.append(f"{tag}: the check leaves {os.listdir(tmp_)} in its TMPDIR (exit {p.returncode})")
+        shutil.rmtree(cfg); shutil.rmtree(tmp_); return p
+    def stub_parity(reg=registry(), research=RESEARCH, **kw):
+        d = stub_dist(reg, research); p = parity(d, **kw); shutil.rmtree(d); return p
+    if not started(p := stub_parity()): bad.append(f"{tag}: refuses the chart's write guard against the image's WRITE_GUARD_TOOLS: {p.stderr.strip()!r}")
+    says = "harness-write-guard.mjs does not stop mcp__x__y in a run marked researched: ship them together"
+    if not died(p := stub_parity(registry(tools=WGT + ["mcp__x__y"])), says): bad.append(f"{tag}: an image adding mcp__x__y: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {says!r}")
+    says = "harness-write-guard.mjs does not stop Write in a run marked researched: ship them together"
+    if not died(p := stub_parity(research="export const RESEARCHED_WRITE_REFUSED = 'Files cannot be written after a search.'\n"), says): bad.append(f"{tag}: an image whose RESEARCHED_WRITE_REFUSED differs: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {says!r}")
+    assert "deny(RESEARCHED_TEXT)" in WG
+    if not died(p := stub_parity(wguard=WG.replace("deny(RESEARCHED_TEXT)", "void 0")), says): bad.append(f"{tag}: a write guard that ignores the marker: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {says!r}")
+    if not died(p := stub_parity(lead=""), says): bad.append(f"{tag}: the guard run without the lead as HARNESS_WORKER passes: exit {p.returncode} {p.stderr.strip()!r}")
+    if not died(p := stub_parity(research=None), "RESEARCHED_WRITE_REFUSED"): bad.append(f"{tag}: an image without research.js: exit {p.returncode} {p.stderr.strip()!r}, want 2 naming RESEARCHED_WRITE_REFUSED")
+    if HAVE_DIST:
+        q = subprocess.run(["node", "--input-type=module", "-e", f"const m = await import({json.dumps(REAL_DIST + '/research.js')}); process.stdout.write(JSON.stringify(m.RESEARCHED_WRITE_REFUSED))"], capture_output=True, text=True)
+        if q.returncode != 0 or json.loads(q.stdout or "null") != REFUSED: bad.append(f"{tag}: the built naila RESEARCHED_WRITE_REFUSED differs from this file's copy: {(q.stdout or q.stderr)[:300]}")
+        if not started(p := parity(REAL_DIST)): bad.append(f"{tag}: refuses the chart's write guard against naila's built dist: {p.stderr.strip()!r}")
+
+# call 9: the settings harness-start writes are byte-identical to the SETTINGS_REF chart's (default aefa661), both phases
+tag = f"the rendered settings.json is byte-identical to the SETTINGS_REF ({sref}) chart's"
+def written(r, ph, d):
+    data = {**r[CMC]["data"], **r[CMH]["data"]}
+    m = re.search(r"^# Settings:.*?^node -e '(.*?)' (/config/settings\.json[^\n]*)$", data["harness-start.sh"], re.M | re.S)
+    if not m: return None
+    vars_ = {e["name"]: (e.get("value") or "") for e in ctr(r, "harness").get("env", [])}
+    vars_.update(C=d, HARNESS_PHASE=ph, HOME=d)
+    def expand(a):
+        a = re.sub(r"\$\{(\w+)(?::-[^}]*)?\}|\$(\w+)", lambda x: vars_.get(x.group(1) or x.group(2), ""), a)
+        if a.startswith("/config/"):
+            f = os.path.join(d, a[len("/config/"):]); open(f, "w").write(data[a[len("/config/"):]]); return f
+        return a
+    p = subprocess.run(["node", "-e", m.group(1), *[expand(a) for a in shlex.split(m.group(2))]], capture_output=True, text=True)
+    return open(os.path.join(d, "settings.json"), "rb").read() if p.returncode == 0 else None
+for ph, now_, then_ in (("test", test, srt), ("real", real, srr)):
+    d = tempfile.mkdtemp()   # one folder for both, so the paths in the hooks are the same
+    a, b = written(now_, ph, d), written(then_, ph, d)
+    shutil.rmtree(d)
+    if a is None or b is None: bad.append(f"{tag}: the settings patch failed ({ph} phase)")
+    elif a != b: bad.append(f"{tag}: they differ ({ph} phase)")
+
+if bad:
+    print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
+print("pairing: harness-start pairs with the image's services (spec version, write credentials" + (", the built image" if HAVE_DIST else "")
+      + "), its bearers follow the roles and the enabled services, the leak check every declared write credential, the write guard the image's tools; settings.json as at " + sref)
 PY

@@ -81,13 +81,6 @@ const { tree, roles, cases } = JSON.parse(readFileSync(casesFile, 'utf8'))
 let fail = 0
 const bad = (m) => { console.log(`FAIL: ${m}`); fail = 1 }
 
-// the strings between `start`'s `[` and the next `]` in a source file
-const listIn = (file, start) => {
-  const src = readFileSync(file, 'utf8'), i = src.indexOf(start)
-  if (i < 0) return undefined
-  const body = src.slice(i + start.length, src.indexOf(']', i + start.length))
-  return [...body.matchAll(/'([^']*)'/g)].map((m) => m[1])
-}
 // The web rules: the text between the markers, each marker line exactly once, in web-guard.mjs and naila's web-rules.ts
 const BEGIN = '// web-rules:begin\n', END = '// web-rules:end\n'
 const blockOf = (file) => {
@@ -109,11 +102,12 @@ const { WEB_TEXT, WEB_RESEARCHED_MARKER } = await import(blockFile)
 if (!WEB_TEXT || WEB_RESEARCHED_MARKER !== 'researched') bad(`naila's block has no WEB_TEXT or its marker is ${WEB_RESEARCHED_MARKER}`)
 const wgSrc = readFileSync(join(FILES, 'harness-write-guard.mjs'), 'utf8')
 if (!wgSrc.includes(`const RESEARCHED_MARKER = '${WEB_RESEARCHED_MARKER}'`)) bad(`harness-write-guard.mjs's RESEARCHED_MARKER is not naila's WEB_RESEARCHED_MARKER (${WEB_RESEARCHED_MARKER})`)
-// an asked run's HARNESS_CAPS lacks these (naila compileClaudeCode)
-const askedCaps = listIn(join(naila, 'packages/harness/src/floor/policy.ts'), 'export const ASKED_RUN_CAPS = [')
-if (!askedCaps?.length) { bad('could not read naila ASKED_RUN_CAPS'); process.exit(1) }
 // the core's own env for a run (pure core Task 3): hookEnv, over the roster the core installs from its roles spec at start
 const dist = join(naila, 'packages/harness/dist')
+// an asked run's HARNESS_CAPS lacks these (naila compileClaudeCode): imported from the built dist, since pure-core phase 3
+// generates the list from the service declarations (no literal left in the source)
+const { ASKED_RUN_CAPS: askedCaps } = await import(join(dist, 'floor/policy.js'))
+if (!Array.isArray(askedCaps) || !askedCaps.length || !askedCaps.every((x) => typeof x === 'string')) { bad(`could not read naila ASKED_RUN_CAPS from ${dist}/floor/policy.js: build naila first (npm run build)`); process.exit(1) }
 const { installRoster, rosterFrom } = await import(join(dist, 'roster.js'))
 const { parseWorkerSpecs } = await import(join(dist, 'workers-spec.js'))
 const { hookEnv } = await import(join(dist, 'floor/hook-env.js'))

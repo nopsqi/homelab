@@ -7,7 +7,8 @@
 # The runs' CLAUDE_CONFIG_DIR is ~/.claude itself: the login page (the login sidecar, naila.nopsqi.dev/harness) logs in
 # there, and a run that renews the token writes it back to the same file, so the pod has one login. Under ~/.claude only
 # uploads/<the run's origin channel>/ and tool-results/ are open to the runs (read-guard.mjs --by-origin, Ruling 16): the
-# login, the agent files with the bearers, harness.db (HARNESS_HOME) and other channels' uploads are not. Only the core keeps the finance write bearer; the workers get the read-only one.
+# login, the agent files with the bearers, harness.db (HARNESS_HOME) and other channels' uploads are not. Only the core keeps the write credentials
+# (the image's WRITE_CREDENTIALS: the finance write bearer); the workers get the read-only one.
 set -eu
 export NPM_CONFIG_PREFIX=$HOME/.npm-global PATH=$HOME/.npm-global/bin:$PATH
 C=$HOME/.claude
@@ -28,6 +29,39 @@ fi
 # turn). The roles' instructions files are the spec's to name: prepare.js refuses one that is missing.
 SPEC_JS=/naila/packages/harness/dist/workers-spec.js
 node -e 'import(process.argv[1]).then((m) => process.exit(m.ROLES_SPEC_VERSION === 3 ? 0 : 1), (e) => { console.error(String(e?.message ?? e)); process.exit(1) })' "$SPEC_JS" || die "this naila image predates pure-core phase 2 (roles spec 3): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+# PAIRING: the image's services
+# Pure-core phase 3 (services as plug-ins): the services this chart enables (HARNESS_SERVICES: {"version":1,"services":{"<id>":
+# {"writeCredentials":[…]}}}) and the image that declares them (dist/services/registry.js) come together. An image without
+# the registry, or whose SERVICES_SPEC_VERSION is not 1, predates the chart; a service the image doesn't declare, or one whose
+# write credentials differ from the image's (exactly, [] included), means the two were not shipped together. Either fails the
+# start (the import error printed first). The later checks take the bearers, the leak check's credentials and the write
+# guard's tools from the same registry.
+SERVICES_JS=/naila/packages/harness/dist/services/registry.js
+node -e '
+const util = require("util"), [file] = process.argv.slice(1)
+const fail = (m) => { console.error(`harness-start: ${m}`); process.exit(2) }
+const old = "this naila image predates pure-core phase 3 (services as plug-ins): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+const differ = "HARNESS_SERVICES and the image\x27s services differ: ship them together"
+const broken = "this naila image\x27s registry is inconsistent"
+const NAME = /^[A-Z][A-Z0-9_]*$/
+;(async () => {
+let img
+try { img = await import(file) } catch (e) { fail(`cannot load ${file}: ${e?.message ?? e}: ${old}`) }
+if (img.SERVICES_SPEC_VERSION !== 1) fail(old)
+const names = (x) => Array.isArray(x) && x.every((n) => typeof n === "string" && NAME.test(n))
+if (!Array.isArray(img.SERVICES) || !img.SERVICES.every((x) => typeof x?.id === "string" && names(x.writeCredentials))) fail(`${file} has malformed SERVICES: ${broken}`)
+// the leak check below reads WRITE_CREDENTIALS: it must hold every declared write credential
+if (!names(img.WRITE_CREDENTIALS) || img.SERVICES.some((x) => x.writeCredentials.some((n) => !img.WRITE_CREDENTIALS.includes(n)))) fail(`${file} has a WRITE_CREDENTIALS without every declared write credential: ${broken}`)
+let cfg
+try { cfg = JSON.parse(process.env.HARNESS_SERVICES ?? "") } catch { fail(`HARNESS_SERVICES is missing or not JSON: ${differ}`) }
+if (!cfg || typeof cfg.services !== "object" || cfg.services === null || Array.isArray(cfg.services)) fail(`HARNESS_SERVICES has no services: ${differ}`)
+if (cfg.version !== img.SERVICES_SPEC_VERSION) fail(`HARNESS_SERVICES has version ${JSON.stringify(cfg.version)}, the image ${img.SERVICES_SPEC_VERSION}: ${differ}`)
+for (const [id, s] of Object.entries(cfg.services)) {
+  const decl = img.SERVICES.find((x) => x.id === id)
+  if (!decl) fail(`HARNESS_SERVICES enables ${id}, which the image does not declare: ${differ}`)
+  if (!util.isDeepStrictEqual(s?.writeCredentials, decl.writeCredentials)) fail(`${id}\x27s writeCredentials are ${JSON.stringify(s?.writeCredentials)} in HARNESS_SERVICES, ${JSON.stringify(decl.writeCredentials)} in the image: ${differ}`)
+}
+})().catch((e) => fail(`${e?.message ?? e}: ${differ}`))' "$SERVICES_JS"
 # The vault server must honour VAULT_EXCLUDE, or the real phase's runs would see the test folder (an image older than the
 # chart): fail closed. The phrase is the one the server logs at startup when VAULT_EXCLUDE is set.
 VAULT_SERVER=/naila/packages/vault-mcp/dist/server.js
@@ -72,7 +106,17 @@ for (const t of ["Rp 1.000", "12 juta", "123456", "12 345 678", "150 million", "
 const m = /^const RESEARCHED_MARKER = \x27([^\x27]+)\x27$/m.exec(fs.readFileSync(wguard, "utf8"))
 if (!m || m[1] !== img.WEB_RESEARCHED_MARKER) fail(`harness-write-guard.mjs stops on another marker than WEB_RESEARCHED_MARKER: ${differ}`)
 })().catch((e) => fail(`${e.message}: ${differ}`))' "$WEB_RULES" /naila/packages/harness/dist/providers/claude-code/adapter.js /config/web-guard.mjs /config/harness-write-guard.mjs
-[ -n "${MCP_FINANCE_TOKEN:-}" ] && [ -n "${MCP_FINANCE_READ_TOKEN:-}" ] && [ -n "${MCP_OPS_TOKEN:-}" ] || die "a bearer is missing (MCP_FINANCE_TOKEN, MCP_FINANCE_READ_TOKEN, MCP_OPS_TOKEN)"
+# The bearers (P6): every role server's bearer in the roles config, plus every enabled service's write credentials (the core's
+# own, HARNESS_SERVICES, checked against the image above), each set and not empty. A chart with finance disabled names no
+# finance bearer, so none is needed.
+bearers=$(node -e '
+const spec = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")), on = JSON.parse(process.env.HARNESS_SERVICES).services
+const names = [...(spec.roles ?? []).flatMap((r) => (r?.servers ?? []).filter((x) => x?.bearer !== undefined).map((x) => x.bearer)), ...Object.values(on).flatMap((x) => x.writeCredentials)]
+const bad = names.filter((n) => typeof n !== "string" || !/^[A-Z][A-Z0-9_]*$/.test(n))
+if (bad.length) { console.error(`harness-start: a bearer name is not an env name: ${JSON.stringify(bad)}`); process.exit(2) }
+console.log([...new Set(names)].join(" "))' /config/harness-workers.json) || die "could not list the bearers from /config/harness-workers.json and HARNESS_SERVICES"
+missing=; for b in $bearers; do [ -n "${!b:-}" ] || missing="${missing:+$missing, }$b"; done
+[ -z "$missing" ] || die "a bearer is missing ($missing)"
 
 [ "$(claude --version 2>/dev/null | cut -d' ' -f1)" = "$CLAUDE_VERSION" ] || npm i -g @anthropic-ai/claude-code@$CLAUDE_VERSION
 # The Runner relies on these; an older CLI would fail every run in a less obvious way. --disallowedTools takes the write tools
@@ -118,7 +162,10 @@ for id in $fin; do
 done
 ! grep -l '__MCP_' "$C"/agents/*.md >/dev/null || die "unfilled bearer placeholder in $(grep -l '__MCP_' "$C"/agents/*.md | xargs -n1 basename)"
 if [ "$HARNESS_PHASE" = test ] && grep -q '//assistant-finance:' "$C"/agents/*.md; then die "a worker still points at the real finance server"; fi
-if grep -qF -- "$MCP_FINANCE_TOKEN" "$C"/agents/*.md; then die "a worker holds the finance write bearer"; fi
+# No agent file holds a write credential: every one the image declares (WRITE_CREDENTIALS), enabled or not, whose value is in
+# the env (only the core keeps them).
+wcreds=$(node -e 'import(process.argv[1]).then((m) => { if (!Array.isArray(m.WRITE_CREDENTIALS) || !m.WRITE_CREDENTIALS.every((n) => typeof n === "string" && /^[A-Z][A-Z0-9_]*$/.test(n))) process.exit(2); console.log(m.WRITE_CREDENTIALS.join(" ")) }, (e) => { console.error(String(e?.message ?? e)); process.exit(2) })' "$SERVICES_JS") || die "could not read WRITE_CREDENTIALS from $SERVICES_JS"
+for k in $wcreds; do [ -z "${!k:-}" ] || ! grep -qF -- "${!k}" "$C"/agents/*.md || die "a worker holds a write credential ($k)"; done
 
 # Settings: Naila's (/config/settings.json) plus harness mode's (harness-settings.json: no "ask", since nobody is there to
 # answer). The static deny is the floor (whatever a run's switches say) plus Naila's; the static allow is only the core tools
@@ -186,7 +233,7 @@ fs.writeFileSync(dst, JSON.stringify(s, null, 2))' /config/settings.json /config
 # come from the engine, HARNESS_DOCS_ROOTS). Phase 3: when the image exports CORE_ALWAYS_TOOLS (capabilities.js),
 # harness-settings.json's allow must be exactly that list plus propose_plan and ask_worker.
 node -e '
-const fs = require("fs"), [f, phase, root, patch, capsjs, layerjs] = process.argv.slice(1)
+const fs = require("fs"), [f, phase, root, patch, capsjs, layerjs, regjs] = process.argv.slice(1)
 const fail = (m) => { console.error(`harness-start: ${m}`); process.exit(2) }
 ;(async () => {
 const s = JSON.parse(fs.readFileSync(f, "utf8")), allow = s.permissions.allow, deny = s.permissions.deny
@@ -257,7 +304,11 @@ const blocks = (h) => h.timeout === 30 && h.onFailure === "block"
 // a condition holds) would each let a call through unguarded
 const HOOK_KEYS = "command,onFailure,timeout,type"
 const exact = (t, h) => { const k = Object.keys(h).sort().join(","); if (k !== HOOK_KEYS) fail(`${t}\x27s hook has the keys ${k}: want exactly type, command, timeout and onFailure`) }
-for (const t of ["Write", "Edit", "MultiEdit", "NotebookEdit", "mcp__vault__write_inbox", "mcp__vault__append_daily", "mcp__vault__workers_write", "mcp__finance-notes__write_note", "mcp__finance-notes__edit_note"]) { const c = hooksOf(t); if (c.length !== 1 || c[0].command !== guard || !blocks(c[0])) fail(`${t} does not go through the write guard rooted at ${root}/Naila/Workspace (timeout 30, onFailure block)`); exact(t, c[0]) }
+// the tools the write guard must take are the image\x27s (WRITE_GUARD_TOOLS, phase 3: generated from its service declarations);
+// the matcher above stays as rendered, so a tool the image adds that it misses fails the start
+const WG = (await import(regjs)).WRITE_GUARD_TOOLS
+if (!Array.isArray(WG) || !WG.length || !WG.every(isStr)) fail(`${regjs} has no well-formed WRITE_GUARD_TOOLS: this naila image is older than the chart`)
+for (const t of WG) { const c = hooksOf(t); if (c.length !== 1 || c[0].command !== guard || !blocks(c[0])) fail(`${t} does not go through the write guard rooted at ${root}/Naila/Workspace (timeout 30, onFailure block)`); exact(t, c[0]) }
 const wguard = "node /config/web-guard.mjs --by-worker || exit 2"
 for (const t of ["WebFetch", "WebSearch"]) {
   const c = hooksOf(t)
@@ -267,7 +318,7 @@ for (const t of ["WebFetch", "WebSearch"]) {
 }
 const rguard = "node /config/read-guard.mjs --by-origin || exit 2"
 for (const t of ["Read", "Glob", "Grep"]) { const c = hooked(t); if (c.length !== 1 || c[0] !== rguard) fail(`${t} does not go through the read guard narrowed to the run\x27s origin (read-guard.mjs --by-origin)`) }
-})().catch((e) => fail(e.message))' "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/harness-settings.json /naila/packages/harness/dist/capabilities.js /naila/packages/harness/dist/providers/claude-code/compile.js
+})().catch((e) => fail(e.message))' "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/harness-settings.json /naila/packages/harness/dist/capabilities.js /naila/packages/harness/dist/providers/claude-code/compile.js "$SERVICES_JS"
 
 # The work dirs are prepare.js's (above), the lead's named by the spec (its one role with lead: true); the test notes cabinet
 # may not exist yet.
@@ -275,7 +326,33 @@ LEAD=$(node -e '
 const leads = (JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).roles ?? []).filter((r) => r?.lead === true).map((r) => r.id)
 if (leads.length !== 1 || typeof leads[0] !== "string" || !/^[a-z][a-z0-9-]{0,31}$/.test(leads[0])) process.exit(2)
 console.log(leads[0])' /config/harness-workers.json) || die "the roles config has no lead"
-mkdir -p "$W/$LEAD" "$W/_summary" "$FINANCE_NOTES_ROOT"
+mkdir -p "$W/$LEAD" "$W/_summary"
+[ -z "${FINANCE_NOTES_ROOT:-}" ] || mkdir -p "$FINANCE_NOTES_ROOT"
+# P17: the chart's write guard stops every tool the image says it must (WRITE_GUARD_TOOLS) in a run marked researched, with the
+# image's own refusal (RESEARCHED_WRITE_REFUSED): run as the lead, in a slots folder holding the marker. A tool it lets through
+# means a write guard older than the image: fail the start (after the slots folder is removed).
+node -e '
+const { spawnSync } = require("child_process"), fs = require("fs"), os = require("os"), path = require("path")
+const [reg, research, guard, root, lead] = process.argv.slice(1)
+const fail = (m) => { console.error(`harness-start: ${m}`); process.exit(2) }
+;(async () => {
+const { WRITE_GUARD_TOOLS } = await import(reg), { RESEARCHED_WRITE_REFUSED } = await import(research).catch((e) => fail(`cannot load ${research} (RESEARCHED_WRITE_REFUSED): ${e?.message ?? e}`))
+if (typeof RESEARCHED_WRITE_REFUSED !== "string" || !RESEARCHED_WRITE_REFUSED) fail(`${research} has no RESEARCHED_WRITE_REFUSED: this naila image is older than the chart`)
+if (!Array.isArray(WRITE_GUARD_TOOLS) || !WRITE_GUARD_TOOLS.length) fail(`${reg} has no WRITE_GUARD_TOOLS: this naila image is older than the chart`)
+const slots = fs.mkdtempSync(path.join(os.tmpdir(), "write-guard-slots-"))
+let open
+try {
+  fs.writeFileSync(path.join(slots, "researched"), "")
+  for (const t of WRITE_GUARD_TOOLS) {
+    const r = spawnSync(process.execPath, [guard, "--root", `${root}/Naila/Workspace`], { input: JSON.stringify({ tool_name: t }), encoding: "utf8", timeout: 20000,
+      env: { PATH: process.env.PATH, HARNESS_WORKER: lead, HARNESS_WEB_SLOTS: slots } })
+    let o
+    try { o = JSON.parse(r.stdout).hookSpecificOutput } catch {}
+    if (r.status !== 0 || o?.permissionDecision !== "deny" || o?.permissionDecisionReason !== RESEARCHED_WRITE_REFUSED) { open = t; break }
+  }
+} finally { fs.rmSync(slots, { recursive: true, force: true }) }
+if (open !== undefined) fail(`harness-write-guard.mjs does not stop ${open} in a run marked researched: ship them together`)
+})().catch((e) => fail(`${e?.message ?? e}: harness-write-guard.mjs and the image\x27s WRITE_GUARD_TOOLS could not be compared`))' "$SERVICES_JS" /naila/packages/harness/dist/research.js /config/harness-write-guard.mjs "$VAULT_ROOT" "$LEAD"
 # The core reads the same spec: its workers, their models (engine_info) and servers.
 export HARNESS_WORKER_SPEC=/config/harness-workers.json
 

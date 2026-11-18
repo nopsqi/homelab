@@ -7,14 +7,22 @@
        order, each role's `paths` (its path grants) when it has them. One source per value: a role's model is its workers[].model, its description its files/agents/<id>.md
        frontmatter's, its ceiling files/modes/harness/<id>.<ceiling>.md split on ", ". The markers __FINANCE_HOST__ and
        __VAULT_ROOT__ resolve to this phase's finance server and vault root (Helm renders no values, so a template local
-       can't be written into them). Fails the render on what the core would refuse at start: a duplicate id, no lead or two,
-       a lead not listed first, a retired id that roles also lists, an unresolved marker, a server holding a $ or the finance
-       write bearer. */ -}}
+       can't be written into them). Called with (dict "root" $ "financeOn" <services.finance enabled>), worked out once in
+       the body. Fails the render on what the core would refuse at start: a duplicate id, no lead or two, a lead not listed
+       first, a retired id that roles also lists, an unresolved marker, a server holding a $. Two chart-only checks besides:
+       a server holding a write credential of any service harness.services lists, enabled or not (P11: a disabled service's
+       write bearer must not reach a run either), and a server naming __FINANCE_HOST__ while finance is disabled. The rest of
+       the core's service-use check (seeds, other servers, path grants of a disabled service) and unknown service ids are
+       left to the core at start. */ -}}
 {{- define "assistant.workerSpec" -}}
-{{- $h := .Values.harness }}
+{{- $root := .root }}
+{{- $financeOn := .financeOn }}
+{{- $h := $root.Values.harness }}
 {{- $test := eq $h.phase "test" }}
 {{- $finance := ternary "assistant-finance-test" "assistant-finance" $test }}
 {{- $vaultRoot := ternary "/vault/Harness-test" "/vault" $test }}
+{{- $creds := list }}
+{{- range $id, $e := $h.services | default dict }}{{ if and (kindIs "map" $e) (kindIs "slice" $e.writeCredentials) }}{{ range $e.writeCredentials }}{{ $creds = append $creds (toString .) }}{{ end }}{{ end }}{{ end }}
 {{- $ids := list }}
 {{- $leads := list }}
 {{- range $h.roleSpec.roles }}
@@ -30,7 +38,7 @@
 {{- if has (toString .) $ids }}{{ fail (printf "harness.roleSpec.retired lists %s, which roles also lists" (toString .)) }}{{ end }}
 {{- end }}
 {{- $models := dict }}
-{{- range .Values.workers }}
+{{- range $root.Values.workers }}
 {{- if not (has .name $ids) }}{{ fail (printf "harness.roleSpec.roles has no %s (workers[] names it)" .name) }}{{ end }}
 {{- $_ := set $models .name (toString .model) }}
 {{- end }}
@@ -47,15 +55,18 @@
 {{- if $s.lead }}{{ $_ := set $x "lead" true }}{{ end }}
 {{- if hasKey $s "paths" }}{{ $_ := set $x "paths" $s.paths }}{{ end }}
 {{- if $s.ceiling }}
-{{- $fm := regexFind "(?s)\\A---\\n.*?\\n---\\n" ($.Files.Get (printf "files/agents/%s.md" $w)) }}
+{{- $fm := regexFind "(?s)\\A---\\n.*?\\n---\\n" ($root.Files.Get (printf "files/agents/%s.md" $w)) }}
 {{- $d := regexFind "(?m)^description: .*$" $fm | trimPrefix "description: " }}
 {{- if or (not $d) (hasPrefix "\"" $d) (hasPrefix "'" $d) }}{{ fail (printf "%s: files/agents/%s.md has no plain one-line description in its frontmatter" $at $w) }}{{ end }}
-{{- $tools := $.Files.Get (printf "files/modes/harness/%s.%s.md" $w $s.ceiling) | required (printf "%s.ceiling: files/modes/harness/%s.%s.md is missing" $at $w $s.ceiling) }}
+{{- $tools := $root.Files.Get (printf "files/modes/harness/%s.%s.md" $w $s.ceiling) | required (printf "%s.ceiling: files/modes/harness/%s.%s.md is missing" $at $w $s.ceiling) }}
 {{- $_ := set $x "description" $d }}
 {{- $_ := set $x "ceiling" (splitList ", " (trimSuffix "\n" $tools)) }}
 {{- end }}
 {{- range $x.servers }}
-{{- if or (contains "$" (toJson .)) (contains "MCP_FINANCE_TOKEN" (toJson .)) }}{{ fail (printf "%s: a server holds a $ or MCP_FINANCE_TOKEN (the finance write bearer)" $at) }}{{ end }}
+{{- $j := toJson . }}
+{{- if contains "$" $j }}{{ fail (printf "%s: a server holds a $" $at) }}{{ end }}
+{{- range $creds }}{{ if contains . $j }}{{ fail (printf "%s: a server holds %s, a write credential in harness.services" $at .) }}{{ end }}{{ end }}
+{{- if and (not $financeOn) (contains "__FINANCE_HOST__" $j) }}{{ fail (printf "%s: a role server holds __FINANCE_HOST__, which needs harness.services.finance" $at) }}{{ end }}
 {{- end }}
 {{- $roles = append $roles $x }}
 {{- end }}
@@ -68,8 +79,28 @@
 {{- $test := eq $h.phase "test" }}
 {{- if not (has $h.phase (list "test" "real")) }}{{ fail (printf "harness.phase must be test or real, got %q" $h.phase) }}{{ end }}
 {{- if not .Values.claude.enabled }}{{ fail "harness.enabled needs claude.enabled: the harness pod reads the assistant-claude ConfigMap" }}{{ end }}
-{{- if not .Values.finance.enabled }}{{ fail "harness.enabled needs finance.enabled" }}{{ end }}
-{{- if and $test (not .Values.finance.testServer) }}{{ fail "harness.phase test needs finance.testServer (assistant-finance-test)" }}{{ end }}
+{{- /* The services the core enables (harness.services, pure-core phase 3): each enabled one is an entry of HARNESS_SERVICES
+       with its writeCredentials, [] included (naila services/config.ts parseServicesConfig: no other key, the lists exactly
+       the image's). Every listed service, enabled or not, needs a boolean enabled and a writeCredentials list of
+       ^MCP_[A-Z0-9_]+$ names; the vault must be enabled (the core's views and change log use it until pure-core phase 4). */ -}}
+{{- $on := dict }}
+{{- range $id, $e := $h.services | default dict }}
+{{- $at := printf "harness.services.%s" $id }}
+{{- $s := ternary $e dict (kindIs "map" $e) }}
+{{- if not (kindIs "bool" $s.enabled) }}{{ fail (printf "%s.enabled must be true or false" $at) }}{{ end }}
+{{- if not (kindIs "slice" $s.writeCredentials) }}{{ fail (printf "%s.writeCredentials must be a list" $at) }}{{ end }}
+{{- range $s.writeCredentials }}
+{{- if not (regexMatch "^MCP_[A-Z0-9_]+$" (toString .)) }}{{ fail (printf "%s.writeCredentials entry %s must match ^MCP_[A-Z0-9_]+$" $at (toString .)) }}{{ end }}
+{{- end }}
+{{- if $s.enabled }}{{ $_ := set $on $id (dict "writeCredentials" $s.writeCredentials) }}{{ end }}
+{{- end }}
+{{- if not (hasKey $on "vault") }}{{ fail "harness.services.vault must be enabled (the core's views and change log)" }}{{ end }}
+{{- $financeOn := hasKey $on "finance" }}
+{{- $clusterOn := hasKey $on "cluster" }}
+{{- $servicesJson := printf "{\"version\":1,\"services\":%s}" (toJson $on) }}
+{{- /* finance's rules only while the core enables it: without it the core reads no finance env (Task 8) */ -}}
+{{- if and $financeOn (not .Values.finance.enabled) }}{{ fail "harness.enabled needs finance.enabled" }}{{ end }}
+{{- if and $financeOn $test (not .Values.finance.testServer) }}{{ fail "harness.phase test needs finance.testServer (assistant-finance-test)" }}{{ end }}
 {{- /* The channels (harness.channels, by name): each enabled one is an entry of HARNESS_CHANNELS and GATEWAY_SECRETS, and
        one with a gateway is a container of its own. Everything the core would refuse at start fails the render instead. */ -}}
 {{- $chs := list }}
@@ -149,7 +180,7 @@
 {{- $finance := ternary "assistant-finance-test" "assistant-finance" $test }}
 {{- $tokenKey := ternary "MCP_FINANCE_TEST_TOKEN" "MCP_FINANCE_TOKEN" $test }}
 {{- $readKey := ternary "MCP_FINANCE_TEST_READ_TOKEN" "MCP_FINANCE_READ_TOKEN" $test }}
-{{- $workerSpec := include "assistant.workerSpec" . }}
+{{- $workerSpec := include "assistant.workerSpec" (dict "root" . "financeOn" $financeOn) }}
 # Harness mode as its own pod: the core (packages/harness) runs each worker as a one-shot Claude Code run with this pod's
 # own Max login (naila.nopsqi.dev/harness), each channel's gateway (harness.channels) carries the user's messages and
 # confirmations, and the core alone carries out an approved decision. The RC pod (assistant-claude) is not touched.
@@ -250,7 +281,9 @@ spec:
             - { name: PORT, value: "3100" }              # channel API, for the gateway containers
             - { name: CORE_TOOLS_PORT, value: "3101" }   # core tools, for the runs
             - { name: METRICS_PORT, value: "3102" }      # run metrics on 0.0.0.0, for Prometheus (Service assistant-harness-core)
+            {{- if $financeOn }}
             - { name: MCP_FINANCE_URL, value: http://{{ $finance }}:8080/mcp }
+            {{- end }}
             - { name: VAULT_ROOT, value: {{ $vaultRoot }} }
             - { name: FINANCE_NOTES_ROOT, value: {{ $vaultRoot }}/Finance }
             - { name: VIEW_FILE, value: {{ $vaultRoot }}/Naila/Decisions.md }
@@ -259,11 +292,13 @@ spec:
             {{- end }}
             # All three bearers stay in the core's env (its own loop opens the workers' servers with the read-only one and
             # the ops one); harness-start.sh also puts those two into the agent files for Claude Code runs, and unsets each
-            # GATEWAY_<NAME>_SECRET: they go on only inside GATEWAY_SECRETS.
+            # GATEWAY_<NAME>_SECRET: they go on only inside GATEWAY_SECRETS. The two finance ones only while finance is enabled.
+            {{- if $financeOn }}
             - name: MCP_FINANCE_TOKEN
               valueFrom: { secretKeyRef: { name: assistant-claude-secret, key: {{ $tokenKey }} } }
             - name: MCP_FINANCE_READ_TOKEN
               valueFrom: { secretKeyRef: { name: assistant-claude-secret, key: {{ $readKey }} } }
+            {{- end }}
             - name: MCP_OPS_TOKEN
               valueFrom: { secretKeyRef: { name: assistant-claude-secret, key: MCP_OPS_TOKEN } }
             - name: CORE_TOOLS_SECRET
@@ -274,6 +309,7 @@ spec:
             {{- end }}
             - { name: GATEWAY_SECRETS, value: {{ join "," $entries | quote }} }
             - { name: HARNESS_CHANNELS, value: {{ toJson $specs | quote }} }
+            - { name: HARNESS_SERVICES, value: {{ $servicesJson | quote }} }   # the services the core enables (pure-core phase 3)
             - { name: DOCS_TOKEN_FILE, value: /run/docs-token/token }   # docs' bearer: checked at start; set and unusable fails it
             - { name: DOCS_SOCKET, value: /run/docs-sock/docs.sock }    # where each run's docs relay reaches docs
             - { name: PROVIDER_KEYS_DIR, value: /run/provider-keys }    # the API providers' keys, one file each; none: that provider can't run
@@ -515,8 +551,9 @@ spec:
 {{- if .Values.networkPolicy.enabled }}
 ---
 # Out: DNS, the internet on 443 (Anthropic, Discord, npm for the CLI install, Cloudflare Access keys), this phase's finance
-# server and the ops server. In: only the login page from cloudflared, the login sidecar's metrics (8081) from monitoring,
-# and the core's (3102) from the Prometheus pods only.
+# server (harness.services.finance) and the ops server (harness.services.cluster); with neither, no rule for them at all
+# (a rule whose `to` is empty would admit every destination). In: only the login page from cloudflared, the login
+# sidecar's metrics (8081) from monitoring, and the core's (3102) from the Prometheus pods only.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: { name: assistant-harness }
@@ -536,7 +573,9 @@ spec:
     # Not the tailnet (100.64.0.0/10, CGNAT) or link-local (169.254.0.0/16, cloud metadata) either.
     - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16] } }]
       ports: [{ protocol: TCP, port: 443 }]
-    - to: [{ podSelector: { matchLabels: { app: {{ $finance }} } } }, { podSelector: { matchLabels: { app: assistant-ops } } }]
+    {{- if or $financeOn $clusterOn }}
+    - to: [{{ if $financeOn }}{ podSelector: { matchLabels: { app: {{ $finance }} } } }{{ end }}{{ if and $financeOn $clusterOn }}, {{ end }}{{ if $clusterOn }}{ podSelector: { matchLabels: { app: assistant-ops } } }{{ end }}]
       ports: [{ protocol: TCP, port: 8080 }]
+    {{- end }}
 {{- end }}
 {{- end }}

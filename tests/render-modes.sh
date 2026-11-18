@@ -95,6 +95,12 @@
 #  predates DOCS_SOCKET: P24); the runs' static settings deny the folder; harness-start.sh registers no user-scope docs entry
 #  on an image with the docs relay and the old unauthenticated one on an older image (P24), run as rendered, and never
 #  handles the bearer itself.
+# Then the services (pure core phase 3 Task 12, harness.services): HARNESS_SERVICES lists each enabled service with its write
+#  credentials (naila's parseServicesConfig accepts it, and the image declares the same lists); finance's env, its
+#  finance.enabled/testServer rules and its egress peer follow services.finance, the ops peer services.cluster, and with neither
+#  the egress rule is gone; any listed service's write credential in a server string fails the render (P11), as do bad
+#  services config and the vault disabled; prod, test phase, harness off and staging render as at <git-ref> but for the
+#  harness Deployment's HARNESS_SERVICES env and checksum.
 set -euo pipefail
 ref="${1:-origin/master}"
 root="$(git rev-parse --show-toplevel)"
@@ -2337,4 +2343,159 @@ for label, path in zip(("harness off", "staging"), sys.argv[5:7]):
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
 print("provider keys: assistant-provider-keys sealed (strict: its name, assistant), mounted 0440 read-only at /run/provider-keys by the harness container alone; none with harness off or in staging; no harness-pod container listens on 443")
+PY
+# Pure core phase 3 Task 12: the services the core enables (harness.services) as HARNESS_SERVICES, {"version":1,"services":
+# {"<id>":{"writeCredentials":[…]}}} for each enabled service (naila services/config.ts parseServicesConfig; the lists equal
+# the image's declarations, [] included); finance's env, its finance.enabled and testServer rules and its egress peer follow
+# services.finance, the ops peer services.cluster, and with neither the egress rule is gone (an empty `to` matches every
+# destination); a server string holding any listed service's write credential, enabled or not, fails the render (P11), as do
+# a bad writeCredentials, a missing one, a non-boolean enabled and the vault disabled. Prod, test phase, harness off and
+# staging render exactly as at <git-ref> but for the harness Deployment's HARNESS_SERVICES env and checksum.
+helm template helm/assistant -f helm/assistant/values.yaml -f helm/assistant/values.prod.yaml > "$tmp/prod.yaml"
+helm template "$tmp/helm/assistant" -f "$tmp/helm/assistant/values.yaml" -f "$tmp/helm/assistant/values.prod.yaml" > "$tmp/prod-ref.yaml"
+helm template "$tmp/helm/assistant" -f "$tmp/helm/assistant/values.yaml" -f "$tmp/helm/assistant/values.staging.yaml" > "$tmp/staging-ref.yaml"
+python3 - "$ref" "$tmp/prod.yaml" "$tmp/prod-ref.yaml" "$tmp/new.yaml" "$tmp/old-harness.yaml" "$tmp/off.yaml" "$tmp/old.yaml" "$tmp/staging.yaml" "$tmp/staging-ref.yaml" "$tmp/real.yaml" <<'PY'
+import sys, yaml, json, os, subprocess, copy
+ref = sys.argv[1]
+def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
+def loads(s): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(s) if d}
+H, NP = ("Deployment", "assistant-harness"), ("NetworkPolicy", "assistant-harness")
+def pod(r): return r[H]["spec"]["template"]["spec"] if H in r else {"containers": [], "initContainers": []}
+def ctr(r, n): return next((c for c in pod(r)["containers"] if c["name"] == n), None)
+def val(c, k): return next((e.get("value") for e in (c or {}).get("env", []) if e["name"] == k), None)
+def services(r):
+    v = val(ctr(r, "harness"), "HARNESS_SERVICES")
+    try: return json.loads(v) if v is not None else None
+    except ValueError: return f"not JSON: {v!r}"
+WANT = {"finance": ["MCP_FINANCE_TOKEN"], "vault": [], "docs": [], "cluster": [], "web": []}
+def want(ids): return {"version": 1, "services": {i: {"writeCredentials": WANT[i]} for i in ids}}
+bad = []
+
+# the whole render, as at <git-ref> but for the harness Deployment's HARNESS_SERVICES env and checksum
+def strip(r):
+    r = copy.deepcopy(r)
+    if H in r:
+        t = r[H]["spec"]["template"]
+        t["metadata"].get("annotations", {}).pop("checksum/config", None)
+        for c in t["spec"]["containers"]:
+            if c["name"] == "harness": c["env"] = [e for e in c.get("env", []) if e["name"] != "HARNESS_SERVICES"]
+    return r
+for label, now_, then_, on in (("prod", 2, 3, True), ("test phase", 4, 5, True), ("harness off", 6, 7, False), ("staging", 8, 9, False)):
+    tag = f"the {label} render differs from {ref}'s only in the harness Deployment's HARNESS_SERVICES env and checksum"
+    a, b = load(sys.argv[now_]), load(sys.argv[then_])
+    if on:
+        if H not in a: bad.append(f"{tag}: no harness Deployment"); continue
+        if services(b) is not None: bad.append(f"{tag}: the {ref} render already has HARNESS_SERVICES (the check compares nothing)")
+        if services(a) is None: bad.append(f"{tag}: no HARNESS_SERVICES")
+    elif any("HARNESS_SERVICES" in json.dumps(d) for d in a.values()): bad.append(f"{tag}: it names HARNESS_SERVICES")
+    sa, sb = strip(a), strip(b)
+    for k in sorted(set(sa) | set(sb)):
+        if sa.get(k) != sb.get(k): bad.append(f"{tag}: {k[0]}/{k[1]} differs{'' if k in sa and k in sb else ' (on one side only)'}")
+
+# HARNESS_SERVICES lists the enabled services with their write credentials: prod's five, compared as a set by id
+tag = "HARNESS_SERVICES lists the enabled services with their write credentials"
+for label, i in (("prod", 2), ("test phase", 4), ("real phase", 10)):
+    got = services(load(sys.argv[i]))
+    if got != want(WANT): bad.append(f"{tag}: it is {got!r} ({label}), want {want(WANT)!r}")
+    for c in pod(load(sys.argv[i]))["containers"] + pod(load(sys.argv[i])).get("initContainers", []):
+        if c["name"] != "harness" and "HARNESS_SERVICES" in json.dumps(c): bad.append(f"{tag}: {c['name']} has it too ({label})")
+
+BASE = ["helm", "template", "helm/assistant", "-f", "helm/assistant/values.yaml", "-f", "helm/assistant/values.prod.yaml", "--set", "claude.rcLines=true"]
+def render(*a): return subprocess.run(BASE + list(a), capture_output=True, text=True)
+ROLES = yaml.safe_load(open("helm/assistant/values.yaml"))["harness"]["roleSpec"]["roles"]
+def roles_without(*hosts):
+    """The roles with every server naming one of hosts (a marker or a host) taken out."""
+    out = copy.deepcopy(ROLES)
+    for r in out: r["servers"] = [s for s in r.get("servers") or [] if not any(h in json.dumps(s) for h in hosts)]
+    return out
+OFF = lambda *ids: [x for i in ids for x in ("--set", f"harness.services.{i}.enabled=false")]
+NOFIN = ["--set", "finance.enabled=false", "--set", "finance.testServer=false"]
+def egress(r): return ((r.get(NP) or {}).get("spec") or {}).get("egress") or []
+def peers(r): return {f["podSelector"]["matchLabels"]["app"] for rule in egress(r) for f in rule.get("to") or [] if "podSelector" in f}
+def empty_to(r): return [rule for rule in egress(r) if not rule.get("to")]
+def fails(p, says): return p.returncode != 0 and says in p.stderr
+
+# services.finance disabled: no finance egress, no MCP_FINANCE_* env, and finance.enabled (and testServer) not needed
+tag = "services.finance disabled renders no finance egress, no MCP_FINANCE_* env and needs no finance.enabled"
+nofin = {}
+for ph in ("test", "real"):
+    p = render("--set", f"harness.phase={ph}", *OFF("finance"), *NOFIN, "--set-json", f"harness.roleSpec.roles={json.dumps(roles_without('__FINANCE_HOST__'))}")
+    if p.returncode != 0: bad.append(f"{tag}: the render fails ({ph}): {p.stderr.strip()[-300:]}"); continue
+    r = nofin[ph] = loads(p.stdout)
+    for c in pod(r)["containers"] + pod(r).get("initContainers", []):
+        names = [e["name"] for e in c.get("env", []) if e["name"].startswith("MCP_FINANCE_")]
+        if names: bad.append(f"{tag}: {c['name']} has {names} ({ph})")
+    if peers(r) != {"assistant-ops"}: bad.append(f"{tag}: the harness egress reaches {sorted(peers(r))}, want assistant-ops alone ({ph})")
+    if empty_to(r): bad.append(f"{tag}: an egress rule has an empty or missing to ({ph})")
+    if services(r) != want([i for i in WANT if i != "finance"]): bad.append(f"{tag}: HARNESS_SERVICES is {services(r)!r} ({ph})")
+tag = "with services.finance disabled, a role server naming the finance host fails the render"
+p = render(*OFF("finance"), *NOFIN)
+if not fails(p, "a role server holds __FINANCE_HOST__, which needs harness.services.finance"): bad.append(f"{tag}: exit {p.returncode} {p.stderr.strip()[-300:]!r}")
+tag = "with services.finance enabled, harness still needs finance.enabled, and the test phase finance.testServer"
+for what, args, says in (("finance.enabled false", ["--set", "finance.enabled=false"], "harness.enabled needs finance.enabled"),
+                         ("testServer false, test phase", ["--set", "harness.phase=test", "--set", "finance.testServer=false"], "harness.phase test needs finance.testServer")):
+    if not fails(p := render(*args), says): bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()[-300:]!r}")
+
+# finance and cluster both disabled: the egress rule to the tool servers is gone, not left with an empty `to`
+tag = "finance and cluster both disabled omit the egress rule entirely"
+p = render(*OFF("finance", "cluster"), *NOFIN, "--set-json", f"harness.roleSpec.roles={json.dumps(roles_without('__FINANCE_HOST__', 'assistant-ops'))}")
+if p.returncode != 0: bad.append(f"{tag}: the render fails: {p.stderr.strip()[-300:]}")
+else:
+    r = loads(p.stdout)
+    if empty_to(r) or peers(r) or len(egress(r)) != 2: bad.append(f"{tag}: the egress is {egress(r)!r}, want DNS and 443 alone")
+    if services(r) != want(["vault", "docs", "web"]): bad.append(f"{tag}: HARNESS_SERVICES is {services(r)!r}")
+tag = "services.cluster disabled drops the ops peer and keeps finance's"
+p = render(*OFF("cluster"), "--set-json", f"harness.roleSpec.roles={json.dumps(roles_without('assistant-ops'))}")
+if p.returncode != 0: bad.append(f"{tag}: the render fails: {p.stderr.strip()[-300:]}")
+elif peers(r := loads(p.stdout)) != {"assistant-finance"} or empty_to(r): bad.append(f"{tag}: the harness egress reaches {sorted(peers(r))}")
+
+# P11: every listed service's write credentials, enabled or not, are refused in a server string
+tag = "a disabled service's listed write credential is still refused in a server string"
+leak = copy.deepcopy(ROLES)
+next(r for r in leak if r["id"] == "ops-oncall")["servers"][0]["bearer"] = "MCP_DOCS_WRITE"
+DOCS = ["--set-json", 'harness.services.docs={"enabled":false,"writeCredentials":["MCP_DOCS_WRITE"]}']
+if not fails(p := render(*DOCS, "--set-json", f"harness.roleSpec.roles={json.dumps(leak)}"), "a server holds MCP_DOCS_WRITE"): bad.append(f"{tag}: exit {p.returncode} {p.stderr.strip()[-300:]!r}")
+if (p := render(*DOCS)).returncode != 0: bad.append(f"{tag}: without the leak the render fails: {p.stderr.strip()[-300:]}")
+leak = copy.deepcopy(ROLES)
+next(r for r in leak if r["id"] == "finance-advisor")["servers"][1]["env"]["X"] = "MCP_FINANCE_TOKEN"
+if not fails(p := render("--set-json", f"harness.roleSpec.roles={json.dumps(leak)}"), "a server holds MCP_FINANCE_TOKEN"): bad.append(f"{tag}: the finance write bearer in a server env: exit {p.returncode} {p.stderr.strip()[-300:]!r}")
+
+# the render fails on a bad writeCredentials name, a missing or non-list writeCredentials, a non-boolean enabled and the vault disabled
+tag = "the render fails on a bad writeCredentials name, a missing writeCredentials and vault disabled"
+for what, args, says in (
+        ("a lowercase name", ["--set-json", 'harness.services.web.writeCredentials=["mcp_web"]'], "harness.services.web.writeCredentials entry mcp_web must match ^MCP_[A-Z0-9_]+$"),
+        ("a name without MCP_", ["--set-json", 'harness.services.finance.writeCredentials=["FINANCE_TOKEN"]'], "harness.services.finance.writeCredentials entry FINANCE_TOKEN must match ^MCP_[A-Z0-9_]+$"),
+        ("a missing writeCredentials", ["--set-json", "harness.services.web.writeCredentials=null"], "harness.services.web.writeCredentials must be a list"),
+        ("a disabled service's missing writeCredentials", ["--set-json", 'harness.services.docs={"enabled":false,"writeCredentials":null}'], "harness.services.docs.writeCredentials must be a list"),
+        ("a string writeCredentials", ["--set-json", 'harness.services.web.writeCredentials="MCP_WEB"'], "harness.services.web.writeCredentials must be a list"),
+        ("enabled yes", ["--set-json", 'harness.services.web.enabled="yes"'], "harness.services.web.enabled must be true or false"),
+        ("vault disabled", ["--set", "harness.services.vault.enabled=false"], "harness.services.vault must be enabled (the core's views and change log)"),
+        ("vault left out", ["--set-json", "harness.services.vault=null"], "harness.services.vault must be enabled (the core's views and change log)")):
+    if not fails(p := render(*args), says): bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()[-300:]!r}, want a failed render saying {says!r}")
+
+# naila's own parser (its built dist) accepts what the chart renders and refuses the <git-ref> chart's (none), and the image's
+# declared write credentials are the chart's
+nw = os.environ.get("NAILA_WORKTREE", "")
+cfg_js, reg_js = f"{nw}/packages/harness/dist/services/config.js", f"{nw}/packages/harness/dist/services/registry.js"
+if not (nw and os.path.isfile(cfg_js) and os.path.isfile(reg_js)):
+    print("NOTICE: NAILA_WORKTREE has no built dist/services: naila's parseServicesConfig was not run on HARNESS_SERVICES")
+else:
+    tag = "naila's parseServicesConfig accepts the rendered HARNESS_SERVICES"
+    js = ("const [c, r, ...raws] = process.argv.slice(1); const { parseServicesConfig } = await import(c); const { SERVICES, SERVICES_SPEC_VERSION } = await import(r); "
+          "const out = [JSON.stringify({ v: SERVICES_SPEC_VERSION, decl: Object.fromEntries(SERVICES.map((s) => [s.id, s.writeCredentials])) })]; "
+          "for (const raw of raws) { try { out.push(`ok ${parseServicesConfig(raw === '-' ? undefined : raw).ids.join(',')}`) } catch (e) { out.push(e.message) } } console.log(out.join('\\n'))")
+    cases = [("prod", val(ctr(load(sys.argv[2]), "harness"), "HARNESS_SERVICES"), "ok finance,vault,docs,cluster,web"),
+             ("finance disabled", val(ctr(nofin.get("real", {}), "harness"), "HARNESS_SERVICES"), "ok vault,docs,cluster,web"),
+             (f"the {ref} render (none)", val(ctr(load(sys.argv[3]), "harness"), "HARNESS_SERVICES"), "services: HARNESS_SERVICES is missing: the chart predates pure-core phase 3 (services as plug-ins)")]
+    p = subprocess.run(["node", "--input-type=module", "-e", js, cfg_js, reg_js, *[c[1] if c[1] is not None else "-" for c in cases]], capture_output=True, text=True)
+    o = p.stdout.splitlines()
+    if p.returncode != 0 or len(o) != 1 + len(cases): bad.append(f"{tag}: node failed: {(p.stderr or p.stdout).strip()[-300:]}")
+    else:
+        d = json.loads(o[0])
+        if d != {"v": 1, "decl": WANT}: bad.append(f"{tag}: the image declares {d!r}, want version 1 and {WANT!r}")
+        for (what, _, w), g in zip(cases, o[1:]):
+            if g != w: bad.append(f"{tag}: {what}: {g!r}, want {w!r}")
+if bad:
+    print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
+print("services: HARNESS_SERVICES lists the enabled services (naila's parser accepts it); finance and ops follow them; bad config fails; the render is the ref's but for HARNESS_SERVICES and the checksum")
 PY

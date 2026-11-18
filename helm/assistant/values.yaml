@@ -70,6 +70,17 @@ harness:
       settle: reject
       retainMs: 3600000                   # nobody polls it between live runs
       secretKey: GATEWAY_TEST_SECRET
+  # The services the core enables (pure-core phase 3; naila packages/harness/src/services/config.ts): templates/harness.yaml
+  # renders each enabled one into the core's HARNESS_SERVICES ({"version":1,"services":{"<id>":{"writeCredentials":[…]}}}),
+  # and finance's env and egress peer follow finance, the ops peer cluster. writeCredentials repeats the image's declaration
+  # exactly ([] included; the core and harness-start refuse a mismatch), each name ^MCP_[A-Z0-9_]+$; no role server may hold
+  # one, enabled or not. vault must stay enabled, and a role server naming __FINANCE_HOST__ needs finance.
+  services:                     # the services the core enables (pure-core phase 3); the image declares their tools
+    finance: { enabled: true, writeCredentials: [MCP_FINANCE_TOKEN] }
+    vault: { enabled: true, writeCredentials: [] }    # required until pure-core phase 4
+    docs: { enabled: true, writeCredentials: [] }
+    cluster: { enabled: true, writeCredentials: [] }
+    web: { enabled: true, writeCredentials: [] }
   # The roles config (naila packages/harness/src/workers-spec.ts, ROLES_SPEC_VERSION 3): templates/harness.yaml renders it as
   # harness-workers.json beside each role's instructions (/config), the core installs its roles from it at start (in this
   # order, the lead first), and the claude-code adapter's prepare.js writes the agent files from it. `roles` is an ordered
@@ -84,8 +95,8 @@ harness:
   # never run). One source per value: a role's model is its workers[].model (naila has none there: hers is here), its description its
   # files/agents/<id>.md frontmatter's, and its ceiling (the tools its runs may ever have) files/modes/harness/<id>.<ceiling>.md,
   # split on ", ". Literal markers the template resolves per phase: __FINANCE_HOST__ (assistant-finance-test or
-  # assistant-finance) and __VAULT_ROOT__ (/vault/Harness-test or /vault). No server string may hold a $ or MCP_FINANCE_TOKEN
-  # (the finance write bearer): the render fails, as the core would. So do a duplicate id, no lead or two, a lead not listed
+  # assistant-finance) and __VAULT_ROOT__ (/vault/Harness-test or /vault). No server string may hold a $ or a write credential
+  # of any service in services above (MCP_FINANCE_TOKEN, the finance write bearer): the render fails, as the core would. So do a duplicate id, no lead or two, a lead not listed
   # first, and a retired id that roles also lists.
   roleSpec:
     roles:

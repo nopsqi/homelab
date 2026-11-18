@@ -115,6 +115,13 @@
 #  request files, job ids (the core's shape) and uses, a profile that is no map, and an enabled job's disabled service, fail
 #  the render; the render is <git-ref>'s but for those
 #  (skipped with a notice once <git-ref> renders harness-setup.json itself).
+# Then the setup pairing (pure core phase 4 Task 13): harness-start dies on an image without setup.js or SETUP_SPEC_VERSION 1
+#  (printing the import error), without vault-mcp's layout.js, and when the image's parseSetup refuses the chart's setup; the
+#  real phase needs VAULT_EXCLUDE to name the profile's test folder; the prod render pairs with the built image (Harness-test,
+#  Finance, Naila/Workspace, no VAULT_PATHS); the web-rules check judges both copies with the profile's figure words (and the
+#  same FIGURE_WORDS); a non-default profile reaches the user-scope vault server and the advisor's finance-notes server as
+#  VAULT_PATHS (the chart's DEFAULT_VAULT_PATHS copy is the image's); P8, the test-phase allow check, the finance notes folder
+#  and the write guard's root follow the profile; the settings stay byte-identical to the SETTINGS_REF chart's.
 set -euo pipefail
 ref="${1:-origin/master}"
 root="$(git rev-parse --show-toplevel)"
@@ -127,9 +134,10 @@ export TMPDIR="$tmp"   # the checks' own temp dirs (Python tempfile) go with it
 export FLOOR_DENY='["Bash","NotebookEdit","Agent","Task","Workflow","TaskStop","Monitor","CronCreate","CronDelete","CronList","ScheduleWakeup","RemoteTrigger","EnterWorktree","ExitWorktree","SendMessage","ListAgents","mcp__vault__workers_*","mcp__claude_ai_*","mcp__finance__add_transaction","mcp__finance__transfer","mcp__finance__update_transaction","mcp__finance__actual_write","mcp__finance-notes__write_note","mcp__finance-notes__edit_note","Read(//home/claude/.claude/.credentials.json)","Read(//home/claude/.claude/harness/**)","Read(//home/claude/.claude/agents/**)","Read(//home/claude/.claude/settings.json)","Read(//home/claude/.claude/.claude.json)","Read(//home/claude/.claude.json)","Read(//home/claude/.claude/projects/**/*.jsonl)","Read(//proc/**)","Read(//config/**)","Read(//naila/**)","Edit(//home/claude/.claude/.credentials.json)","Edit(//home/claude/.claude/harness/**)","Edit(//home/claude/.claude/agents/**)","Edit(//home/claude/.claude/settings.json)","Edit(//home/claude/.claude/.claude.json)","Edit(//home/claude/.claude.json)","Edit(//home/claude/.claude/projects/**/*.jsonl)","Edit(//proc/**)","Edit(//config/**)","Edit(//naila/**)","Write(//home/claude/.claude/.credentials.json)","Write(//home/claude/.claude/harness/**)","Write(//home/claude/.claude/agents/**)","Write(//home/claude/.claude/settings.json)","Write(//home/claude/.claude/.claude.json)","Write(//home/claude/.claude.json)","Write(//home/claude/.claude/projects/**/*.jsonl)","Write(//proc/**)","Write(//config/**)","Write(//naila/**)","Edit(//home/claude/.claude/**)","Write(//home/claude/.claude/**)"]'
 # The claude-code adapter's static layer, verbatim from naila packages/harness/src/providers/claude-code/compile.ts
 # CLAUDE_STATIC_LAYER (up to naila 8346393; /run/provider-keys since cbbede6; the researcher's web and write hooks, their 30 s
-# timeout and onFailure block, since the researcher branch): the denies and the guard hooks (matcher, command regex source, pins) harness-start's
+# timeout and onFailure block, since the researcher branch; the write guard's root pinned only to end in /Workspace since pure-core
+# phase 4, call 15: the profile names the system folder): the denies and the guard hooks (matcher, command regex source, pins) harness-start's
 # settings check takes from the image. With NAILA_WORKTREE the built dist export must equal it. A change there changes this.
-export CLAUDE_STATIC_LAYER='{"deny":["Read(//run/docs-token/**)","Edit(//run/docs-token/**)","Write(//run/docs-token/**)","Read(//run/docs-sock/**)","Edit(//run/docs-sock/**)","Write(//run/docs-sock/**)","Read(//run/provider-keys/**)","Edit(//run/provider-keys/**)","Write(//run/provider-keys/**)"],"hooks":[{"matcher":"Read|Glob|Grep","command":"^node \\/config\\/read-guard\\.mjs --by-origin \\|\\| exit 2$"},{"matcher":"Write|Edit|MultiEdit|NotebookEdit|mcp__vault__write_inbox|mcp__vault__append_daily|mcp__vault__workers_write|mcp__finance-notes__write_note|mcp__finance-notes__edit_note","command":"harness-write-guard\\.mjs --root \\S+\\/Naila\\/Workspace \\|\\| exit 2$","timeout":30,"onFailure":"block"},{"matcher":"mcp__docs__convert","command":"docs-grant\\.mjs --by-caps "},{"matcher":"WebFetch|WebSearch","command":"^node \\/config\\/web-guard\\.mjs --by-worker \\|\\| exit 2$","timeout":30,"onFailure":"block"}]}'
+export CLAUDE_STATIC_LAYER='{"deny":["Read(//run/docs-token/**)","Edit(//run/docs-token/**)","Write(//run/docs-token/**)","Read(//run/docs-sock/**)","Edit(//run/docs-sock/**)","Write(//run/docs-sock/**)","Read(//run/provider-keys/**)","Edit(//run/provider-keys/**)","Write(//run/provider-keys/**)"],"hooks":[{"matcher":"Read|Glob|Grep","command":"^node \\/config\\/read-guard\\.mjs --by-origin \\|\\| exit 2$"},{"matcher":"Write|Edit|MultiEdit|NotebookEdit|mcp__vault__write_inbox|mcp__vault__append_daily|mcp__vault__workers_write|mcp__finance-notes__write_note|mcp__finance-notes__edit_note","command":"harness-write-guard\\.mjs --root \\S+\\/Workspace \\|\\| exit 2$","timeout":30,"onFailure":"block"},{"matcher":"mcp__docs__convert","command":"docs-grant\\.mjs --by-caps "},{"matcher":"WebFetch|WebSearch","command":"^node \\/config\\/web-guard\\.mjs --by-worker \\|\\| exit 2$","timeout":30,"onFailure":"block"}]}'
 # The core tools every run has, verbatim from naila packages/harness/src/capabilities.ts CORE_ALWAYS_TOOLS (up to 8346393):
 # harness-start's settings check requires harness-settings.json's allow to be exactly these plus propose_plan and ask_worker
 # when the image exports them. With NAILA_WORKTREE the built dist export must equal it. A change there changes this.
@@ -980,13 +988,18 @@ start = (test.get(("ConfigMap", "assistant-harness")) or {}).get("data", {}).get
 # The real phase's runs can't see the test folder (Ruling 29): harness-start.sh's settings patch, run as rendered for each
 # phase, denies //vault/Harness-test/** in the real phase only, and the vault servers get VAULT_EXCLUDE=Harness-test there.
 import os, shlex, subprocess, tempfile
+# pure core phase 4 Task 13: what harness-start's setup pairing reads from the profile (the image's parseSetup and vault-mcp's
+# layout: the workspace root is <system>/Workspace), as the shell variables the later steps take
+def profile_vars(r):
+    p = json.loads(r[("ConfigMap", "assistant-harness")]["data"]["harness-setup.json"])["profile"]["paths"]
+    return {"TEST_FOLDER": p["testFolder"], "FINANCE_FOLDER": p["finance"], "WORKSPACES": f"{p['system']}/Workspace"}
 def patched_settings(r, ph):
     data = {**r[("ConfigMap", "assistant-claude")]["data"], **r[("ConfigMap", "assistant-harness")]["data"]}
     m = re.search(r"^# Settings:.*?^node -e '(.*?)' (/config/settings\.json[^\n]*)$", data["harness-start.sh"], re.M | re.S)
     if not m: return None, "harness-start.sh: settings patch not found"
     d = tempfile.mkdtemp()
     vars_ = {k: (e.get("value") or "") for k, e in env(ctr(r, "harness")).items()}
-    vars_.update(C=d, HARNESS_PHASE=ph, HOME=d)
+    vars_.update(C=d, HARNESS_PHASE=ph, HOME=d, **profile_vars(r))
     def expand(a):
         a = re.sub(r"\$\{(\w+)(?::-[^}]*)?\}|\$(\w+)", lambda x: vars_.get(x.group(1) or x.group(2), ""), a)
         if a.startswith("/config/"):
@@ -1059,7 +1072,7 @@ for ph, r in (("test", test), ("real", real)):
     d = tempfile.mkdtemp()
     open(os.path.join(d, "harness-settings.json"), "w").write(data["harness-settings.json"])
     vars_ = {k: (e.get("value") or "") for k, e in env(ctr(r, "harness")).items()}
-    vars_.update(C=d, HARNESS_PHASE=ph)
+    vars_.update(C=d, HARNESS_PHASE=ph, **profile_vars(r))
     # phase 2: the check takes the static layer from the image (compile.js); by default a module with this file's verbatim copy
     LAYER_JS = "/naila/packages/harness/dist/providers/claude-code/compile.js"
     if LAYER_JS not in shlex.split(ck[0].group(2)): bad.append(f"{tag}: harness-start's settings check is not given {LAYER_JS}")
@@ -1304,9 +1317,11 @@ else:
     nw4 = os.environ.get("NAILA_WORKTREE", "")
     rules_ts = f"{nw4}/packages/harness/src/floor/web-rules.ts"
     BLOCK = between(open(rules_ts).read()) if nw4 and os.path.isfile(rules_ts) else between(cdata["web-guard.mjs"])
-    def image_check(block=BLOCK, adapter="const env = { HARNESS_WEB_SLOTS: dir }\n", wguard=None, dist=None):
+    def image_check(block=BLOCK, adapter="const env = { HARNESS_WEB_SLOTS: dir }\n", wguard=None, dist=None, setup=None):
         d = tempfile.mkdtemp(); cfg = os.path.join(d, "config"); os.makedirs(cfg)
         open(os.path.join(cfg, "web-guard.mjs"), "w").write(cdata["web-guard.mjs"])
+        # pure core phase 4 Task 13: the profile's figure words come from the setup file (the test render's by default)
+        open(os.path.join(cfg, "harness-setup.json"), "w").write(cdata["harness-setup.json"] if setup is None else setup)
         open(os.path.join(cfg, "harness-write-guard.mjs"), "w").write(cdata["harness-write-guard.mjs"] if wguard is None else wguard)
         if dist is None:
             dist = os.path.join(d, "dist"); os.makedirs(os.path.join(dist, "floor")); os.makedirs(os.path.join(dist, "providers", "claude-code"))
@@ -1337,19 +1352,37 @@ else:
                            ("harness-start dies on an image whose webRun judges otherwise (a web switch beside another one)", {"block": tw(BLOCK, "return on.length > 0 && on.every((c) => WEB_CAPS.includes(c))", "return on.some((c) => WEB_CAPS.includes(c))")}, 'webRun("web.search,files.read"): ' + DIFFER),
                            ("harness-start dies on an image whose webRun judges otherwise (no switches)", {"block": tw(BLOCK, "return on.length > 0 && on.every(", "return on.every(")}, 'webRun(""): ' + DIFFER),
                            ("harness-start dies on an image whose web rules export no webRun", {"block": tw(BLOCK, "export function webRun(", "function webRun(")}, "webRun(" ),
-                           ("an image whose figure guard differs", {"block": tw(BLOCK, "export function carriesFigures(text = '') {", "export function carriesFigures(text = '') { return false;")}, DIFFER),
+                           # pure core phase 4 Task 13: the guard takes the profile's words (extra); the profile's probes come first,
+                           # so a guard that refuses nothing differs at the profile's marker probe
+                           ("an image whose figure guard differs", {"block": tw(BLOCK, "export function carriesFigures(text = '', extra = NO_EXTRA_WORDS) {", "export function carriesFigures(text = '', extra = NO_EXTRA_WORDS) { return false;")}, 'carriesFigures("rp 1.000"): ' + DIFFER),
                            # researcher Task 12 (Task 11 Minor 5): the probe asks "12 juta" too, so a guard without magnitude words differs
                            ("an image whose figure guard misses magnitude words (12 juta)", {"block": tw(BLOCK, "MAGNITUDE_AFTER.test(n) || ", "")}, "carriesFigures(\"12 juta\")"),
                            # final fix I1: the probe asks "12 345 678" and "150 million" too, so a guard without grouped thousands or
                            # English magnitude words differs
                            ("an image whose figure guard misses grouped thousands (12 345 678)", {"block": tw(BLOCK, "if ((n.match(THOUSANDS) ?? []).some((g) => g.replace(/\\P{Nd}/gu, '').length >= MIN_THOUSANDS_DIGITS)) return true\n", "")}, "carriesFigures(\"12 345 678\")"),
                            ("an image whose figure guard misses English magnitude words (150 million)", {"block": tw(BLOCK, "|(?:million|mio|mn|billion|bn|thousand|trillion)s?", "")}, "carriesFigures(\"150 million\")"),
+                           ("an image whose built-in figure words differ", {"block": tw(BLOCK, "'thousand','trillion'])", "'thousand','trillion','grand'])")}, "FIGURE_WORDS: " + DIFFER),
                            ("a chart write guard stopping on another marker", {"wguard": tw(cdata["harness-write-guard.mjs"], "const RESEARCHED_MARKER = 'researched'", "const RESEARCHED_MARKER = 'searched'")}, DIFFER)):
         p = image_check(**kw)
         if p.returncode != 2 or says not in p.stderr: bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {says!r}")
     real_dist = f"{nw4}/packages/harness/dist"
     if nw4 and os.path.isfile(f"{real_dist}/floor/web-rules.js"):
         if (p := image_check(dist=real_dist)).returncode != 0: bad.append(f"{tag}: refuses naila's built dist ({real_dist}): {p.stderr.strip()}")
+    # pure core phase 4 Task 13: both copies judge with the profile's figure words (extra, on top of the built-in ones): with a
+    # profile word the built-in ones lack (perak), both refuse "12 perak", and an image whose guard ignores extra dies
+    tag = "harness-start judges both copies with the profile's words"
+    perak = json.loads(cdata["harness-setup.json"]); perak["profile"]["figureWords"]["magnitudes"].append("perak"); perak = json.dumps(perak)
+    if (p := image_check(setup=perak)).returncode != 0: bad.append(f"{tag}: refuses naila's block with the word perak in the profile: {p.stderr.strip()}")
+    if nw4 and os.path.isfile(f"{real_dist}/floor/web-rules.js") and (p := image_check(dist=real_dist, setup=perak)).returncode != 0: bad.append(f"{tag}: refuses naila's built dist with perak: {p.stderr.strip()}")
+    bd = tempfile.mkdtemp(); bf = os.path.join(bd, "web-rules.mjs")
+    for src_, who in ((BLOCK, "naila's block"), (between(cdata["web-guard.mjs"]), "the chart's web guard")):
+        open(bf, "w").write("import { isIP } from 'node:net'\n" + src_)
+        q = subprocess.run(["node", "--input-type=module", "-e", f"const m = await import({json.dumps(bf + '?' + str(len(who)))}); const x = {json.dumps(json.loads(perak)['profile']['figureWords'])}; process.stdout.write(JSON.stringify([m.carriesFigures('12 perak', x), m.carriesFigures('12 perak')]))"], capture_output=True, text=True)
+        if q.stdout != "[true,false]": bad.append(f"{tag}: {who} judges \"12 perak\" {q.stdout or q.stderr.strip()!r}, want refused with the profile's words and not without")
+    shutil.rmtree(bd)
+    says = 'carriesFigures("12 perak"): ' + DIFFER
+    if (p := image_check(block=tw(BLOCK, "const added = extraPatterns(extra)", "const added = extraPatterns()"), setup=perak)).returncode != 2 or says not in p.stderr:
+        bad.append(f"{tag}: an image whose guard ignores the profile's words: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {says!r}")
 
 # The worker spec replaces the sed loop, direct-lines and HARNESS_MODELS: harness-start refuses an image without the claude-code
 # adapter's prepare.js and a chart without the spec, runs prepare.js on /config/harness-workers.json (its exit status and an empty
@@ -1366,8 +1399,10 @@ if not any(re.fullmatch(r'\[ -f "\$PREPARE" \] \|\| die ".*this naila image pred
 if not any(re.fullmatch(r'\[ -f /config/harness-workers\.json \] \|\| die ".*predates the worker spec.*"', l) for l in sl): bad.append(f"{tag}: no die when /config/harness-workers.json is missing")
 for gone in ("HARNESS_MODELS", "direct-lines", "s/__MCP_FINANCE_READ_TOKEN__/", "cp /config/harness-CLAUDE.md"):
     if gone in "\n".join(l for l in sl if not l.lstrip().startswith("#")): bad.append(f"{tag}: harness-start still has {gone!r}")
-# phase 3 Task 13: with finance disabled the chart renders no FINANCE_NOTES_ROOT, so the notes root is made only when set
-if '[ -z "${FINANCE_NOTES_ROOT:-}" ] || mkdir -p "$FINANCE_NOTES_ROOT"' not in sl: bad.append(f"{tag}: harness-start no longer makes $FINANCE_NOTES_ROOT when it is set ([ -z \"${{FINANCE_NOTES_ROOT:-}}\" ] || mkdir -p \"$FINANCE_NOTES_ROOT\")")
+# phase 3 Task 13: the finance notes folder is made only while finance is enabled; pure core phase 4 Task 13: it is the
+# profile's finance folder under VAULT_ROOT (FINANCE_NOTES_ROOT is retired)
+NOTES_MK = 'if node -e \'process.exit(Object.hasOwn(JSON.parse(process.env.HARNESS_SERVICES).services, "finance") ? 0 : 1)\'; then mkdir -p "$VAULT_ROOT/$FINANCE_FOLDER"; fi'
+if NOTES_MK not in sl: bad.append(f"{tag}: harness-start does not make the finance notes folder while finance is enabled ({NOTES_MK})")
 wl = [i for i, l in enumerate(sl) if l == "W=$HARNESS_HOME/work"]
 pc = [i for i, l in enumerate(sl) if l.startswith('out=$(node "$PREPARE" --spec /config/harness-workers.json --claude-dir "$C" --work-dir "$W") || die ')]
 ck = [i for i, l in enumerate(sl) if l.startswith('[ -n "$out" ] || die ')]
@@ -1750,20 +1785,23 @@ sl_ = new["test"].get("harness-start.sh", "").splitlines()
 lj = [i for i, l in enumerate(sl_) if l.startswith("LEAD=$(node -e '")]
 mk = [i for i, l in enumerate(sl_) if l == 'mkdir -p "$W/$LEAD" "$W/_summary"']
 if any(re.search(r'"\$W/naila"', l) for l in sl_ if not l.lstrip().startswith("#")): bad.append(f"{tag}: harness-start.sh still makes \"$W/naila\"")
-# phase 3 Task 13: the notes root follows on the next line, made only when FINANCE_NOTES_ROOT is set (finance disabled: unset)
-NOTES_MK = '[ -z "${FINANCE_NOTES_ROOT:-}" ] || mkdir -p "$FINANCE_NOTES_ROOT"'
+# phase 3 Task 13: the notes root follows on the next line, made only while finance is enabled (HARNESS_SERVICES); pure core
+# phase 4 Task 13: <VAULT_ROOT>/<the profile's finance folder> (FINANCE_FOLDER, from the setup pairing)
+NOTES_MK = 'if node -e \'process.exit(Object.hasOwn(JSON.parse(process.env.HARNESS_SERVICES).services, "finance") ? 0 : 1)\'; then mkdir -p "$VAULT_ROOT/$FINANCE_FOLDER"; fi'
 if len(lj) != 1 or len(mk) != 1 or not lj[0] < mk[0] or sl_[mk[0] + 1:mk[0] + 2] != [NOTES_MK]: bad.append(f"{tag}: want one LEAD=$(node -e ...) and then one mkdir -p \"$W/$LEAD\" \"$W/_summary\", then {NOTES_MK} (got {len(lj)}, {len(mk)})")
 elif specs.get("test"):
     def lead_dir(spec_json, notes=True):
         d = tempfile.mkdtemp(); open(f"{d}/spec.json", "w").write(spec_json)
         snippet = "\n".join(sl_[lj[0]:mk[0] + 2]).replace("/config/harness-workers.json", f"{d}/spec.json")
-        p = subprocess.run(["bash", "-c", 'set -eu; die() { echo "harness-start: $*" >&2; exit 2; }\n' + snippet], env={"PATH": os.environ["PATH"], "W": f"{d}/w", **({"FINANCE_NOTES_ROOT": f"{d}/notes"} if notes else {})}, capture_output=True, text=True)
+        on = {"vault": {"writeCredentials": []}, **({"finance": {"writeCredentials": ["MCP_FINANCE_TOKEN"]}} if notes else {})}
+        p = subprocess.run(["bash", "-c", 'set -eu; die() { echo "harness-start: $*" >&2; exit 2; }\n' + snippet], env={"PATH": os.environ["PATH"], "W": f"{d}/w", "VAULT_ROOT": f"{d}/vault",
+                           "FINANCE_FOLDER": "My Money/Notes", "HARNESS_SERVICES": json.dumps({"version": 1, "services": on})}, capture_output=True, text=True)
         made = sorted(os.listdir(f"{d}/w")) if os.path.isdir(f"{d}/w") else []
-        has_notes = os.path.isdir(f"{d}/notes")
+        has_notes = os.path.isdir(f"{d}/vault/My Money/Notes")
         shutil.rmtree(d); return p, made, has_notes
     sp = json.loads(new["test"]["harness-workers.json"])
     if (r_ := lead_dir(json.dumps(sp)))[0].returncode != 0 or r_[1] != ["_summary", "naila"] or not r_[2]: bad.append(f"{tag}: the rendered spec makes {r_[1]}, notes root {r_[2]} ({r_[0].stderr.strip()!r}), want _summary and naila and the notes root")
-    if (r_ := lead_dir(json.dumps(sp), notes=False))[0].returncode != 0 or r_[1] != ["_summary", "naila"] or r_[2]: bad.append(f"{tag}: with no FINANCE_NOTES_ROOT (finance disabled): exit {r_[0].returncode} {r_[0].stderr.strip()!r}, made {r_[1]}, notes root {r_[2]}; want 0, _summary and naila, no notes root")
+    if (r_ := lead_dir(json.dumps(sp), notes=False))[0].returncode != 0 or r_[1] != ["_summary", "naila"] or r_[2]: bad.append(f"{tag}: with finance disabled: exit {r_[0].returncode} {r_[0].stderr.strip()!r}, made {r_[1]}, notes root {r_[2]}; want 0, _summary and naila, no notes root")
     ren = json.loads(json.dumps(sp)); ren["roles"][0]["id"] = "chief"
     if (r_ := lead_dir(json.dumps(ren)))[0].returncode != 0 or r_[1] != ["_summary", "chief"]: bad.append(f"{tag}: a lead named chief makes {r_[1]} ({r_[0].stderr.strip()!r}), want _summary and chief")
     for what, mut in (("no lead", lambda j: j["roles"][0].pop("lead")), ("two leads", lambda j: j["roles"][1].__setitem__("lead", True)), ("no roles", lambda j: j.pop("roles"))):
@@ -2746,9 +2784,9 @@ if lb and pb:
 
 # P17: the chart's write guard stops every WRITE_GUARD_TOOLS tool of the image in a run marked researched
 tag = "harness-start dies when the write guard does not stop a WRITE_GUARD_TOOLS tool"
-pe = one(lambda l: l.startswith("})().catch(") and l.endswith(' "$SERVICES_JS" /naila/packages/harness/dist/research.js /config/harness-write-guard.mjs "$VAULT_ROOT" "$LEAD"'))
+pe = one(lambda l: l.startswith("})().catch(") and l.endswith(' "$SERVICES_JS" /naila/packages/harness/dist/research.js /config/harness-write-guard.mjs "$VAULT_ROOT" "$LEAD" "$WORKSPACES"'))   # phase 4 Task 13: rooted at the profile's workspace root
 ps = [i for i in range(pe[0], -1, -1) if sl[i].startswith("node -e '")][:1] if len(pe) == 1 else []
-if len(pe) != 1 or not ps: bad.append(f"{tag}: want one write-guard parity check (node -e ... \"$SERVICES_JS\" /naila/packages/harness/dist/research.js /config/harness-write-guard.mjs \"$VAULT_ROOT\" \"$LEAD\"), got {len(pe)}")
+if len(pe) != 1 or not ps: bad.append(f"{tag}: want one write-guard parity check (node -e ... \"$SERVICES_JS\" /naila/packages/harness/dist/research.js /config/harness-write-guard.mjs \"$VAULT_ROOT\" \"$LEAD\" \"$WORKSPACES\"), got {len(pe)}")
 elif pb:
     if not mkdir_at[0] < ps[0] < pe[0] < spec_export[0]: bad.append(f"{tag}: the parity check is not after LEAD and its mkdir, and before the core is told the spec")
     WG = {**test[CMC]["data"], **test[CMH]["data"]}["harness-write-guard.mjs"]
@@ -2756,7 +2794,7 @@ elif pb:
         """runs the check with its own TMPDIR, which must be empty again afterwards, passed or died (the slots folder removed)"""
         cfg, tmp_ = tempfile.mkdtemp(), tempfile.mkdtemp(); open(f"{cfg}/harness-write-guard.mjs", "w").write(wguard)
         lines = [l.replace("/naila/packages/harness/dist/", dist + "/").replace("/config/", cfg + "/") for l in sl[ps[0]:pe[0] + 1]]
-        p = sh(lines, {"TMPDIR": tmp_}, f"SERVICES_JS={dist}/services/registry.js; VAULT_ROOT=/vault; LEAD={shlex.quote(lead)}\n")
+        p = sh(lines, {"TMPDIR": tmp_}, f"SERVICES_JS={dist}/services/registry.js; VAULT_ROOT=/vault; LEAD={shlex.quote(lead)}; WORKSPACES=Naila/Workspace\n")
         if os.listdir(tmp_): bad.append(f"{tag}: the check leaves {os.listdir(tmp_)} in its TMPDIR (exit {p.returncode})")
         shutil.rmtree(cfg); shutil.rmtree(tmp_); return p
     def stub_parity(reg=registry(), research=RESEARCH, **kw):
@@ -2783,6 +2821,9 @@ def written(r, ph, d):
     if not m: return None
     vars_ = {e["name"]: (e.get("value") or "") for e in ctr(r, "harness").get("env", [])}
     vars_.update(C=d, HARNESS_PHASE=ph, HOME=d)
+    if "harness-setup.json" in data:   # pure core phase 4 Task 13: the setup pairing's shell variables, from the profile
+        p_ = json.loads(data["harness-setup.json"])["profile"]["paths"]
+        vars_.update(TEST_FOLDER=p_["testFolder"], FINANCE_FOLDER=p_["finance"], WORKSPACES=f"{p_['system']}/Workspace")
     def expand(a):
         a = re.sub(r"\$\{(\w+)(?::-[^}]*)?\}|\$(\w+)", lambda x: vars_.get(x.group(1) or x.group(2), ""), a)
         if a.startswith("/config/"):
@@ -2818,7 +2859,8 @@ PY
 #    (a disabled one renders);
 #  - the harness checksum follows a request file, the RC one doesn't;
 #  - prod, test phase, harness off and staging render as at <git-ref> but for the setup and job keys, the removed VIEW_FILE and
-#    FINANCE_NOTES_ROOT and the harness checksum (skipped with a notice once <git-ref> renders harness-setup.json).
+#    FINANCE_NOTES_ROOT and the harness checksum, and (Task 13) harness-start.sh, web-guard.mjs's web-rules block and the RC
+#    lines' checksum (skipped with a notice once <git-ref> renders harness-setup.json).
 SON=(-f helm/assistant/values.yaml -f helm/assistant/values.staging.yaml --set harness.enabled=true --set claude.enabled=true --set finance.enabled=true --set finance.testServer=true --set harness.channels.test.enabled=true --set login.accessAud=staging)
 helm template helm/assistant "${SON[@]}" > "$tmp/staging-on.yaml"
 cp -a helm/assistant "$tmp/q" && printf 'request edit\n' >> "$tmp/q/files/schedules/monday-spending.txt"
@@ -2946,12 +2988,20 @@ for ph, k, want in (("test", "VAULT_ROOT", "/vault/Probe-x"), ("real", "VAULT_EX
         if "/vault/Probe-x/Finance/" not in data(r).get("harness-workers.json", ""): bad.append(f"{tag}: the worker spec's notes root does not follow it")
 
 # the whole render, as at <git-ref> but for the setup and job keys, the removed VIEW_FILE and FINANCE_NOTES_ROOT and the
-# harness checksum (Task 12's own change: once <git-ref> renders harness-setup.json, there is nothing of it left to compare)
+# harness checksum (Task 12's own change: once <git-ref> renders harness-setup.json, there is nothing of it left to compare);
+# Task 13 changed harness-start.sh (the setup pairing; its own checks above and the SETTINGS_REF settings) and web-guard.mjs's
+# web-rules block (naila's, compared by floor-conformance.sh), with the RC lines' checksum: the rest of web-guard.mjs is as
+# at <git-ref>
+def outside_block(src):
+    b_, e_ = "// web-rules:begin\n", "// web-rules:end\n"
+    return src[:src.index(b_)] + src[src.index(e_):] if b_ in src and e_ in src else src
 def strip(r, was):
     r = copy.deepcopy(r)
     if HC in r:
         for k in list(r[HC]["data"]):
-            if k == "harness-setup.json" or k.startswith("harness-job-"): del r[HC]["data"][k]
+            if k == "harness-setup.json" or k.startswith("harness-job-") or k == "harness-start.sh": del r[HC]["data"][k]
+    if CC in r and "web-guard.mjs" in r[CC]["data"]: r[CC]["data"]["web-guard.mjs"] = outside_block(r[CC]["data"]["web-guard.mjs"])
+    if RC in r: r[RC]["spec"]["template"]["metadata"].get("annotations", {}).pop("checksum/config", None)
     if H in r:
         t = r[H]["spec"]["template"]
         t["metadata"].get("annotations", {}).pop("checksum/config", None)
@@ -2963,7 +3013,7 @@ if setup(prod_ref) is not None:
     print(f"NOTICE: the {ref} render already has harness-setup.json: the whole-render diff against it (Task 12's change alone) was skipped")
     diffs = ()
 for label, a, b, on in diffs:
-    tag = f"the {label} render differs from {ref}'s only in the setup and job keys, the removed VIEW_FILE and FINANCE_NOTES_ROOT, and the checksum"
+    tag = f"the {label} render differs from {ref}'s only in the setup and job keys, the removed VIEW_FILE and FINANCE_NOTES_ROOT, harness-start.sh, the web-rules block and the checksums"
     if on:
         if setup(a) is None: bad.append(f"{tag}: no harness-setup.json")
         if sorted(k for k in envmap(ctr(b, "harness")) if k in RETIRED) != sorted(RETIRED): bad.append(f"{tag}: the ref's harness container lacks {RETIRED}")
@@ -3047,4 +3097,239 @@ if bad:
 print("setup: harness-setup.json is the owner's profile (today's literals) and the three jobs" + (", naila's parseSetup and start checks accept it, its requests are b5f5bbf's" if HAVE else "")
       + "; the test folder, TZ and views follow it, VIEW_FILE and FINANCE_NOTES_ROOT are gone; bad config fails"
       + (f"; the render is {ref}'s but for those" if diffs else ""))
+PY
+# Pure core phase 4 Task 13: harness-start pairs with the image's setup (dist/setup.js: SETUP_SPEC_VERSION 1, parseSetup on
+# /config/harness-setup.json with the requests read beside it) and takes the profile's paths from it (vault-mcp's layout.js),
+# run as rendered on stand-in images and on naila's built dist (NAILA_WORKTREE):
+#  - the pairing block (marker `# PAIRING: the image's setup`, after the services pairing, before the vault server checks and
+#    the settings) dies on an image without setup.js (printing the import error), without layout.js, or whose
+#    SETUP_SPEC_VERSION is not 1, and when the image's parseSetup refuses the chart's setup; the real phase dies unless
+#    VAULT_EXCLUDE names the profile's test folder; a test folder or workspace root that is no plain path dies;
+#  - the prod render pairs with the built image, printing Harness-test, Finance, Naila/Workspace and an empty VAULT_PATHS;
+#  - a non-default profile (system Home) reaches the user-scope vault server as VAULT_PATHS (prod's adds nothing), and the
+#    advisor's finance-notes server (its root and VAULT_PATHS); the chart's copy of vault-mcp's DEFAULT_VAULT_PATHS is the
+#    image's (a profile equal to it adds no VAULT_PATHS, one that differs in any key does);
+#  - the test phase's P8 rules, the test-phase allow check and the write guard's root follow the profile (a moved finance,
+#    system and test folder), and harness-start's own settings check accepts what it wrote against the built image.
+python3 - "$tmp/prod.yaml" "$tmp/new.yaml" "$tmp/real.yaml" <<'PY'
+import sys, yaml, json, os, re, subprocess, tempfile, shutil, shlex, copy
+def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
+def loads(s): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(s) if d}
+prod, test, real = (load(p) for p in sys.argv[1:4])
+H, CMH, CMC = ("Deployment", "assistant-harness"), ("ConfigMap", "assistant-harness"), ("ConfigMap", "assistant-claude")
+def ctr(r, n): return next((c for c in r[H]["spec"]["template"]["spec"]["containers"] if c["name"] == n), None)
+def val(r, k): return next((e.get("value") for e in (ctr(r, "harness") or {}).get("env", []) if e["name"] == k), None)
+bad = []
+sl = test[CMH]["data"]["harness-start.sh"].splitlines()
+OLD = "this naila image predates pure-core phase 4 (schedules and profile): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+REFUSES = "the image refuses this chart's setup: "
+NW = os.environ.get("NAILA_WORKTREE", "")
+DIST, VDIST = f"{NW}/packages/harness/dist", f"{NW}/packages/vault-mcp/dist"
+HAVE = bool(NW) and os.path.isfile(f"{DIST}/setup.js") and os.path.isfile(f"{VDIST}/layout.js")
+if not HAVE: print("NOTICE: NAILA_WORKTREE has no built dist/setup.js and vault-mcp dist/layout.js: harness-start's setup pairing was not run against naila's built image")
+def sh(lines, env, prefix=""):
+    return subprocess.run(["bash", "-c", 'set -eu; die() { echo "harness-start: $*" >&2; exit 2; }\n' + prefix + "\n".join(lines) + "\necho started"],
+                          env={"PATH": os.environ["PATH"], **env}, capture_output=True, text=True)
+def died(p, *says): return p.returncode == 2 and "started" not in p.stdout and all(s in p.stderr for s in says)
+def started(p): return p.returncode == 0 and p.stdout.strip().endswith("started")
+def one(pred): return [i for i, l in enumerate(sl) if pred(l)]
+
+# where the block is
+tag = "harness-start dies on an image without SETUP_SPEC_VERSION 1"
+mk = one(lambda l: l == "# PAIRING: the image's setup")
+end = [j for j in range(mk[0], len(sl)) if sl[j] == "fi"][:1] if len(mk) == 1 else []
+svc_end = one(lambda l: l.startswith("})().catch(") and l.endswith(' "$SERVICES_JS"'))
+vault_srv = one(lambda l: l == "VAULT_SERVER=/naila/packages/vault-mcp/dist/server.js")
+web_rules = one(lambda l: l == "WEB_RULES=/naila/packages/harness/dist/floor/web-rules.js")
+settings_at = one(lambda l: l.startswith("# Settings:"))
+if not (len(mk) == 1 and end and len(svc_end) == 1 and len(vault_srv) == 1 and len(web_rules) == 1 and len(settings_at) == 1):
+    bad.append(f"harness-start.sh: want one pairing block (# PAIRING: the image's setup ... fi), one services pairing, VAULT_SERVER=, WEB_RULES= and # Settings: (got {len(mk)}, {len(end)}, {len(svc_end)}, {len(vault_srv)}, {len(web_rules)}, {len(settings_at)})")
+    print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
+blk = sl[mk[0]:end[0] + 1]
+if not svc_end[0] < mk[0] < end[0] < vault_srv[0] < web_rules[0] < settings_at[0]: bad.append(f"{tag}: the pairing block is not after the services pairing and before the vault server checks, the web rules and the settings")
+if any("Harness-test" in l for l in sl[:mk[0]] if not l.lstrip().startswith("#")): bad.append(f"{tag}: harness-start names Harness-test before the pairing block (the real-phase check must take the profile's test folder)")
+rest = "\n".join(l for l in sl if not l.lstrip().startswith("#"))
+for lit in ("Harness-test", "Naila/Workspace", "//vault/Finance", '"Finance"', "FINANCE_NOTES_ROOT"):
+    if lit in rest: bad.append(f"harness-start.sh still has the literal {lit!r} outside a comment (the profile places it)")
+for k in ("SETUP_JS=/naila/packages/harness/dist/setup.js", "LAYOUT_JS=/naila/packages/vault-mcp/dist/layout.js"):
+    if k not in blk: bad.append(f"{tag}: the pairing block does not set {k}")
+SHOW = '\nprintf "%s|%s|%s|%s\\n" "$TEST_FOLDER" "$FINANCE_FOLDER" "$WORKSPACES" "$SETUP_VAULT_PATHS"'
+def pairing(dist, vdist, cfg, phase="test", exclude=None):
+    lines = [l.replace("/naila/packages/harness/dist/", dist + "/").replace("/naila/packages/vault-mcp/dist/", vdist + "/").replace("/config/", cfg + "/") for l in blk]
+    env = {"HARNESS_PHASE": phase, **({} if exclude is None else {"VAULT_EXCLUDE": exclude})}
+    return sh(lines + [SHOW.strip()], env)
+def shown(p): return (p.stdout.strip().splitlines() or [""])[0]
+def config(r, setup=None):
+    d = tempfile.mkdtemp()
+    for k, v in r[CMH]["data"].items(): open(os.path.join(d, k), "w").write(v)
+    if setup is not None: open(os.path.join(d, "harness-setup.json"), "w").write(setup if isinstance(setup, str) else json.dumps(setup))
+    return d
+def prof(r): return json.loads(r[CMH]["data"]["harness-setup.json"])
+SETUP_OK = ("export const SETUP_SPEC_VERSION = 1\n"
+            "export function parseSetup(raw, file, read) { const s = JSON.parse(raw); for (const j of s.schedules.jobs) if (j.request) read(j.request); return { profile: s.profile, jobs: [] } }\n")
+LAYOUT_OK = ("const D = JSON.stringify({ system: 'Naila', finance: 'Finance', inbox: 'Inbox', daily: 'Daily', testFolder: 'Harness-test' })\n"
+             "export const vaultLayout = (p) => ({ workspaces: `${p.system}/Workspace` })\n"
+             "export const vaultPathsEnv = (p) => JSON.stringify({ system: p.system, finance: p.finance, inbox: p.inbox, daily: p.daily, testFolder: p.testFolder }) === D ? {} : { VAULT_PATHS: JSON.stringify(p) }\n")
+def stub(setup_js=SETUP_OK, layout_js=LAYOUT_OK):
+    d = tempfile.mkdtemp(); os.makedirs(f"{d}/h"); os.makedirs(f"{d}/v")
+    for sub in ("h", "v"): open(f"{d}/{sub}/package.json", "w").write('{"type":"module"}')
+    if setup_js is not None: open(f"{d}/h/setup.js", "w").write(setup_js)
+    if layout_js is not None: open(f"{d}/v/layout.js", "w").write(layout_js)
+    return d
+def stub_pairing(setup_js=SETUP_OK, layout_js=LAYOUT_OK, r=test, setup=None, **kw):
+    d, cfg = stub(setup_js, layout_js), config(r, setup)
+    p = pairing(f"{d}/h", f"{d}/v", cfg, **kw); shutil.rmtree(d); shutil.rmtree(cfg); return p, d
+
+if not started(p := stub_pairing()[0]) or shown(p) != "Harness-test|Finance|Naila/Workspace|": bad.append(f"{tag}: refuses (or misreads) an image with SETUP_SPEC_VERSION 1: exit {p.returncode} {p.stderr.strip()!r} {p.stdout!r}")
+p, d = stub_pairing(None)
+if not died(p, OLD, f"cannot load {d}/h/setup.js: ", "Cannot find module"): bad.append(f"{tag}: an image without setup.js: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying cannot load <path>: <the import error>: {OLD}")
+p, d = stub_pairing("throw new Error('setup boom')\n")
+if not died(p, OLD, f"cannot load {d}/h/setup.js: setup boom"): bad.append(f"{tag}: a setup.js that throws: exit {p.returncode} {p.stderr.strip()!r}")
+for what, v in (("SETUP_SPEC_VERSION 0", "0"), ("SETUP_SPEC_VERSION 2", "2"), ('SETUP_SPEC_VERSION "1"', '"1"'), ("no SETUP_SPEC_VERSION", None)):
+    js = SETUP_OK.replace("export const SETUP_SPEC_VERSION = 1\n", "" if v is None else f"export const SETUP_SPEC_VERSION = {v}\n")
+    if not died(p := stub_pairing(js)[0], OLD): bad.append(f"{tag}: an image with {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {OLD!r}")
+p, d = stub_pairing(layout_js=None)
+if not died(p, OLD, f"cannot load {d}/v/layout.js: "): bad.append(f"{tag}: an image without vault-mcp's layout.js: exit {p.returncode} {p.stderr.strip()!r}")
+tag = "harness-start dies when the image refuses the chart's setup"
+throws = SETUP_OK.replace("{ const s = JSON.parse(raw);", "{ throw new Error(`setup: ${file}: profile.quietUntil must be HH:MM (got \"7\")`);")
+if not died(p := stub_pairing(throws)[0], REFUSES + "setup: ", "harness-setup.json: profile.quietUntil must be HH:MM"): bad.append(f"{tag}: a parseSetup that throws: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {REFUSES!r} and the image's line")
+if not died(p := stub_pairing(setup="{")[0], REFUSES): bad.append(f"{tag}: a setup file that is not JSON: exit {p.returncode} {p.stderr.strip()!r}")
+# an image whose block prints an empty line: refused, never a silent start
+p, _ = stub_pairing(layout_js=LAYOUT_OK.replace("export const vaultLayout = (p) => ({ workspaces: `${p.system}/Workspace` })", "export const vaultLayout = (p) => ({ workspaces: '' })"))
+if not died(p, "the image's setup gave the folder ''"): bad.append(f"{tag}: an empty workspace root from the image: exit {p.returncode} {p.stderr.strip()!r}")
+for what, ws in (("a workspace root with a space and a ;", "Naila/Work space; true"), ("an absolute workspace root", "/Naila/Workspace"), ("a .. segment", "../Workspace"), ("an empty one", "")):
+    if not died(p := stub_pairing(layout_js=LAYOUT_OK.replace("`${p.system}/Workspace`", json.dumps(ws)))[0], "the image's setup gave the folder"): bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()!r}")
+tag = "harness-start dies when VAULT_EXCLUDE does not name the profile's test folder"
+probe = prof(test); probe["profile"]["paths"]["testFolder"] = "Probe-x"
+for what, kw, ok, says in (("the real phase, Harness-test excluded", {"phase": "real", "exclude": "Harness-test"}, True, ""),
+                           ("the real phase, nothing excluded", {"phase": "real"}, False, "the real phase needs VAULT_EXCLUDE to name Harness-test"),
+                           ("the real phase, another folder excluded", {"phase": "real", "exclude": "Other"}, False, "the real phase needs VAULT_EXCLUDE to name Harness-test"),
+                           ("the real phase, a moved test folder, Harness-test excluded", {"phase": "real", "exclude": "Harness-test", "setup": probe}, False, "the real phase needs VAULT_EXCLUDE to name Probe-x"),
+                           ("the real phase, a moved test folder among others", {"phase": "real", "exclude": "Other,Probe-x", "setup": probe}, True, ""),
+                           ("the test phase, nothing excluded", {}, True, "")):
+    p = stub_pairing(**kw)[0]
+    if (ok and not started(p)) or (not ok and not died(p, says)): bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()!r}, want {'a start' if ok else 'exit 2 saying ' + repr(says)}")
+
+tag = "the prod render pairs with the built image"
+if HAVE:
+    for label, r, ph, ex in (("prod", prod, val(prod, "HARNESS_PHASE"), val(prod, "VAULT_EXCLUDE")), ("test phase", test, "test", None), ("real phase", real, "real", val(real, "VAULT_EXCLUDE"))):
+        cfg = config(r); p = pairing(DIST, VDIST, cfg, ph, ex); shutil.rmtree(cfg)
+        if not started(p) or shown(p) != "Harness-test|Finance|Naila/Workspace|": bad.append(f"{tag}: the {label} render: exit {p.returncode} {p.stderr.strip()!r}, printed {shown(p)!r}; want Harness-test|Finance|Naila/Workspace|")
+    bent = prof(prod); bent["version"] = 2
+    cfg = config(prod, bent); p = pairing(DIST, VDIST, cfg); shutil.rmtree(cfg)
+    if not died(p, REFUSES + "setup: ", "version must be 1"): bad.append(f"{tag}: the built image accepts a setup of version 2: exit {p.returncode} {p.stderr.strip()!r}")
+    bent = prof(prod); bent["profile"]["paths"]["system"] = "My Naila"
+    cfg = config(prod, bent); p = pairing(DIST, VDIST, cfg); shutil.rmtree(cfg)
+    if not died(p, REFUSES, "profile.paths.system"): bad.append(f"{tag}: the built image accepts a system folder with a space: exit {p.returncode} {p.stderr.strip()!r}")
+
+# a non-default profile reaches the user-scope vault server; production's adds nothing
+tag = "a non-default profile reaches the user-scope vault server"
+home = prof(prod); home["profile"]["paths"]["system"] = "Home"
+d_ = stub(); cfg = config(prod, home)
+p = pairing(DIST, VDIST, cfg) if HAVE else pairing(f"{d_}/h", f"{d_}/v", cfg)
+shutil.rmtree(cfg); shutil.rmtree(d_)
+vp = shown(p).split("|", 3)[3] if started(p) and shown(p).count("|") >= 3 else None
+if vp is None or shown(p).split("|")[2] != "Home/Workspace": bad.append(f"{tag}: the pairing with system Home: exit {p.returncode} {p.stderr.strip()!r}, printed {shown(p)!r}")
+elif json.loads(vp or "null") != home["profile"]["paths"]: bad.append(f"{tag}: VAULT_PATHS is {vp!r}, want the profile's paths")
+va = one(lambda l: l == "claude mcp remove vault --scope user >/dev/null 2>&1 || true")
+vb = one(lambda l: l.startswith("claude mcp add vault --scope user "))
+if len(va) != 1 or len(vb) != 1 or not va[0] < vb[0]: bad.append(f"{tag}: want one claude mcp remove vault, then one claude mcp add vault")
+elif vp is not None:
+    b_ = tempfile.mkdtemp()
+    open(f"{b_}/claude", "w").write('#!/bin/sh\n[ "$1 $2" = "mcp add" ] && printf "%s\\n" "$@" > "$LOG"\nexit 0\n'); os.chmod(f"{b_}/claude", 0o755)
+    def added(paths):
+        log = f"{b_}/log"
+        if os.path.exists(log): os.remove(log)
+        q = subprocess.run(["bash", "-c", "set -eu\n" + "\n".join(sl[va[0]:vb[0] + 1])], capture_output=True, text=True,
+                           env={"PATH": f"{b_}:{os.environ['PATH']}", "LOG": log, "VAULT_ROOT": "/vault", "TZ": "Asia/Jakarta", "VAULT_SERVER": "/s.js", "SETUP_VAULT_PATHS": paths})
+        return q, (open(log).read().splitlines() if os.path.exists(log) else [])
+    q, args = added(vp)
+    if q.returncode != 0 or f"VAULT_PATHS={vp}" not in args or args[args.index(f"VAULT_PATHS={vp}") - 1] != "-e": bad.append(f"{tag}: the claude mcp add vault line does not carry -e VAULT_PATHS=<the profile's paths>: {args} {q.stderr.strip()!r}")
+    q, args = added("")
+    if q.returncode != 0 or any(a.startswith("VAULT_PATHS") for a in args) or args[-2:] != ["node", "/s.js"]: bad.append(f"{tag}: production's paths (empty VAULT_PATHS) still add one: {args} {q.stderr.strip()!r}")
+    shutil.rmtree(b_)
+    if HAVE:
+        q = subprocess.run(["node", "--input-type=module", "-e", f"const m = await import({json.dumps(VDIST + '/layout.js')}); process.stdout.write(m.layoutFromEnv(process.argv[1]).workspaces)", vp], capture_output=True, text=True)
+        if q.stdout != "Home/Workspace": bad.append(f"{tag}: the built vault server's layoutFromEnv reads VAULT_PATHS as {q.stdout or q.stderr.strip()!r}, want Home/Workspace")
+
+# the advisor's finance-notes server follows the profile; the chart's copy of DEFAULT_VAULT_PATHS is the image's
+tag = "the advisor's finance-notes server takes its root and VAULT_PATHS from the profile"
+BASE = ["helm", "template", "helm/assistant", "-f", "helm/assistant/values.yaml", "-f", "helm/assistant/values.prod.yaml", "--set", "claude.rcLines=true"]
+def notes(r):
+    spec = json.loads(r[CMH]["data"]["harness-workers.json"])
+    return [x for ro in spec["roles"] for x in ro.get("servers", []) if x.get("name") == "finance-notes"]
+def render(*a):
+    p = subprocess.run(BASE + list(a), capture_output=True, text=True)
+    if p.returncode != 0: bad.append(f"{tag}: the render {a} fails: {p.stderr.strip()[-300:]}"); return None
+    return loads(p.stdout)
+for label, r, root in (("test phase", test, "/vault/Harness-test/Finance/"), ("real phase", real, "/vault/Finance/")):
+    if [x.get("env") for x in notes(r)] != [{"VAULT_ROOT": root, "NOTES_READONLY": "1"}]: bad.append(f"{tag}: the {label} prod notes server env is {[x.get('env') for x in notes(r)]}, want VAULT_ROOT {root} and NOTES_READONLY alone")
+r = render("--set", "harness.phase=test", "--set", "harness.profile.paths.system=Home", "--set", "harness.profile.paths.finance=My Money")
+if r is not None:
+    e = [x.get("env") for x in notes(r)]
+    want = {**prof(prod)["profile"]["paths"], "system": "Home", "finance": "My Money"}
+    if len(e) != 1 or e[0].get("VAULT_ROOT") != "/vault/Harness-test/My Money/" or json.loads(e[0].get("VAULT_PATHS") or "null") != want or e[0].get("NOTES_READONLY") != "1":
+        bad.append(f"{tag}: with system Home and finance My Money the notes server env is {e}")
+    if any("VAULT_PATHS" in json.dumps(x) for ro in json.loads(r[CMH]["data"]["harness-workers.json"])["roles"] for x in ro.get("servers", []) if x.get("transport") != "stdio"):
+        bad.append(f"{tag}: an http server got VAULT_PATHS")
+tag = "the chart's copy of vault-mcp's DEFAULT_VAULT_PATHS is the image's"
+DEFAULT = prof(prod)["profile"]["paths"]
+if HAVE:
+    q = subprocess.run(["node", "--input-type=module", "-e", f"const m = await import({json.dumps(VDIST + '/layout.js')}); process.stdout.write(JSON.stringify(m.DEFAULT_VAULT_PATHS))"], capture_output=True, text=True)
+    DEFAULT = json.loads(q.stdout or "null")
+    if DEFAULT != prof(prod)["profile"]["paths"]: bad.append(f"{tag}: the built DEFAULT_VAULT_PATHS {DEFAULT!r} is not prod's profile paths")
+if isinstance(DEFAULT, dict):
+    if (r := render("--set-json", f"harness.profile.paths={json.dumps(DEFAULT)}")) is not None and any("VAULT_PATHS" in (x.get("env") or {}) for x in notes(r)): bad.append(f"{tag}: the image's default paths add VAULT_PATHS")
+    for k in ("system", "finance", "inbox", "daily", "testFolder", *(f"views.{v}" for v in DEFAULT["views"])):
+        pv = copy.deepcopy(DEFAULT)
+        if k.startswith("views."): pv["views"][k[6:]] = "Other " + pv["views"][k[6:]]
+        else: pv[k] = pv[k] + "2"
+        if (r := render("--set-json", f"harness.profile.paths={json.dumps(pv)}")) is not None and not all(json.loads((x.get("env") or {}).get("VAULT_PATHS") or "null") == pv for x in notes(r)):
+            bad.append(f"{tag}: a profile whose {k} differs gives the notes server {[x.get('env') for x in notes(r)]}, want VAULT_PATHS")
+
+# the test phase's P8 rules, the allow check and the write guard's root follow the profile
+tag = "the test phase's rules and the write guard's root follow the profile"
+r = render("--set", "harness.phase=test", "--set", "harness.profile.paths.system=Home", "--set", "harness.profile.paths.finance=Money", "--set", "harness.profile.paths.testFolder=Probe-x")
+if r is not None:
+    data = {**r[CMC]["data"], **r[CMH]["data"]}
+    st = data["harness-start.sh"]
+    m = re.search(r"^# Settings:.*?^node -e '(.*?)' (/config/settings\.json[^\n]*)$", st, re.M | re.S)
+    ck = [x for x in re.finditer(r"^node -e '([^']*)' ([^\n]*)$", st, re.M) if x.group(2).startswith('"$C/settings.json"')]
+    d = tempfile.mkdtemp()
+    vars_ = {e["name"]: (e.get("value") or "") for e in ctr(r, "harness").get("env", [])}
+    vars_.update(C=d, HARNESS_PHASE="test", HOME=d, TEST_FOLDER="Probe-x", FINANCE_FOLDER="Money", WORKSPACES="Home/Workspace", SERVICES_JS=f"{DIST}/services/registry.js")
+    def expand(a):
+        a = re.sub(r"\$\{(\w+)(?::-[^}]*)?\}|\$(\w+)", lambda x: vars_.get(x.group(1) or x.group(2), ""), a)
+        if a.startswith("/config/"):
+            f = os.path.join(d, a[len("/config/"):]); open(f, "w").write(data[a[len("/config/"):]]); return f
+        return a.replace("/naila/packages/", f"{NW}/packages/") if HAVE else a
+    if not m or len(ck) != 1: bad.append(f"{tag}: harness-start.sh has no settings patch or not one settings check")
+    else:
+        p = subprocess.run(["node", "-e", m.group(1), *[expand(a) for a in shlex.split(m.group(2))]], capture_output=True, text=True)
+        if p.returncode != 0: bad.append(f"{tag}: the settings patch fails: {p.stderr.strip()}")
+        else:
+            s = json.load(open(os.path.join(d, "settings.json")))
+            dn = s["permissions"]["deny"]
+            if "Read(//vault/Money/**)" not in dn or "Read(//vault/Finance/**)" in dn: bad.append(f"{tag}: the test phase denies {[x for x in dn if x.startswith('Read(//vault/')]}, want Read(//vault/Money/**) and not Finance")
+            wg = [h["command"] for e in s["hooks"]["PreToolUse"] for h in e["hooks"] if "write-guard" in h["command"]]
+            want = f"node /config/harness-write-guard.mjs --root {val(r, 'VAULT_ROOT')}/Home/Workspace || exit 2"
+            if wg != [want] or val(r, "VAULT_ROOT") != "/vault/Probe-x": bad.append(f"{tag}: the write guard is {wg}, want [{want!r}] (VAULT_ROOT {val(r, 'VAULT_ROOT')!r})")
+            if HAVE:
+                def check(settings):
+                    open(os.path.join(d, "settings.json"), "w").write(json.dumps(settings))
+                    return subprocess.run(["node", "-e", ck[0].group(1), *[expand(a) for a in shlex.split(ck[0].group(2))]], capture_output=True, text=True)
+                if (q := check(s)).returncode != 0: bad.append(f"{tag}: harness-start's settings check refuses what it wrote, against the built image: {q.stderr.strip()}")
+                x = copy.deepcopy(s); x["permissions"]["allow"].append("Read(//vault/Harness-test/**)")
+                if "test-phase runs would be allowed into the real vault" not in (q := check(x)).stderr: bad.append(f"{tag}: with the test folder Probe-x, an allow into //vault/Harness-test/ is not refused as the real vault: {q.stderr.strip()!r}")
+                x = copy.deepcopy(s)
+                for e in x["hooks"]["PreToolUse"]:
+                    for h in e["hooks"]:
+                        if "write-guard" in h["command"]: h["command"] = h["command"].replace("/Home/Workspace", "/Naila/Workspace")
+                if "does not go through the write guard rooted at /vault/Probe-x/Home/Workspace" not in (q := check(x)).stderr: bad.append(f"{tag}: a write guard rooted at Naila/Workspace passes with system Home: {q.stderr.strip()!r}")
+    shutil.rmtree(d)
+
+if bad:
+    print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
+print("setup pairing: harness-start pairs with the image's setup (spec version 1, parseSetup" + (", the built image" if HAVE else "")
+      + "), VAULT_EXCLUDE names the profile's test folder; the vault servers get VAULT_PATHS only for a non-default profile; P8, the allow check and the write guard's root follow the profile")
 PY

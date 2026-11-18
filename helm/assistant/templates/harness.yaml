@@ -6,8 +6,11 @@
        harness-workers.json for harness.phase: {"version":3,"roles":[…],"retired":[…],"summary":…}, the roles in values
        order, each role's `paths` (its path grants) when it has them. One source per value: a role's model is its workers[].model, its description its files/agents/<id>.md
        frontmatter's, its ceiling files/modes/harness/<id>.<ceiling>.md split on ", ". The markers __FINANCE_HOST__ and
-       __VAULT_ROOT__ resolve to this phase's finance server and vault root (Helm renders no values, so a template local
-       can't be written into them). Called with (dict "root" $ "financeOn" <services.finance enabled>), worked out once in
+       __VAULT_ROOT__ resolve to this phase's finance server and vault root, and __FINANCE_FOLDER__ to the profile's finance
+       folder (Helm renders no values, so a template local can't be written into them). A stdio server run from vault-mcp's
+       dist gets VAULT_PATHS (the profile's paths) when they are not production's, as the core gives its own vault servers
+       (vault-mcp layout.ts vaultPathsEnv: none for DEFAULT_VAULT_PATHS, so production's spec is unchanged). Called with
+       (dict "root" $ "financeOn" <services.finance enabled> "paths" <harness.profile.paths, checked>), worked out once in
        the body. Fails the render on what the core would refuse at start: a duplicate id, no lead or two, a lead not listed
        first, a retired id that roles also lists, an unresolved marker, a server holding a $. Two chart-only checks besides:
        a server holding a write credential of any service harness.services lists, enabled or not (P11: a disabled service's
@@ -21,6 +24,10 @@
 {{- $test := eq $h.phase "test" }}
 {{- $finance := ternary "assistant-finance-test" "assistant-finance" $test }}
 {{- $vaultRoot := ternary (printf "/vault/%s" (toString $h.profile.paths.testFolder)) "/vault" $test }}   {{- /* the body checked testFolder */}}
+{{- $paths := .paths }}
+{{- /* vault-mcp layout.ts DEFAULT_VAULT_PATHS, verbatim (tests/render-modes.sh checks it against naila's built layout.js) */ -}}
+{{- $defaultPaths := dict "system" "Naila" "finance" "Finance" "inbox" "Inbox" "daily" "Daily" "testFolder" "Harness-test" "views" (dict "decisions" "Decisions.md" "usage" "Usage.md" "selfChanges" "Self-changes.md" "vaultChanges" "Vault changes.md" "changelog" "Engine changelog.md") }}
+{{- $vaultPaths := ternary "" (toJson $paths) (eq (toJson $paths) (toJson $defaultPaths)) }}
 {{- $creds := list }}
 {{- range $id, $e := $h.services | default dict }}{{ if and (kindIs "map" $e) (kindIs "slice" $e.writeCredentials) }}{{ range $e.writeCredentials }}{{ $creds = append $creds (toString .) }}{{ end }}{{ end }}{{ end }}
 {{- $ids := list }}
@@ -62,6 +69,19 @@
 {{- $_ := set $x "description" $d }}
 {{- $_ := set $x "ceiling" (splitList ", " (trimSuffix "\n" $tools)) }}
 {{- end }}
+{{- if $vaultPaths }}
+{{- $servers := list }}
+{{- range $x.servers }}
+{{- $sv := deepCopy . }}
+{{- if and (eq (toString $sv.transport) "stdio") (kindIs "slice" $sv.args) (gt (len $sv.args) 0) (hasPrefix "/naila/packages/vault-mcp/dist/" (toString (first $sv.args))) }}
+{{- $env := ternary (deepCopy ($sv.env | default dict)) dict (kindIs "map" $sv.env) }}
+{{- $_ := set $env "VAULT_PATHS" $vaultPaths }}
+{{- $_ := set $sv "env" $env }}
+{{- end }}
+{{- $servers = append $servers $sv }}
+{{- end }}
+{{- $_ := set $x "servers" $servers }}
+{{- end }}
 {{- range $x.servers }}
 {{- $j := toJson . }}
 {{- if contains "$" $j }}{{ fail (printf "%s: a server holds a $" $at) }}{{ end }}
@@ -70,7 +90,7 @@
 {{- end }}
 {{- $roles = append $roles $x }}
 {{- end }}
-{{- $json := printf "{\"version\":3,\"roles\":%s,\"retired\":%s,\"summary\":%s}" (toJson $roles) (toJson $retired) (toJson $h.roleSpec.summary) | replace "__FINANCE_HOST__" $finance | replace "__VAULT_ROOT__" $vaultRoot }}
+{{- $json := printf "{\"version\":3,\"roles\":%s,\"retired\":%s,\"summary\":%s}" (toJson $roles) (toJson $retired) (toJson $h.roleSpec.summary) | replace "__FINANCE_HOST__" $finance | replace "__VAULT_ROOT__" $vaultRoot | replace "__FINANCE_FOLDER__" (toString $paths.finance) }}
 {{- with regexFind "__[A-Z_]+__" $json }}{{ fail (printf "harness.roleSpec: the marker %s is not resolved" .) }}{{ end }}
 {{- $json }}
 {{- end }}
@@ -231,7 +251,7 @@
 {{- $finance := ternary "assistant-finance-test" "assistant-finance" $test }}
 {{- $tokenKey := ternary "MCP_FINANCE_TEST_TOKEN" "MCP_FINANCE_TOKEN" $test }}
 {{- $readKey := ternary "MCP_FINANCE_TEST_READ_TOKEN" "MCP_FINANCE_READ_TOKEN" $test }}
-{{- $workerSpec := include "assistant.workerSpec" (dict "root" . "financeOn" $financeOn) }}
+{{- $workerSpec := include "assistant.workerSpec" (dict "root" . "financeOn" $financeOn "paths" $paths) }}
 # Harness mode as its own pod: the core (packages/harness) runs each worker as a one-shot Claude Code run with this pod's
 # own Max login (naila.nopsqi.dev/harness), each channel's gateway (harness.channels) carries the user's messages and
 # confirmations, and the core alone carries out an approved decision. The RC pod (assistant-claude) is not touched.

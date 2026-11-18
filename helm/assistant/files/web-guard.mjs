@@ -64,6 +64,9 @@ export const WEB_TEXT = Object.freeze({
 
 // carriesFigures judges the ask text sent to the researcher, strictly (the researcher's own queries and pages are not
 // judged: its only input is this ask).
+/** The built-in figure words: the currency markers and the magnitude words the patterns below name (beside them the
+ *  patterns also take English plurals and the M, K and T shorthands). A profile's figure words only add to them. */
+export const FIGURE_WORDS = Object.freeze({ markers: Object.freeze(['rp','idr','usd','$','€']), magnitudes: Object.freeze(['juta','jt','ribu','rb','miliar','milyar','triliun','rupiah','dollar','dolar','million','mio','mn','billion','bn','thousand','trillion']) })
 // A currency marker next to digits, on either side: Rp, IDR or USD starting a word (any case, an optional dot after
 // it) or $ or €, with at most 3 spaces or `.:+_-` between marker and digits. After digits, the word marker must also end
 // its word ("5 rpm" is no amount).
@@ -85,6 +88,53 @@ const MIN_THOUSANDS_DIGITS = 6
 // Digit groups joined by single spaces or hyphens, an optional + before them; 10 or more digits make an account or phone.
 const DIGIT_GROUPS = /\+?\p{Nd}+(?:[ -]\p{Nd}+)+/gu
 const MIN_GROUPED_DIGITS = 10
+
+// A profile's words beyond the built-in ones: none by default. Frozen empty lists of strings (plain JavaScript gives them
+// their type: a bare [] would take no word).
+const NO_EXTRA_WORDS = Object.freeze({ markers: Object.freeze(FIGURE_WORDS.markers.slice(0, 0)), magnitudes: Object.freeze(FIGURE_WORDS.magnitudes.slice(0, 0)) })
+// The separators allowed between a marker and its digits, as in MARKER_BEFORE and MARKER_AFTER.
+const MARKER_GAP = '[\\s.:+_-]{0,3}'
+/** `s` with every regular-expression syntax character escaped, so a word matches only itself. */
+function escapeRe(s = '') {
+  return s.replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&')
+}
+/** The refusal of a malformed `extra`: the guard fails closed (it throws) rather than judge with fewer words. */
+const MALFORMED_WORDS = 'figure words: markers and magnitudes must be lists of non-empty strings'
+/** `list`'s words, NFKC-normalized and lower-cased, without duplicates and those `known` already holds. Throws
+ *  MALFORMED_WORDS unless `list` is an array of non-empty strings. */
+function addedWords(list = NO_EXTRA_WORDS.markers, known = FIGURE_WORDS.markers) {
+  if (!Array.isArray(list) || !list.every((w) => typeof w === 'string' && w !== '')) throw new Error(MALFORMED_WORDS)
+  const words = list.map((w) => w.normalize('NFKC').toLowerCase())
+  return [...new Set(words)].filter((w) => w !== '' && !known.includes(w))
+}
+// The extra patterns of each distinct list of added words (by its JSON), built once; seeded with no words' (no patterns).
+// At most EXTRA_PATTERNS_MAX lists are kept (the core and the hook each judge with one profile's words): a fuller cache starts over.
+const EXTRA_PATTERNS = new Map([[JSON.stringify([[], []]), [/(?:)/u].slice(0, 0)]])
+const EXTRA_PATTERNS_MAX = 16
+/** The patterns `extra`'s added words make, with the built-in patterns' separators and bounds: a word marker on either side
+ *  of digits, standing alone after them; a symbol marker (one currency sign) on either side; a magnitude word after digits,
+ *  with an optional "-an" suffix, standing alone. None when every word is built in. Throws MALFORMED_WORDS for an `extra`
+ *  that is not an object of two lists of non-empty strings. */
+function extraPatterns(extra = NO_EXTRA_WORDS) {
+  // both lists checked here: a missing one must not take addedWords' default (no words)
+  if (extra === null || typeof extra !== 'object' || !Array.isArray(extra.markers) || !Array.isArray(extra.magnitudes)) throw new Error(MALFORMED_WORDS)
+  const markers = addedWords(extra.markers, FIGURE_WORDS.markers), magnitudes = addedWords(extra.magnitudes, FIGURE_WORDS.magnitudes)
+  const key = JSON.stringify([markers, magnitudes])
+  const cached = EXTRA_PATTERNS.get(key)
+  if (cached !== undefined) return cached
+  const isSymbol = (w = '') => /^\p{Sc}$/u.test(w)
+  const any = (ws = ['']) => `(?:${ws.map(escapeRe).join('|')})`
+  const words = markers.filter((w) => !isSymbol(w)), symbols = markers.filter(isSymbol)
+  const before = [...(words.length > 0 ? [`(?<!\\p{L})${any(words)}`] : []), ...(symbols.length > 0 ? [any(symbols)] : [])]
+  const after = [...(words.length > 0 ? [`(?<!\\p{L})${any(words)}(?!\\p{L})`] : []), ...(symbols.length > 0 ? [any(symbols)] : [])]
+  const patterns = [
+    ...(before.length > 0 ? [new RegExp(`(?:${before.join('|')})${MARKER_GAP}\\p{Nd}`, 'iu'), new RegExp(`\\p{Nd}${MARKER_GAP}(?:${after.join('|')})`, 'iu')] : []),
+    ...(magnitudes.length > 0 ? [new RegExp(`\\p{Nd}\\s{0,3}${any(magnitudes)}(?:an)?(?!\\p{L})`, 'iu')] : []),
+  ]
+  if (EXTRA_PATTERNS.size >= EXTRA_PATTERNS_MAX) EXTRA_PATTERNS.clear()
+  EXTRA_PATTERNS.set(key, patterns)
+  return patterns
+}
 
 // The most percent-escapes decodeEscapes takes on; a text with more is refused unread (fail closed).
 const MAX_ESCAPES = 2000
@@ -116,14 +166,19 @@ function decodeEscapes(text = '') {
  *  quote or an underscore (so 12 345 678 or 12'345'678); or 10 or more digits in groups joined by single spaces or hyphens (an account or phone
  *  number). On the safe side: the text is judged as given and with its percent-escapes decoded, each NFKC-normalized
  *  (fullwidth digits and signs) and with its format characters (\p{Cf}: zero-width and the like) removed. A text with
- *  more than MAX_ESCAPES percent-escapes carries a figure as far as this guard knows (fail closed). */
-export function carriesFigures(text = '') {
+ *  more than MAX_ESCAPES percent-escapes carries a figure as far as this guard knows (fail closed).
+ *  `extra`: a profile's figure words, on top of the built-in ones (FIGURE_WORDS), never instead: its markers (letters, or
+ *  one currency sign) and magnitude words are refused in the built-in words' positions; a word already built in adds nothing.
+ *  A malformed `extra` (not two lists of non-empty strings) throws: the caller fails closed. */
+export function carriesFigures(text = '', extra = NO_EXTRA_WORDS) {
+  const added = extraPatterns(extra)
   const raw = String(text ?? '')
   const decoded = decodeEscapes(raw)
   if (decoded === null) return true
   return [raw, decoded].some((t) => {
     const n = t.normalize('NFKC').replace(/\p{Cf}/gu, '')
     if (MARKER_BEFORE.test(n) || MARKER_AFTER.test(n) || MAGNITUDE_AFTER.test(n) || DIGIT_RUN.test(n)) return true
+    if (added.some((re) => re.test(n))) return true
     if ((n.match(THOUSANDS) ?? []).some((g) => g.replace(/\P{Nd}/gu, '').length >= MIN_THOUSANDS_DIGITS)) return true
     return (n.match(DIGIT_GROUPS) ?? []).some((g) => g.replace(/\P{Nd}/gu, '').length >= MIN_GROUPED_DIGITS)
   })

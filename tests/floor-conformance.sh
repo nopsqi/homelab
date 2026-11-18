@@ -5,14 +5,17 @@
 # decideWeb, grantDocs). This script runs every case tagged hook:<name> through that hook in helm/assistant/files/, so a
 # port and its hook can't drift apart:
 #  - it builds the cases' `tree` in a temp folder T, and runs the hook as harness-start.sh (or claude.yaml) renders it:
-#    read-guard.mjs --by-origin; harness-write-guard.mjs --root <phase root>/Naila/Workspace; docs-grant.mjs --by-caps
+#    read-guard.mjs --by-origin; harness-write-guard.mjs --root <phase root>/<workspace root> (the profile's, Naila/Workspace
+#    in production: vault-mcp's layout of the rendered prod profile); docs-grant.mjs --by-caps
 #    --uploads <uploads> --root <phase root> [--exclude <phase root>/<VAULT_EXCLUDE dir>,…] (real phase); web-guard.mjs
 #    --by-worker. The rendered /vault and /home/claude/.claude/uploads don't exist here, so --root and --uploads name T's
 #    (F14); a path under ~/.claude stays the literal /home/claude/.claude;
 #  - it pipes the Claude Code hook input {tool_name, tool_input, cwd} (cwd: T/work/<role>, also the hook's own) into the hook, with
 #    the env the core gives the run: naila's hookEnv (packages/harness/dist/floor/hook-env.js, its roster installed from the
-#    cases' own role fixtures, cases.json `roles`: a roles spec v3 with the roles chief, ledger, planner, watch and scout; build
-#    naila first) for the case's role (run.role), switches, origin and asked flag in the case's tree and phase (HARNESS_CAPS,
+#    cases' own role fixtures, cases.json `roles`: a roles spec v3 with the roles chief, ledger, planner, watch and scout; and,
+#    since pure-core phase 4, the setup the chart renders for production installed from the prod render's
+#    harness-setup.json (helm template, values.yaml + values.prod.yaml: naila's parseSetup with the job requests beside it,
+#    then installSetup; the core's policy reads the profile's paths); build naila first) for the case's role (run.role), switches, origin and asked flag in the case's tree and phase (HARNESS_CAPS,
 #    HARNESS_WORKER, HARNESS_ORIGIN when the run has one,
 #    HARNESS_DOCS_ROOTS), plus HARNESS_WEB_SLOTS (a fresh, empty slots folder per case). Its HARNESS_CAPS must equal this
 #    script's own (the case's capabilities in naila's CAPABILITY_IDS order, comma-joined; an asked run's without naila's
@@ -39,7 +42,7 @@
 #    30 s timeout and onFailure block), and that web-guard.mjs carries naila's
 #    web-rules block byte for byte (the text between the web-rules:begin and web-rules:end lines, each once in both files, read
 #    from the source packages/harness/src/floor/web-rules.ts, so no build of naila is needed and a stale dist can't hide a drift).
-# Node only: no containers, no network. The two hang cases and the deadline checks wait for real (about 5 s, 5 s and 15 s,
+# Node (and helm with python3's yaml to render the prod setup) only: no containers, no network. The two hang cases and the deadline checks wait for real (about 5 s, 5 s and 15 s,
 # the two deadlines at once).
 set -euo pipefail
 naila="${1:?usage: tests/floor-conformance.sh <naila-dir>}"
@@ -49,6 +52,16 @@ cases="$naila/packages/harness/test/floor/cases.json"
 priv="$(mktemp -d)"
 trap 'rm -rf "$priv"' EXIT
 export TMPDIR="$priv"
+# the prod render's setup file and the job requests beside it (ConfigMap assistant-harness), as the harness pod mounts them
+mkdir -p "$priv/config"
+helm template "$repo/helm/assistant" -f "$repo/helm/assistant/values.yaml" -f "$repo/helm/assistant/values.prod.yaml" | python3 -c '
+import sys, os, yaml
+cm = [d for d in yaml.safe_load_all(sys.stdin) if d and d["kind"] == "ConfigMap" and d["metadata"]["name"] == "assistant-harness"]
+data = cm[0]["data"] if len(cm) == 1 else {}
+if "harness-setup.json" not in data: sys.exit("FAIL: the prod render has no harness-setup.json in ConfigMap assistant-harness")
+for k, v in data.items():
+    if k == "harness-setup.json" or k.startswith("harness-job-"): open(os.path.join(sys.argv[1], k), "w").write(v)
+' "$priv/config" || exit 1
 cat > "$priv/dns-stub.mjs" <<'EOF'
 // Test only (tests/floor-conformance.sh): loaded with node --import before web-guard.mjs, never part of the chart.
 import dns from 'node:dns'
@@ -75,7 +88,7 @@ import { existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync
 import { tmpdir } from 'node:os'
 import { dirname, join, posix } from 'node:path'
 
-const [repo, naila, casesFile, stub] = process.argv.slice(2)
+const [repo, naila, casesFile, stub, configDir] = process.argv.slice(2)
 const FILES = join(repo, 'helm/assistant/files')
 const { tree, roles, cases } = JSON.parse(readFileSync(casesFile, 'utf8'))
 let fail = 0
@@ -116,6 +129,18 @@ if (typeof hookEnv !== 'function') { bad(`naila's built ${dist}/floor/hook-env.j
 // the cases' own role fixtures (cases.json `roles`, a roles spec v3), as naila's floor-conformance.test.ts installs them
 if (!roles || !Array.isArray(roles.roles)) { bad(`${casesFile} has no role fixtures (roles): naila predates pure-core phase 2`); process.exit(1) }
 installRoster(rosterFrom(parseWorkerSpecs(JSON.stringify(roles), () => '')))
+// pure-core phase 4: the core's policy (hookEnv -> compile, policy) reads the installed profile; the one the chart renders
+// for production, as the core installs it at start (main.ts: parseSetup, the requests beside it, then installSetup)
+const setupJs = join(dist, 'setup.js')
+if (!existsSync(setupJs)) { bad(`naila's built ${setupJs} is missing: build naila first (npm run build)`); process.exit(1) }
+const { parseSetup, installSetup, profile } = await import(setupJs)
+const setupFile = join(configDir, 'harness-setup.json')
+try { installSetup(parseSetup(readFileSync(setupFile, 'utf8'), setupFile, (name) => readFileSync(join(configDir, name), 'utf8'))) }
+catch (e) { bad(`naila's parseSetup refuses the prod render's setup: ${e.message}`); process.exit(1) }
+// the write guard's root under the phase root: vault-mcp's layout of the profile's paths, as harness-start.sh takes it
+const { vaultLayout } = await import(join(naila, 'packages/vault-mcp/dist/layout.js'))
+const WS = vaultLayout(profile().paths).workspaces
+if (WS !== 'Naila/Workspace') bad(`the prod profile's workspace root is ${WS}, but the cases' tree (and $W) has Naila/Workspace`)
 // the lead fixture: the write guard's homelab-only checks run as its run
 const LEAD = roles.roles.find((r) => r.lead === true)?.id
 if (typeof LEAD !== 'string') { bad('the role fixtures have no lead'); process.exit(1) }
@@ -127,7 +152,7 @@ for (const [file, text, s] of [
   ['harness-start.sh', start, 'command: "node /config/read-guard.mjs --by-origin || exit 2"'],
   ['harness-start.sh', start, 'command: `node ${grant} --by-caps --uploads ${uploads} --root ${root}${docsExclude} || exit 2`'],
   ['harness-start.sh', start, 'const docsExclude = excluded.length ? ` --exclude ${excluded.map((x) => `${root}/${x}`).join(",")}` : ""'],
-  ['harness-start.sh', start, `matcher: "${WRITE_MATCHER}", hooks: [{ type: "command", command: \`node /config/harness-write-guard.mjs --root \${root}/Naila/Workspace || exit 2\`, timeout: 30, onFailure: "block" }]`],
+  ['harness-start.sh', start, `matcher: "${WRITE_MATCHER}", hooks: [{ type: "command", command: \`node /config/harness-write-guard.mjs --root \${root}/\${workspaces} || exit 2\`, timeout: 30, onFailure: "block" }]`],
   ['harness-start.sh', start, 'matcher: "WebFetch|WebSearch", hooks: [{ type: "command", command: "node /config/web-guard.mjs --by-worker || exit 2", timeout: 30, onFailure: "block" }]'],
   ['claude.yaml', claudeYaml, '"matcher": "WebFetch|WebSearch", "hooks": [{ "type": "command", "command": "node /config/web-guard.mjs" }]'],
 ]) if (!text.includes(s)) bad(`${file} no longer renders ${s}`)
@@ -145,7 +170,7 @@ const mount = join(t, tree.mount), uploads = join(t, tree.uploads)
 const hookArgs = (c, root, exclude) => {
   switch (c.claude) {
     case 'hook:read-guard': return ['read-guard.mjs', '--by-origin']
-    case 'hook:write-guard': return ['harness-write-guard.mjs', '--root', `${root}/Naila/Workspace`]
+    case 'hook:write-guard': return ['harness-write-guard.mjs', '--root', `${root}/${WS}`]
     case 'hook:docs-grant': return ['docs-grant.mjs', '--by-caps', '--uploads', uploads, '--root', root, ...(exclude.length ? ['--exclude', exclude.map((x) => `${root}/${x}`).join(',')] : [])]
     case 'hook:web-guard': return ['web-guard.mjs', '--by-worker']
   }
@@ -291,7 +316,7 @@ const deadline = (what, args, env, part) => new Promise((resolve) => {
     resolve()
   })
 })
-const writeDeadline = deadline('harness-write-guard.mjs', [join(FILES, 'harness-write-guard.mjs'), '--root', '/vault/Naila/Workspace'],
+const writeDeadline = deadline('harness-write-guard.mjs', [join(FILES, 'harness-write-guard.mjs'), '--root', `/vault/${WS}`],
   { HARNESS_WORKER: LEAD, HARNESS_WEB_SLOTS: slotsWith() }, '{"tool_name":"Wri')
 await deadline('web-guard.mjs', ['--import', stub, join(FILES, 'web-guard.mjs'), '--by-worker'], { ...R, HARNESS_WEB_SLOTS: slotsWith(), STUB_DNS: '{}' }, SEARCH.slice(0, 10))
 await writeDeadline
@@ -308,7 +333,7 @@ if (/file a plan/i.test(RESEARCHED_TEXT ?? '')) bad('the researched write refusa
 const wroot = join(t, tree.phases.real.root)
 const write = (what, tool, toolInput, env, want, reason) => {
   extra++
-  const r = spawnSync(process.execPath, [join(FILES, 'harness-write-guard.mjs'), '--root', `${wroot}/Naila/Workspace`],
+  const r = spawnSync(process.execPath, [join(FILES, 'harness-write-guard.mjs'), '--root', `${wroot}/${WS}`],
     { cwd: join(t, tree.work, LEAD), input: JSON.stringify({ tool_name: tool, tool_input: toolInput }), env: { PATH: process.env.PATH, HARNESS_WORKER: LEAD, ...env }, encoding: 'utf8', timeout: 20000 })
   const o = out(r), got = r.stdout.trim() === '' ? 'none' : o?.permissionDecision, why = []
   if (r.status !== 0) why.push(`exit ${r.status}`)
@@ -345,4 +370,4 @@ for (const tool of ['TodoWrite', 'Read', 'mcp__vault__read_note', 'mcp__vault__s
 console.log(`${extra} homelab-only web-guard and write-guard checks run`)
 process.exit(fail || agree !== n ? 1 : 0)
 EOF
-node "$priv/run.mjs" "$repo" "$naila" "$cases" "$priv/dns-stub.mjs"
+node "$priv/run.mjs" "$repo" "$naila" "$cases" "$priv/dns-stub.mjs" "$priv/config"

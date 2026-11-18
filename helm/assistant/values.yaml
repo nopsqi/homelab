@@ -156,7 +156,9 @@ harness:
   # never run). One source per value: a role's model is its workers[].model (naila has none there: hers is here), its description its
   # files/agents/<id>.md frontmatter's, and its ceiling (the tools its runs may ever have) files/modes/harness/<id>.<ceiling>.md,
   # split on ", ". Literal markers the template resolves per phase: __FINANCE_HOST__ (assistant-finance-test or
-  # assistant-finance) and __VAULT_ROOT__ (/vault/Harness-test or /vault). No server string may hold a $ or a write credential
+  # assistant-finance), __VAULT_ROOT__ (/vault/<profile.paths.testFolder> or /vault) and __FINANCE_FOLDER__ (profile.paths.finance);
+  # a stdio server run from vault-mcp's dist also gets VAULT_PATHS (the profile's paths) when they are not production's
+  # (vault-mcp layout.ts vaultPathsEnv: none for DEFAULT_VAULT_PATHS). No server string may hold a $ or a write credential
   # of any service in services above, enabled or not (MCP_FINANCE_TOKEN, the finance write bearer): the render fails. So do
   # a duplicate id, no lead or two, a lead not listed first, and a retired id that roles also lists.
   roleSpec:
@@ -188,7 +190,7 @@ harness:
           - { name: finance-read, transport: http, url: "http://__FINANCE_HOST__:8080/mcp", bearer: MCP_FINANCE_READ_TOKEN }
           # read-only (NOTES_READONLY, harness-start needs the image's support): its write tools are floor-denied anyway; a note
           # change is a plan the user approves, carried out by the core's own notes executor, which never gets NOTES_READONLY
-          - { name: finance-notes, transport: stdio, command: node, args: [/naila/packages/vault-mcp/dist/notes-server.js], env: { VAULT_ROOT: "__VAULT_ROOT__/Finance/", NOTES_READONLY: "1" } }
+          - { name: finance-notes, transport: stdio, command: node, args: [/naila/packages/vault-mcp/dist/notes-server.js], env: { VAULT_ROOT: "__VAULT_ROOT__/__FINANCE_FOLDER__/", NOTES_READONLY: "1" } }
       - id: ops-oncall
         display: { name: Ops Oncall, avatar: ops-oncall }
         seed: [messaging.ask, cluster.read]

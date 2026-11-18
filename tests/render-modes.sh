@@ -1434,7 +1434,12 @@ if bad:
 print("harness pod: renders only when enabled; phases wired; write bearer only in the core env; RC render identical")
 PY
 
-python3 - "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/oracle-test.yaml" "$tmp/oracle-real.yaml" "$oref" "$tmp/old-harness.yaml" "$ref" <<'PY'
+# The phase 2 pairing guard's old chart: the last phase 1 chart (roles spec 2, channels without kind), fixed, since <git-ref>
+# (origin/master) has been a phase 2 chart since aefa661. PHASE1_REF defaults to 937d2d3 (76a57b1's parent).
+p1ref="${PHASE1_REF:-937d2d3}"
+mkdir -p "$tmp/phase1" && git archive "$p1ref" helm/assistant | tar -x -C "$tmp/phase1"
+helm template "$tmp/phase1/helm/assistant" -f "$tmp/phase1/helm/assistant/values.yaml" -f "$tmp/phase1/helm/assistant/values.prod.yaml" --set harness.enabled=true --set harness.phase=test --set claude.rcLines=true > "$tmp/phase1.yaml"
+python3 - "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/oracle-test.yaml" "$tmp/oracle-real.yaml" "$oref" "$tmp/phase1.yaml" "$p1ref" <<'PY'
 import sys, yaml, json, re, os, subprocess, tempfile, shutil, difflib
 def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
 def config(r):
@@ -1785,10 +1790,10 @@ else:
             if p.returncode != 2 or os.listdir(e): bad.append(f"{tag}: prepare with {what}: exit {p.returncode}, wrote {os.listdir(e)}")
             shutil.rmtree(e)
         shutil.rmtree(d)
-    # phase 2 Task 11, the pairing guards (new image, old chart): naila's built core refuses the <git-ref> chart's roles spec
+    # phase 2 Task 11, the pairing guards (new image, old chart): naila's built core refuses the PHASE1_REF chart's roles spec
     # (version 2, naming the chart as older) and its HARNESS_CHANNELS (no kind), and accepts this chart's; so a phase 2 image
     # on a phase 1 chart refuses to start instead of running it
-    tag = "naila's built core refuses the <git-ref> chart's roles spec and channels, and accepts this chart's"
+    tag = "naila's built core refuses the PHASE1_REF chart's roles spec and channels, and accepts this chart's"
     old_r = {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(sys.argv[6])) if d}
     def chans(r): return next((e.get("value") for c in r[("Deployment", "assistant-harness")]["spec"]["template"]["spec"]["containers"] if c["name"] == "harness" for e in c.get("env", []) if e["name"] == "HARNESS_CHANNELS"), None)
     new_r = {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(sys.argv[1])) if d}

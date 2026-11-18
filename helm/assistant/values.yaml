@@ -96,8 +96,8 @@ harness:
   # files/agents/<id>.md frontmatter's, and its ceiling (the tools its runs may ever have) files/modes/harness/<id>.<ceiling>.md,
   # split on ", ". Literal markers the template resolves per phase: __FINANCE_HOST__ (assistant-finance-test or
   # assistant-finance) and __VAULT_ROOT__ (/vault/Harness-test or /vault). No server string may hold a $ or a write credential
-  # of any service in services above (MCP_FINANCE_TOKEN, the finance write bearer): the render fails, as the core would. So do a duplicate id, no lead or two, a lead not listed
-  # first, and a retired id that roles also lists.
+  # of any service in services above, enabled or not (MCP_FINANCE_TOKEN, the finance write bearer): the render fails. So do
+  # a duplicate id, no lead or two, a lead not listed first, and a retired id that roles also lists.
   roleSpec:
     roles:
       - id: naila

@@ -99,8 +99,9 @@
 #  credentials (naila's parseServicesConfig accepts it, and the image declares the same lists); finance's env, its
 #  finance.enabled/testServer rules and its egress peer follow services.finance, the ops peer services.cluster, and with neither
 #  the egress rule is gone; any listed service's write credential in a server string fails the render (P11), as do bad
-#  services config and the vault disabled; prod, test phase, harness off and staging render as at <git-ref> but for the
-#  harness Deployment's HARNESS_SERVICES env and checksum.
+#  services config and the vault disabled; naila's core refuses the PHASE2_REF chart (default aefa661: no HARNESS_SERVICES);
+#  prod, test phase, harness off and staging render as at <git-ref> but for the harness Deployment's HARNESS_SERVICES env and
+#  checksum (skipped with a notice once <git-ref> renders HARNESS_SERVICES itself).
 set -euo pipefail
 ref="${1:-origin/master}"
 root="$(git rev-parse --show-toplevel)"
@@ -2350,13 +2351,18 @@ PY
 # services.finance, the ops peer services.cluster, and with neither the egress rule is gone (an empty `to` matches every
 # destination); a server string holding any listed service's write credential, enabled or not, fails the render (P11), as do
 # a bad writeCredentials, a missing one, a non-boolean enabled and the vault disabled. Prod, test phase, harness off and
-# staging render exactly as at <git-ref> but for the harness Deployment's HARNESS_SERVICES env and checksum.
+# staging render exactly as at <git-ref> but for the harness Deployment's HARNESS_SERVICES env and checksum (skipped with a
+# notice once <git-ref> renders HARNESS_SERVICES itself). The pairing guard's old chart (no HARNESS_SERVICES: naila's core
+# refuses it) is a fixed PHASE2_REF, default aefa661 (the last phase 2 chart), as PHASE1_REF is for phase 2's.
 helm template helm/assistant -f helm/assistant/values.yaml -f helm/assistant/values.prod.yaml > "$tmp/prod.yaml"
+p2ref="${PHASE2_REF:-aefa661}"
+mkdir -p "$tmp/phase2" && git archive "$p2ref" helm/assistant | tar -x -C "$tmp/phase2"
+helm template "$tmp/phase2/helm/assistant" -f "$tmp/phase2/helm/assistant/values.yaml" -f "$tmp/phase2/helm/assistant/values.prod.yaml" > "$tmp/phase2.yaml"
 helm template "$tmp/helm/assistant" -f "$tmp/helm/assistant/values.yaml" -f "$tmp/helm/assistant/values.prod.yaml" > "$tmp/prod-ref.yaml"
 helm template "$tmp/helm/assistant" -f "$tmp/helm/assistant/values.yaml" -f "$tmp/helm/assistant/values.staging.yaml" > "$tmp/staging-ref.yaml"
-python3 - "$ref" "$tmp/prod.yaml" "$tmp/prod-ref.yaml" "$tmp/new.yaml" "$tmp/old-harness.yaml" "$tmp/off.yaml" "$tmp/old.yaml" "$tmp/staging.yaml" "$tmp/staging-ref.yaml" "$tmp/real.yaml" <<'PY'
+python3 - "$ref" "$tmp/prod.yaml" "$tmp/prod-ref.yaml" "$tmp/new.yaml" "$tmp/old-harness.yaml" "$tmp/off.yaml" "$tmp/old.yaml" "$tmp/staging.yaml" "$tmp/staging-ref.yaml" "$tmp/real.yaml" "$p2ref" "$tmp/phase2.yaml" <<'PY'
 import sys, yaml, json, os, subprocess, copy
-ref = sys.argv[1]
+ref, p2ref = sys.argv[1], sys.argv[11]
 def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
 def loads(s): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(s) if d}
 H, NP = ("Deployment", "assistant-harness"), ("NetworkPolicy", "assistant-harness")
@@ -2380,12 +2386,16 @@ def strip(r):
         for c in t["spec"]["containers"]:
             if c["name"] == "harness": c["env"] = [e for e in c.get("env", []) if e["name"] != "HARNESS_SERVICES"]
     return r
-for label, now_, then_, on in (("prod", 2, 3, True), ("test phase", 4, 5, True), ("harness off", 6, 7, False), ("staging", 8, 9, False)):
+# (Task 12's own change: once <git-ref> is a chart that renders HARNESS_SERVICES, there is nothing of it left to compare)
+diffs = (("prod", 2, 3, True), ("test phase", 4, 5, True), ("harness off", 6, 7, False), ("staging", 8, 9, False))
+if services(load(sys.argv[3])) is not None:
+    print(f"NOTICE: the {ref} render already has HARNESS_SERVICES: the whole-render diff against it (Task 12's change alone) was skipped")
+    diffs = ()
+for label, now_, then_, on in diffs:
     tag = f"the {label} render differs from {ref}'s only in the harness Deployment's HARNESS_SERVICES env and checksum"
     a, b = load(sys.argv[now_]), load(sys.argv[then_])
     if on:
         if H not in a: bad.append(f"{tag}: no harness Deployment"); continue
-        if services(b) is not None: bad.append(f"{tag}: the {ref} render already has HARNESS_SERVICES (the check compares nothing)")
         if services(a) is None: bad.append(f"{tag}: no HARNESS_SERVICES")
     elif any("HARNESS_SERVICES" in json.dumps(d) for d in a.values()): bad.append(f"{tag}: it names HARNESS_SERVICES")
     sa, sb = strip(a), strip(b)
@@ -2415,7 +2425,9 @@ def peers(r): return {f["podSelector"]["matchLabels"]["app"] for rule in egress(
 def empty_to(r): return [rule for rule in egress(r) if not rule.get("to")]
 def fails(p, says): return p.returncode != 0 and says in p.stderr
 
-# services.finance disabled: no finance egress, no MCP_FINANCE_* env, and finance.enabled (and testServer) not needed
+# services.finance disabled: no finance egress, no MCP_FINANCE_* env, and finance.enabled (and testServer) not needed.
+# Render behaviour only: the finance roles keep their budget seeds and finance-documents path here, which naila's
+# checkServiceUse would refuse at start (a real finance-less config drops or rewrites those roles too).
 tag = "services.finance disabled renders no finance egress, no MCP_FINANCE_* env and needs no finance.enabled"
 nofin = {}
 for ph in ("test", "real"):
@@ -2480,13 +2492,15 @@ cfg_js, reg_js = f"{nw}/packages/harness/dist/services/config.js", f"{nw}/packag
 if not (nw and os.path.isfile(cfg_js) and os.path.isfile(reg_js)):
     print("NOTICE: NAILA_WORKTREE has no built dist/services: naila's parseServicesConfig was not run on HARNESS_SERVICES")
 else:
-    tag = "naila's parseServicesConfig accepts the rendered HARNESS_SERVICES"
+    tag = f"naila's parseServicesConfig accepts the rendered HARNESS_SERVICES and refuses the PHASE2_REF ({p2ref}) chart's (none)"
     js = ("const [c, r, ...raws] = process.argv.slice(1); const { parseServicesConfig } = await import(c); const { SERVICES, SERVICES_SPEC_VERSION } = await import(r); "
           "const out = [JSON.stringify({ v: SERVICES_SPEC_VERSION, decl: Object.fromEntries(SERVICES.map((s) => [s.id, s.writeCredentials])) })]; "
           "for (const raw of raws) { try { out.push(`ok ${parseServicesConfig(raw === '-' ? undefined : raw).ids.join(',')}`) } catch (e) { out.push(e.message) } } console.log(out.join('\\n'))")
+    p2 = load(sys.argv[12])
+    if H not in p2 or services(p2) is not None: bad.append(f"{tag}: the PHASE2_REF ({p2ref}) render has no harness pod, or already has HARNESS_SERVICES")
     cases = [("prod", val(ctr(load(sys.argv[2]), "harness"), "HARNESS_SERVICES"), "ok finance,vault,docs,cluster,web"),
              ("finance disabled", val(ctr(nofin.get("real", {}), "harness"), "HARNESS_SERVICES"), "ok vault,docs,cluster,web"),
-             (f"the {ref} render (none)", val(ctr(load(sys.argv[3]), "harness"), "HARNESS_SERVICES"), "services: HARNESS_SERVICES is missing: the chart predates pure-core phase 3 (services as plug-ins)")]
+             (f"the PHASE2_REF ({p2ref}) render (none)", val(ctr(p2, "harness"), "HARNESS_SERVICES"), "services: HARNESS_SERVICES is missing: the chart predates pure-core phase 3 (services as plug-ins)")]
     p = subprocess.run(["node", "--input-type=module", "-e", js, cfg_js, reg_js, *[c[1] if c[1] is not None else "-" for c in cases]], capture_output=True, text=True)
     o = p.stdout.splitlines()
     if p.returncode != 0 or len(o) != 1 + len(cases): bad.append(f"{tag}: node failed: {(p.stderr or p.stdout).strip()[-300:]}")
@@ -2497,5 +2511,6 @@ else:
             if g != w: bad.append(f"{tag}: {what}: {g!r}, want {w!r}")
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
-print("services: HARNESS_SERVICES lists the enabled services (naila's parser accepts it); finance and ops follow them; bad config fails; the render is the ref's but for HARNESS_SERVICES and the checksum")
+print("services: HARNESS_SERVICES lists the enabled services (naila's parser accepts it); finance and ops follow them; bad config fails"
+      + ("; the render is the ref's but for HARNESS_SERVICES and the checksum" if diffs else ""))
 PY

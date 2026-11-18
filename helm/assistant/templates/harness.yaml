@@ -210,6 +210,8 @@
 {{- if $ok }}{{ range splitList "/" $v }}{{ if not (regexMatch "^[A-Za-z0-9 _-][A-Za-z0-9 ._-]*$" .) }}{{ $ok = false }}{{ end }}{{ end }}{{ end }}
 {{- if not $ok }}{{ fail (printf "harness.profile.paths.%s must be a plain relative path (segments of letters, digits, space, . _ -; no empty, . or .. segment; no leading dot), got %s" $k (toJson $v)) }}{{ end }}
 {{- if and (has $k (list "system" "testFolder")) (not (regexMatch "^[A-Za-z0-9_-][A-Za-z0-9._-]*$" $v)) }}{{ fail (printf "harness.profile.paths.%s must be one folder name of letters, digits and . _ - (no leading dot), got %s" $k (toJson $v)) }}{{ end }}
+{{- /* vault-mcp protects Workers/ (the soft workers' definitions), by case: no profile folder is it or lies in it (setup.ts) */ -}}
+{{- if or (eq (lower $v) "workers") (hasPrefix "workers/" (lower $v)) }}{{ fail (printf "harness.profile.paths.%s is or lies under Workers/ (the soft workers' protected folder), got %s" $k (toJson $v)) }}{{ end }}
 {{- end }}
 {{- $testFolder := $paths.testFolder }}
 {{- $_ := set $prof "timeZone" (toString .Values.tz) }}

@@ -2964,6 +2964,12 @@ for what, args, says in (
         ("no testFolder", ["--set-json", "harness.profile.paths.testFolder=null"], "harness.profile.paths.testFolder must be a plain relative path"),
         ("a nested testFolder", ["--set-json", 'harness.profile.paths.testFolder="Tests/Harness"'], "harness.profile.paths.testFolder must be one folder name of letters, digits and . _ -"),
         ("a system folder with a space", ["--set-json", 'harness.profile.paths.system="My Naila"'], "harness.profile.paths.system must be one folder name of letters, digits and . _ -"),
+        # final review Minor 3: no profile folder is or lies under Workers/ (vault-mcp's protected soft-worker folder), by case
+        ("a system folder Workers", ["--set-json", 'harness.profile.paths.system="Workers"'], 'harness.profile.paths.system is or lies under Workers/ (the soft workers\' protected folder), got "Workers"'),
+        ("a finance folder under Workers/", ["--set-json", 'harness.profile.paths.finance="Workers/Finance"'], 'harness.profile.paths.finance is or lies under Workers/ (the soft workers\' protected folder), got "Workers/Finance"'),
+        ("an inbox workers", ["--set-json", 'harness.profile.paths.inbox="workers"'], 'harness.profile.paths.inbox is or lies under Workers/ (the soft workers\' protected folder), got "workers"'),
+        ("a daily folder under WORKERS/", ["--set-json", 'harness.profile.paths.daily="WORKERS/Daily/Notes"'], 'harness.profile.paths.daily is or lies under Workers/ (the soft workers\' protected folder), got "WORKERS/Daily/Notes"'),
+        ("a testFolder Workers", ["--set-json", 'harness.profile.paths.testFolder="Workers"'], 'harness.profile.paths.testFolder is or lies under Workers/ (the soft workers\' protected folder), got "Workers"'),
         ("a missing request file", jobs_with(lambda js: js.append(EXTRA)), "harness.schedules.weekly.request files/schedules/weekly.txt is missing"),
         ("a request other than harness-job-<id>.txt", jobs_with(lambda js: by(js, "monday-spending").update(request="harness-job-monday.txt")),
          "harness.schedules.monday-spending.request must be harness-job-monday-spending.txt"),
@@ -2981,6 +2987,9 @@ for what, args, says in (
         ("uses not a list", jobs_with(lambda js: by(js, "due-today").update(uses="vault")), "harness.schedules.due-today.uses must be a list of service ids"),
         ("a profile that is no map", ["--set-json", 'harness.profile="Asia/Jakarta"'], "harness.profile must be a map (quietUntil, currency, figureWords, paths)")):
     if not fails(p := render(*args), says): bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()[-300:]!r}, want a failed render saying {says!r}")
+tag = "a folder that only shares a prefix with Workers, or holds a Workers folder deeper down, renders"
+if (p := render("--set-json", 'harness.profile.paths.inbox="Workers2"', "--set-json", 'harness.profile.paths.daily="Daily/Workers"')).returncode != 0:
+    bad.append(f"{tag}: exit {p.returncode} {p.stderr.strip()[-300:]!r}")
 tag = "a moved test folder moves the test phase's vault root, mount and the real phase's VAULT_EXCLUDE"
 for ph, k, want in (("test", "VAULT_ROOT", "/vault/Probe-x"), ("real", "VAULT_EXCLUDE", "Probe-x")):
     p = render("--set", f"harness.phase={ph}", "--set", "harness.profile.paths.testFolder=Probe-x")
@@ -3226,6 +3235,9 @@ if HAVE:
     bent = prof(prod); bent["profile"]["paths"]["system"] = "My Naila"
     cfg = config(prod, bent); p = pairing(DIST, VDIST, cfg); shutil.rmtree(cfg)
     if not died(p, REFUSES, "profile.paths.system"): bad.append(f"{tag}: the built image accepts a system folder with a space: exit {p.returncode} {p.stderr.strip()!r}")
+    bent = prof(prod); bent["profile"]["paths"]["inbox"] = "Workers/Inbox"
+    cfg = config(prod, bent); p = pairing(DIST, VDIST, cfg); shutil.rmtree(cfg)
+    if not died(p, REFUSES, "profile.paths.inbox", "is or lies under Workers/"): bad.append(f"{tag}: the built image accepts an inbox under Workers/: exit {p.returncode} {p.stderr.strip()!r}")
 
 # a non-default profile reaches the user-scope vault server; production's adds nothing
 tag = "a non-default profile reaches the user-scope vault server"

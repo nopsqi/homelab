@@ -108,6 +108,12 @@
 #  roles' plus the enabled services' write credentials (a finance-less chart starts), the leak check covers every declared write
 #  credential, and the settings check and a write-guard parity check take the image's WRITE_GUARD_TOOLS (the rendered matcher
 #  unchanged); the settings harness-start writes are byte-identical to the SETTINGS_REF chart's (default aefa661).
+# Then the setup (pure core phase 4 Task 12): harness-setup.json (the owner's profile, today's literals, and the three jobs,
+#  the Monday review off) and the job request keys in ConfigMap assistant-harness; naila's parseSetup and start checks
+#  (NAILA_WORKTREE's built dist) accept the prod, test-phase and staging setups, and the requests expand to b5f5bbf's texts;
+#  TZ, the test phase's vault root and VAULT_EXCLUDE follow it, VIEW_FILE and FINANCE_NOTES_ROOT are gone; bad profile paths,
+#  request files and job ids, and an enabled job's disabled service, fail the render; the render is <git-ref>'s but for those
+#  (skipped with a notice once <git-ref> renders harness-setup.json itself).
 set -euo pipefail
 ref="${1:-origin/master}"
 root="$(git rev-parse --show-toplevel)"
@@ -862,17 +868,18 @@ def allenv(r): return [(c["name"], e) for c in pod(r)["containers"] + pod(r).get
 def admits(np, app): return any(f.get("podSelector", {}).get("matchLabels", {}).get("app") == app for rule in np["spec"].get("ingress", []) for f in rule.get("from", []))
 def egress_apps(np): return {f["podSelector"]["matchLabels"]["app"] for rule in np["spec"].get("egress", []) for f in rule.get("to", []) if "podSelector" in f}
 
-phases = {"test": dict(r=test, url="http://assistant-finance-test:8080/mcp", root="/vault/Harness-test", notes="/vault/Harness-test/Finance",
-                       view="/vault/Harness-test/Naila/Decisions.md", write="MCP_FINANCE_TEST_TOKEN", read="MCP_FINANCE_TEST_READ_TOKEN",
+phases = {"test": dict(r=test, url="http://assistant-finance-test:8080/mcp", root="/vault/Harness-test",
+                       write="MCP_FINANCE_TEST_TOKEN", read="MCP_FINANCE_TEST_READ_TOKEN",
                        server="assistant-finance-test", other="assistant-finance"),
-          "real": dict(r=real, url="http://assistant-finance:8080/mcp", root="/vault", notes="/vault/Finance",
-                       view="/vault/Naila/Decisions.md", write="MCP_FINANCE_TOKEN", read="MCP_FINANCE_READ_TOKEN",
+          "real": dict(r=real, url="http://assistant-finance:8080/mcp", root="/vault",
+                       write="MCP_FINANCE_TOKEN", read="MCP_FINANCE_READ_TOKEN",
                        server="assistant-finance", other="assistant-finance-test")}
 for ph, x in phases.items():
     r, h = x["r"], ctr(x["r"], "harness")
     tag = f"{ph} phase points at {x['server']} and {x['root']}"
-    for k, want in (("HARNESS_PHASE", ph), ("MCP_FINANCE_URL", x["url"]), ("VAULT_ROOT", x["root"]), ("FINANCE_NOTES_ROOT", x["notes"]),
-                    ("VIEW_FILE", x["view"]), ("HARNESS_HOME", "/home/claude/.claude/harness"), ("MAX_CONCURRENT_RUNS", "2")):
+    # pure core phase 4: FINANCE_NOTES_ROOT and VIEW_FILE are retired (the core refuses them; the profile places both)
+    for k, want in (("HARNESS_PHASE", ph), ("MCP_FINANCE_URL", x["url"]), ("VAULT_ROOT", x["root"]), ("FINANCE_NOTES_ROOT", None),
+                    ("VIEW_FILE", None), ("HARNESS_HOME", "/home/claude/.claude/harness"), ("MAX_CONCURRENT_RUNS", "2")):
         if val(h, k) != want: bad.append(f"{tag}: harness {k} is {val(h, k)!r}, want {want!r}")
     # P21: the core's version is the image tag (the naila image the pod's init container copies /naila from)
     img = next((c["image"] for c in pod(r).get("initContainers", []) if c["image"].startswith(VALUES_REPO + ":")), "")
@@ -1946,6 +1953,7 @@ tag = f"channel loop: the core env holds every variable it held at {ref} with th
 oe, ne = envmap(ctr(oldh, "harness")), envmap(ctr(test, "harness"))
 for k, e in oe.items():
     if k in ("GATEWAY_SECRETS", "HARNESS_CHANNELS"): continue   # HARNESS_CHANNELS: checked by containment below (R9)
+    if k in ("VIEW_FILE", "FINANCE_NOTES_ROOT") and k not in ne: continue   # retired in pure core phase 4 (the setup file's checks)
     if ne.get(k) != e: bad.append(f"{tag}: {k} is {ne.get(k)!r}, was {e!r}")
 if "discord:$(GATEWAY_DISCORD_SECRET)" not in entries(ctr(test, "harness")): bad.append(f"{tag}: GATEWAY_SECRETS is {val(ctr(test, 'harness'), 'GATEWAY_SECRETS')!r}")
 for label, r in (("test", test), ("real", real), ("two channels", two)):   # $(VAR) expands only from a variable defined earlier
@@ -2462,7 +2470,9 @@ def roles_without(*hosts):
     for r in out: r["servers"] = [s for s in r.get("servers") or [] if not any(h in json.dumps(s) for h in hosts)]
     return out
 OFF = lambda *ids: [x for i in ids for x in ("--set", f"harness.services.{i}.enabled=false")]
-NOFIN = ["--set", "finance.enabled=false", "--set", "finance.testServer=false"]
+# pure core phase 4: the monthly review (enabled) uses finance, so a finance-less chart turns it off too
+NOFIN = ["--set", "finance.enabled=false", "--set", "finance.testServer=false",
+         "--set-json", f"harness.schedules={json.dumps([{**j, 'enabled': False} if j['id'] == 'monthly-review' else j for j in yaml.safe_load(open('helm/assistant/values.yaml'))['harness']['schedules']])}"]
 def egress(r): return ((r.get(NP) or {}).get("spec") or {}).get("egress") or []
 def peers(r): return {f["podSelector"]["matchLabels"]["app"] for rule in egress(r) for f in rule.get("to") or [] if "podSelector" in f}
 def empty_to(r): return [rule for rule in egress(r) if not rule.get("to")]
@@ -2685,8 +2695,9 @@ BASE = ["helm", "template", "helm/assistant", "-f", "helm/assistant/values.yaml"
 ROLES = yaml.safe_load(open("helm/assistant/values.yaml"))["harness"]["roleSpec"]["roles"]
 nofin_roles = copy.deepcopy(ROLES)
 for r_ in nofin_roles: r_["servers"] = [x for x in r_.get("servers") or [] if "__FINANCE_HOST__" not in json.dumps(x)]
+nofin_jobs = [{**j, "enabled": False} if j["id"] == "monthly-review" else j for j in yaml.safe_load(open("helm/assistant/values.yaml"))["harness"]["schedules"]]   # phase 4: it uses finance
 p = subprocess.run(BASE + ["--set", "harness.phase=real", "--set", "harness.services.finance.enabled=false", "--set", "finance.enabled=false", "--set", "finance.testServer=false",
-                           "--set-json", f"harness.roleSpec.roles={json.dumps(nofin_roles)}"], capture_output=True, text=True)
+                           "--set-json", f"harness.roleSpec.roles={json.dumps(nofin_roles)}", "--set-json", f"harness.schedules={json.dumps(nofin_jobs)}"], capture_output=True, text=True)
 nofin = loads(p.stdout) if p.returncode == 0 else None
 if nofin is None: bad.append(f"{tag}: the finance-disabled render fails: {p.stderr.strip()[-300:]}")
 if bb and pb:
@@ -2789,4 +2800,242 @@ if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
 print("pairing: harness-start pairs with the image's services (spec version, write credentials" + (", the built image" if HAVE_DIST else "")
       + "), its bearers follow the roles and the enabled services, the leak check every declared write credential, the write guard the image's tools; settings.json as at " + sref)
+PY
+# Pure core phase 4 Task 12: the owner's profile and the schedules (harness.profile, harness.schedules) as harness-setup.json
+# in ConfigMap assistant-harness ({"version":1,"profile":{"timeZone":<tz>,…},"schedules":{"jobs":[…]}}), each job's request
+# text (files/schedules/<id>.txt) the key harness-job-<id>.txt beside it:
+#  - naila's parseSetup (NAILA_WORKTREE's built dist) accepts the prod, test-phase and staging (harness on) setup files with
+#    their request keys, and its start checks pass on them as main.ts runs them (loadWorkerSpecs, the roster, checkSeeds,
+#    parseServicesConfig, checkServiceUse, checkSetupEnv on the harness container's env, checkProfileServices, checkSchedules
+#    with serversOf); the prod render's requests expand (jobRequest) to b5f5bbf's texts (schedule-b5f5bbf.json), its trash is
+#    Naila/Trash and its paths need no VAULT_PATHS (vaultPathsEnv {});
+#  - the profile equals today's literals (TZ = profile.timeZone = Asia/Jakarta, VAULT_EXCLUDE Harness-test in the real phase,
+#    the test phase's vault root /vault/Harness-test), the three jobs render with enabled (monday-spending off) and without
+#    `uses`, and VIEW_FILE and FINANCE_NOTES_ROOT are gone from every container;
+#  - the render fails on a bad profile path, a missing request file, a job without an id, one listed twice, a non-boolean
+#    enabled, a request other than harness-job-<id>.txt, harness.profile.timeZone, and an enabled job using a disabled service
+#    (a disabled one renders);
+#  - the harness checksum follows a request file, the RC one doesn't;
+#  - prod, test phase, harness off and staging render as at <git-ref> but for the setup and job keys, the removed VIEW_FILE and
+#    FINANCE_NOTES_ROOT and the harness checksum (skipped with a notice once <git-ref> renders harness-setup.json).
+SON=(-f helm/assistant/values.yaml -f helm/assistant/values.staging.yaml --set harness.enabled=true --set claude.enabled=true --set finance.enabled=true --set finance.testServer=true --set harness.channels.test.enabled=true --set login.accessAud=staging)
+helm template helm/assistant "${SON[@]}" > "$tmp/staging-on.yaml"
+cp -a helm/assistant "$tmp/q" && printf 'request edit\n' >> "$tmp/q/files/schedules/monday-spending.txt"
+helm template "$tmp/q" -f "$tmp/q/values.yaml" -f "$tmp/q/values.prod.yaml" > "$tmp/request-edit.yaml"
+python3 - "$ref" "$tmp/prod.yaml" "$tmp/prod-ref.yaml" "$tmp/new.yaml" "$tmp/old-harness.yaml" "$tmp/off.yaml" "$tmp/old.yaml" "$tmp/staging.yaml" "$tmp/staging-ref.yaml" "$tmp/real.yaml" "$tmp/staging-on.yaml" "$tmp/request-edit.yaml" <<'PY'
+import sys, yaml, json, os, subprocess, copy, tempfile, shutil
+ref = sys.argv[1]
+def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
+def loads(s): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(s) if d}
+prod, prod_ref, test, test_ref, off, off_ref, staging, staging_ref, real, staging_on, request_edit = (load(p) for p in sys.argv[2:13])
+H, HC, CC = ("Deployment", "assistant-harness"), ("ConfigMap", "assistant-harness"), ("ConfigMap", "assistant-claude")
+RC = ("Deployment", "assistant-claude")
+def pod(r): return r[H]["spec"]["template"]["spec"] if H in r else {"containers": [], "initContainers": []}
+def ctrs(r): return pod(r)["containers"] + pod(r).get("initContainers", [])
+def ctr(r, n): return next((c for c in pod(r)["containers"] if c["name"] == n), None)
+def envmap(c): return {e["name"]: e for e in (c or {}).get("env", [])}
+def val(c, k): return (envmap(c).get(k) or {}).get("value")
+def data(r): return (r.get(HC) or {}).get("data") or {}
+def setup(r):
+    v = data(r).get("harness-setup.json")
+    try: return json.loads(v) if v is not None else None
+    except ValueError: return f"not JSON: {v!r}"
+def job_keys(r): return sorted(k for k in data(r) if k.startswith("harness-job-"))
+def checksum(r, d): return r[d]["spec"]["template"]["metadata"].get("annotations", {}).get("checksum/config")
+bad = []
+RETIRED = ("VIEW_FILE", "FINANCE_NOTES_ROOT")
+VALUES = yaml.safe_load(open("helm/assistant/values.yaml"))
+JOBS = VALUES["harness"]["schedules"]
+SUB = yaml.safe_load(open("helm/assistant/values.prod.yaml"))["vault"]["subPath"]   # prod's vault is the SMB share's subPath
+
+# the profile equals today's literals, and the schedules render as the values list them, without `uses`
+PROFILE = {"timeZone": "Asia/Jakarta", "quietUntil": "07:00", "currency": {"code": "IDR", "symbol": "Rp", "locale": "id-ID", "entryUnit": 1000},
+           "figureWords": {"markers": ["rp", "idr"], "magnitudes": ["juta", "jt", "ribu", "rb", "miliar", "milyar", "triliun", "rupiah"]},
+           "paths": {"system": "Naila", "finance": "Finance", "inbox": "Inbox", "daily": "Daily", "testFolder": "Harness-test",
+                     "views": {"decisions": "Decisions.md", "usage": "Usage.md", "selfChanges": "Self-changes.md", "vaultChanges": "Vault changes.md",
+                               "changelog": "Engine changelog.md"}}}
+tag = "the profile equals today's literals"
+for label, r in (("prod", prod), ("test phase", test), ("real phase", real)):
+    s = setup(r)
+    if not isinstance(s, dict) or sorted(s) != ["profile", "schedules", "version"] or s["version"] != 1: bad.append(f"{tag}: the {label} setup file is {s!r}"); continue
+    if s["profile"] != PROFILE: bad.append(f"{tag}: the {label} profile is {s['profile']!r}, want {PROFILE!r}")
+    h = ctr(r, "harness")
+    if not (val(h, "TZ") == s["profile"]["timeZone"] == "Asia/Jakarta"): bad.append(f"{tag}: TZ {val(h, 'TZ')!r} and profile.timeZone {s['profile']['timeZone']!r}, want both Asia/Jakarta ({label})")
+    for c in ctrs(r):
+        for k in RETIRED:
+            if k in envmap(c): bad.append(f"{tag}: {c['name']} still sets {k} ({label})")
+    tag_j = "the three jobs render with enabled, without uses, the Monday review off"
+    got = s["schedules"]["jobs"] if isinstance(s.get("schedules"), dict) and sorted(s["schedules"]) == ["jobs"] else None
+    want = [{k: v for k, v in j.items() if k != "uses"} for j in JOBS]
+    if got != want: bad.append(f"{tag_j}: the {label} jobs are {got!r}, want {want!r}")
+    elif [(j["id"], j["enabled"]) for j in got] != [("monthly-review", True), ("due-today", True), ("monday-spending", False)]: bad.append(f"{tag_j}: {[(j['id'], j['enabled']) for j in got]} ({label})")
+    if job_keys(r) != ["harness-job-monday-spending.txt", "harness-job-monthly-review.txt"]: bad.append(f"{tag_j}: the {label} request keys are {job_keys(r)}")
+    for k in job_keys(r):
+        if data(r)[k] != open(f"helm/assistant/files/schedules/{k[len('harness-job-'):]}").read(): bad.append(f"{tag_j}: {k} is not files/schedules' text ({label})")
+for label, r, root in (("prod", prod, "/vault"), ("real phase", real, "/vault"), ("test phase", test, "/vault/Harness-test")):
+    h = ctr(r, "harness")
+    want = None if root != "/vault" else "Harness-test"
+    if val(h, "VAULT_EXCLUDE") != want: bad.append(f"{tag}: VAULT_EXCLUDE is {val(h, 'VAULT_EXCLUDE')!r}, want {want!r} ({label})")
+    if val(h, "VAULT_ROOT") != root: bad.append(f"{tag}: VAULT_ROOT is {val(h, 'VAULT_ROOT')!r}, want {root!r} ({label})")
+    for c in pod(r)["containers"]:
+        for m in c.get("volumeMounts", []):
+            if m["name"] == "vault" and (m["mountPath"] != root or m.get("subPath", "") != (f"{SUB}/Harness-test" if root != "/vault" else SUB)): bad.append(f"{tag}: {c['name']} mounts the vault at {m['mountPath']} subPath {m.get('subPath')!r} ({label})")
+for label, r in (("harness off", off), ("staging", staging)):
+    if data(r) or any(k in json.dumps(d) for d in r.values() for k in ("harness-setup.json", "harness-job-")): bad.append(f"{tag}: the {label} render names the setup file or a job key")
+
+# the harness checksum follows a request file; the RC lines' doesn't
+tag = "the harness checksum follows a request file, the RC lines' doesn't"
+if checksum(request_edit, H) == checksum(prod, H): bad.append(f"{tag}: the harness checksum is unchanged")
+if checksum(request_edit, RC) != checksum(prod, RC): bad.append(f"{tag}: the RC checksum changed")
+
+# the render fails on what the chart checks itself, and an enabled job's disabled service
+BASE = ["helm", "template", "helm/assistant", "-f", "helm/assistant/values.yaml", "-f", "helm/assistant/values.prod.yaml"]
+def render(*a): return subprocess.run(BASE + list(a), capture_output=True, text=True)
+def fails(p, says): return p.returncode != 0 and says in p.stderr
+def jobs_with(f):
+    js = copy.deepcopy(JOBS); f(js); return ["--set-json", f"harness.schedules={json.dumps(js)}"]
+def by(js, i): return next(j for j in js if j["id"] == i)
+ROLES = VALUES["harness"]["roleSpec"]["roles"]
+nofin_roles = copy.deepcopy(ROLES)
+for r_ in nofin_roles: r_["servers"] = [x for x in r_.get("servers") or [] if "__FINANCE_HOST__" not in json.dumps(x)]
+NOFIN = ["--set", "harness.services.finance.enabled=false", "--set", "finance.enabled=false", "--set", "finance.testServer=false", "--set-json", f"harness.roleSpec.roles={json.dumps(nofin_roles)}"]
+tag = "finance disabled with an enabled job that uses it fails the render; with the job disabled, it renders"
+if not fails(p := render(*NOFIN), "harness.schedules.monthly-review uses finance, which harness.services leaves disabled"): bad.append(f"{tag}: exit {p.returncode} {p.stderr.strip()[-300:]!r}")
+p = render(*NOFIN, *jobs_with(lambda js: by(js, "monthly-review").update(enabled=False)))
+if p.returncode != 0: bad.append(f"{tag}: with monthly-review disabled (monday-spending already off) the render fails: {p.stderr.strip()[-300:]}")
+elif [j.get("enabled") for j in ((setup(loads(p.stdout)) or {}).get("schedules") or {}).get("jobs", [])] != [False, True, False]: bad.append(f"{tag}: the setup file is {setup(loads(p.stdout))!r}")
+if not fails(p := render(*NOFIN, *jobs_with(lambda js: (by(js, "monthly-review").update(enabled=False), by(js, "monday-spending").update(enabled=True)))),
+             "harness.schedules.monday-spending uses finance, which harness.services leaves disabled"): bad.append(f"{tag}: the Monday review enabled: exit {p.returncode} {p.stderr.strip()[-300:]!r}")
+tag = "a bad profile path and a missing request file fail the render"
+EXTRA = {"id": "weekly", "kind": "ask", "enabled": False, "role": "naila", "asks": "finance-bookkeeper", "label": "weekly", "heading": "Weekly:",
+         "when": {"weekday": "Fri"}, "request": "harness-job-weekly.txt", "needs": [], "phase": "any"}
+for what, args, says in (
+        ("finance ../x", ["--set-json", 'harness.profile.paths.finance="../x"'], "harness.profile.paths.finance must be a plain relative path"),
+        ("an empty daily segment", ["--set-json", 'harness.profile.paths.daily="Notes//Daily"'], "harness.profile.paths.daily must be a plain relative path"),
+        ("a hidden inbox", ["--set-json", 'harness.profile.paths.inbox=".inbox"'], "harness.profile.paths.inbox must be a plain relative path"),
+        ("no testFolder", ["--set-json", "harness.profile.paths.testFolder=null"], "harness.profile.paths.testFolder must be a plain relative path"),
+        ("a nested testFolder", ["--set-json", 'harness.profile.paths.testFolder="Tests/Harness"'], "harness.profile.paths.testFolder must be one folder name of letters, digits and . _ -"),
+        ("a system folder with a space", ["--set-json", 'harness.profile.paths.system="My Naila"'], "harness.profile.paths.system must be one folder name of letters, digits and . _ -"),
+        ("a missing request file", jobs_with(lambda js: js.append(EXTRA)), "harness.schedules.weekly.request files/schedules/weekly.txt is missing"),
+        ("a request other than harness-job-<id>.txt", jobs_with(lambda js: by(js, "monday-spending").update(request="harness-job-monday.txt")),
+         "harness.schedules.monday-spending.request must be harness-job-monday-spending.txt"),
+        ("a job without an id", jobs_with(lambda js: js.append({k: v for k, v in EXTRA.items() if k != "id"})), "harness.schedules[3] has no id"),
+        ("a job listed twice", jobs_with(lambda js: js.append(copy.deepcopy(js[1]))), "harness.schedules: due-today is listed twice"),
+        ("enabled yes", jobs_with(lambda js: by(js, "due-today").update(enabled="yes")), "harness.schedules.due-today.enabled must be true or false"),
+        ("no enabled", jobs_with(lambda js: by(js, "due-today").pop("enabled")), "harness.schedules.due-today.enabled must be true or false"),
+        ("profile.timeZone", ["--set", "harness.profile.timeZone=UTC"], "harness.profile.timeZone is set: the time zone is the top-level tz (one source)")):
+    if not fails(p := render(*args), says): bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()[-300:]!r}, want a failed render saying {says!r}")
+tag = "a moved test folder moves the test phase's vault root, mount and the real phase's VAULT_EXCLUDE"
+for ph, k, want in (("test", "VAULT_ROOT", "/vault/Probe-x"), ("real", "VAULT_EXCLUDE", "Probe-x")):
+    p = render("--set", f"harness.phase={ph}", "--set", "harness.profile.paths.testFolder=Probe-x")
+    if p.returncode != 0: bad.append(f"{tag}: the render fails ({ph}): {p.stderr.strip()[-300:]}"); continue
+    r = loads(p.stdout)
+    if val(ctr(r, "harness"), k) != want: bad.append(f"{tag}: {k} is {val(ctr(r, 'harness'), k)!r}, want {want!r}")
+    if ph == "test":
+        mounts = {(c["name"], m["mountPath"], m.get("subPath")) for c in pod(r)["containers"] for m in c.get("volumeMounts", []) if m["name"] == "vault"}
+        if mounts != {("harness", "/vault/Probe-x", f"{SUB}/Probe-x"), ("docs", "/vault/Probe-x", f"{SUB}/Probe-x")}: bad.append(f"{tag}: the vault mounts are {sorted(mounts)}")
+        if "/vault/Probe-x/Finance/" not in data(r).get("harness-workers.json", ""): bad.append(f"{tag}: the worker spec's notes root does not follow it")
+
+# the whole render, as at <git-ref> but for the setup and job keys, the removed VIEW_FILE and FINANCE_NOTES_ROOT and the
+# harness checksum (Task 12's own change: once <git-ref> renders harness-setup.json, there is nothing of it left to compare)
+def strip(r, was):
+    r = copy.deepcopy(r)
+    if HC in r:
+        for k in list(r[HC]["data"]):
+            if k == "harness-setup.json" or k.startswith("harness-job-"): del r[HC]["data"][k]
+    if H in r:
+        t = r[H]["spec"]["template"]
+        t["metadata"].get("annotations", {}).pop("checksum/config", None)
+        for c in t["spec"]["containers"]:
+            if c["name"] == "harness" and was: c["env"] = [e for e in c.get("env", []) if e["name"] not in RETIRED]
+    return r
+diffs = (("prod", prod, prod_ref, True), ("test phase", test, test_ref, True), ("harness off", off, off_ref, False), ("staging", staging, staging_ref, False))
+if setup(prod_ref) is not None:
+    print(f"NOTICE: the {ref} render already has harness-setup.json: the whole-render diff against it (Task 12's change alone) was skipped")
+    diffs = ()
+for label, a, b, on in diffs:
+    tag = f"the {label} render differs from {ref}'s only in the setup and job keys, the removed VIEW_FILE and FINANCE_NOTES_ROOT, and the checksum"
+    if on:
+        if setup(a) is None: bad.append(f"{tag}: no harness-setup.json")
+        if sorted(k for k in envmap(ctr(b, "harness")) if k in RETIRED) != sorted(RETIRED): bad.append(f"{tag}: the ref's harness container lacks {RETIRED}")
+    sa, sb = strip(a, False), strip(b, True)
+    for k in sorted(set(sa) | set(sb)):
+        if sa.get(k) != sb.get(k): bad.append(f"{tag}: {k[0]}/{k[1]} differs{'' if k in sa and k in sb else ' (on one side only)'}")
+
+# naila's own setup parser and start checks (its built dist) on the rendered /config, and the expanded requests against b5f5bbf's
+nw = os.environ.get("NAILA_WORKTREE", "")
+dist, vdist = f"{nw}/packages/harness/dist", f"{nw}/packages/vault-mcp/dist"
+golden = f"{nw}/packages/harness/test/fixtures/schedule-b5f5bbf.json"
+HAVE = nw and all(os.path.isfile(f) for f in (f"{dist}/setup.js", f"{dist}/schedules.js", f"{dist}/workers-spec.js", f"{vdist}/layout.js", golden))
+if not HAVE:
+    print("NOTICE: NAILA_WORKTREE has no built dist/setup.js (and the b5f5bbf schedule golden): naila's parseSetup and checkSchedules were not run on the render")
+else:
+    JS = r"""
+const [dist, vdist, dir, envJson] = process.argv.slice(1)
+const { readFileSync } = await import('node:fs')
+const { join } = await import('node:path')
+const { parseSetup, installSetup, checkSetupEnv, checkProfileServices } = await import(`${dist}/setup.js`)
+const { checkSchedules, jobRequest } = await import(`${dist}/schedules.js`)
+const { loadWorkerSpecs, serversOf } = await import(`${dist}/workers-spec.js`)
+const { installRoster, rosterFrom } = await import(`${dist}/roster.js`)
+const { checkSeeds } = await import(`${dist}/capabilities.js`)
+const { parseServicesConfig, checkServiceUse } = await import(`${dist}/services/config.js`)
+const { vaultLayout, vaultPathsEnv } = await import(`${vdist}/layout.js`)
+const env = JSON.parse(envJson)
+const specs = loadWorkerSpecs(join(dir, 'harness-workers.json'))
+const r = rosterFrom(specs)
+installRoster(r)
+checkSeeds(specs)
+const enabled = parseServicesConfig(env.HARNESS_SERVICES)
+checkServiceUse(specs, enabled)
+const file = join(dir, 'harness-setup.json')
+const s = parseSetup(readFileSync(file, 'utf8'), file, (name) => readFileSync(join(dir, name), 'utf8'))
+installSetup(s)
+checkSetupEnv(s.profile, env)
+checkProfileServices(s.profile, enabled)
+checkSchedules(s.jobs, r, enabled, (w) => serversOf(specs, w, enabled.ids))
+const job = (id) => s.jobs.find((j) => j.id === id)
+const L = vaultLayout(s.profile.paths)
+console.log(JSON.stringify({ jobs: s.jobs.map((j) => [j.id, j.kind, j.enabled]), trash: L.trash, vaultPathsEnv: vaultPathsEnv(s.profile.paths),
+  monthly: [jobRequest(job('monthly-review'), { month: '2026-10', prev: '2026-09' }, s.profile), jobRequest(job('monthly-review'), { month: '2027-01', prev: '2026-12' }, s.profile)],
+  monday: jobRequest(job('monday-spending'), {}, s.profile) }))
+"""
+    def naila(r):
+        d = tempfile.mkdtemp()
+        try:
+            for cm in (CC, HC):
+                for k, v in ((r.get(cm) or {}).get("data") or {}).items(): open(os.path.join(d, k), "w").write(v)
+            env = {k: e["value"] for k, e in envmap(ctr(r, "harness")).items() if "value" in e}
+            return subprocess.run(["node", "--input-type=module", "-e", JS, dist, vdist, d, json.dumps(env)], capture_output=True, text=True)
+        finally: shutil.rmtree(d)
+    tag = "the prod setup file parses with the built image"
+    out = {}
+    for label, r in (("prod", prod), ("test phase", test), ("real phase", real), ("staging (harness on)", staging_on)):
+        p = naila(r)
+        if p.returncode != 0: bad.append(f"{tag}: the {label} render is refused: {(p.stderr or p.stdout).strip()[-400:]}"); continue
+        out[label] = json.loads(p.stdout)
+        if out[label]["jobs"] != [["monthly-review", "run", True], ["due-today", "digest", True], ["monday-spending", "ask", False]]: bad.append(f"{tag}: the {label} jobs parse as {out[label]['jobs']}")
+    # the check bites: the image refuses a TZ other than the profile's, a retired variable, and a bad setup
+    tag = "the built image refuses a TZ other than the profile's, VIEW_FILE and a job needing a capability its role can't hold"
+    bent = copy.deepcopy(prod); next(e for e in ctr(bent, "harness")["env"] if e["name"] == "TZ")["value"] = "UTC"
+    if "differs from the profile's timeZone" not in naila(bent).stderr: bad.append(f"{tag}: TZ UTC is not refused")
+    bent = copy.deepcopy(prod); ctr(bent, "harness")["env"].append({"name": "VIEW_FILE", "value": "/vault/Naila/Decisions.md"})
+    if "VIEW_FILE is retired" not in naila(bent).stderr: bad.append(f"{tag}: VIEW_FILE is not refused")
+    bent = copy.deepcopy(prod); s_ = setup(bent)
+    if isinstance(s_, dict): s_["schedules"]["jobs"][0]["needs"] = ["cluster.read"]; bent[HC]["data"]["harness-setup.json"] = json.dumps(s_)
+    if "schedules: monthly-review: needs cluster.read, which finance-advisor can't hold" not in naila(bent).stderr: bad.append(f"{tag}: the job's need is not refused: {naila(bent).stderr.strip()[-300:]!r}")
+    if "prod" in out:
+        o = out["prod"]
+        tag = "the prod render's trash is Naila/Trash and its paths need no VAULT_PATHS"
+        if o["trash"] != "Naila/Trash" or o["vaultPathsEnv"] != {}: bad.append(f"{tag}: trash {o['trash']!r}, vaultPathsEnv {o['vaultPathsEnv']!r}")
+        tag = "the prod render's requests expand to b5f5bbf's texts"
+        g = json.load(open(golden))
+        if o["monthly"] != [g["texts"]["reviewRequest|2026-10|2026-09"], g["texts"]["reviewRequest|2027-01|2026-12"]]: bad.append(f"{tag}: the monthly review's requests differ from schedule-b5f5bbf.json's texts")
+        asks = [c["request"] for t in g["ticks"]["real-review"] for c in t["calls"] if c.get("call") == "ask"]
+        if not asks or any(a != o["monday"] for a in asks) or o["monday"] != g["texts"]["mondayRequest"]: bad.append(f"{tag}: the Monday request {o['monday']!r} is not the real-review trace's ask request {asks[:1]!r}")
+if bad:
+    print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
+print("setup: harness-setup.json is the owner's profile (today's literals) and the three jobs" + (", naila's parseSetup and start checks accept it, its requests are b5f5bbf's" if HAVE else "")
+      + "; the test folder, TZ and views follow it, VIEW_FILE and FINANCE_NOTES_ROOT are gone; bad config fails"
+      + (f"; the render is {ref}'s but for those" if diffs else ""))
 PY

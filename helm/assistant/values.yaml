@@ -81,6 +81,67 @@ harness:
     docs: { enabled: true, writeCredentials: [] }
     cluster: { enabled: true, writeCredentials: [] }
     web: { enabled: true, writeCredentials: [] }
+  # The owner's profile (pure-core phase 4; naila packages/harness/src/setup.ts): templates/harness.yaml renders it, with the
+  # schedules below, as harness-setup.json ({"version":1,"profile":…,"schedules":{"jobs":[…]}}) in ConfigMap assistant-harness;
+  # the core refuses a setup it can't parse. timeZone is the top-level tz (one source: TZ is rendered from it too). paths: the
+  # vault folders (the core's own `system` folder with its views, trash and workspaces; the finance notes; the inbox and daily
+  # notes; the test phase's folder), each a plain relative path, system and testFolder one folder name of letters, digits and
+  # . _ - (the render fails otherwise). The test phase's vault root is /vault/<testFolder>; the real phase leaves that folder
+  # out (VAULT_EXCLUDE). figureWords are added to the core's built-in list, never replacing it.
+  profile:
+    quietUntil: "07:00"
+    currency: { code: IDR, symbol: Rp, locale: id-ID, entryUnit: 1000 }
+    figureWords: { markers: [rp, idr], magnitudes: [juta, jt, ribu, rb, miliar, milyar, triliun, rupiah] }
+    paths:
+      system: Naila
+      finance: Finance
+      inbox: Inbox
+      daily: Daily
+      testFolder: Harness-test
+      views: { decisions: Decisions.md, usage: Usage.md, selfChanges: Self-changes.md, vaultChanges: Vault changes.md, changelog: Engine changelog.md }
+  # The jobs the core starts on its own (pure-core phase 4; naila packages/harness/src/schedules-file.ts), rendered into
+  # harness-setup.json in this order. Ids are permanent: a job's sent marks are keyed by its id, so a renamed job runs its
+  # current period again. `enabled` is required (true or false). A job with a `request` (run and ask jobs) has its text in
+  # files/schedules/<id>.txt, rendered beside the setup file as harness-job-<id>.txt, the name `request` must hold. `uses` is
+  # chart-only (dropped from the render): the services an enabled job needs; the render fails when harness.services leaves
+  # one disabled. Everything else (kinds, roles, needs, windows, outputs) the core checks at start.
+  schedules:
+    - id: monthly-review
+      kind: run
+      enabled: true
+      role: finance-advisor
+      label: monthly review
+      when: { monthDays: [2, 7], at: "09:00" }
+      request: harness-job-monthly-review.txt
+      includePending: true
+      output: { server: finance-notes, tool: write_note, path: "{paths.finance}/Reviews/{month}.md" }
+      needs: [budget.read, budget.write-plans]
+      phase: real
+      uses: [finance]
+    - id: due-today
+      kind: digest
+      enabled: true
+      role: naila
+      label: due-today digest
+      when: { daily: true }
+      digest: { service: vault, kind: due-today, maxItems: 30 }
+      needs: []
+      phase: any
+      uses: [vault]
+    # Off, as production has always had it (REVIEW was never set). On: naila asks the bookkeeper every Monday and posts its
+    # answer under the heading.
+    - id: monday-spending
+      kind: ask
+      enabled: false
+      role: naila
+      asks: finance-bookkeeper
+      label: Monday review
+      heading: "Monday review, spending:"
+      when: { weekday: Mon }
+      request: harness-job-monday-spending.txt
+      needs: [budget.read]
+      phase: any
+      uses: [finance]
   # The roles config (naila packages/harness/src/workers-spec.ts, ROLES_SPEC_VERSION 3): templates/harness.yaml renders it as
   # harness-workers.json beside each role's instructions (/config), the core installs its roles from it at start (in this
   # order, the lead first), and the claude-code adapter's prepare.js writes the agent files from it. `roles` is an ordered

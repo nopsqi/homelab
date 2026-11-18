@@ -1,0 +1,1 @@
+Monday review, read-only: spending by category for the last 7 days and the 7 days before, whole rupiah, one line per category. Do not file plans or change anything.

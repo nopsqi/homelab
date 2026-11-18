@@ -6,8 +6,11 @@
        harness-workers.json for harness.phase: {"version":3,"roles":[…],"retired":[…],"summary":…}, the roles in values
        order, each role's `paths` (its path grants) when it has them. One source per value: a role's model is its workers[].model, its description its files/agents/<id>.md
        frontmatter's, its ceiling files/modes/harness/<id>.<ceiling>.md split on ", ". The markers __FINANCE_HOST__ and
-       __VAULT_ROOT__ resolve to this phase's finance server and vault root (Helm renders no values, so a template local
-       can't be written into them). Called with (dict "root" $ "financeOn" <services.finance enabled>), worked out once in
+       __VAULT_ROOT__ resolve to this phase's finance server and vault root, and __FINANCE_FOLDER__ to the profile's finance
+       folder (Helm renders no values, so a template local can't be written into them). A stdio server run from vault-mcp's
+       dist gets VAULT_PATHS (the profile's paths) when they are not production's, as the core gives its own vault servers
+       (vault-mcp layout.ts vaultPathsEnv: none for DEFAULT_VAULT_PATHS, so production's spec is unchanged). Called with
+       (dict "root" $ "financeOn" <services.finance enabled> "paths" <harness.profile.paths, checked>), worked out once in
        the body. Fails the render on what the core would refuse at start: a duplicate id, no lead or two, a lead not listed
        first, a retired id that roles also lists, an unresolved marker, a server holding a $. Two chart-only checks besides:
        a server holding a write credential of any service harness.services lists, enabled or not (P11: a disabled service's
@@ -20,7 +23,11 @@
 {{- $h := $root.Values.harness }}
 {{- $test := eq $h.phase "test" }}
 {{- $finance := ternary "assistant-finance-test" "assistant-finance" $test }}
-{{- $vaultRoot := ternary "/vault/Harness-test" "/vault" $test }}
+{{- $vaultRoot := ternary (printf "/vault/%s" (toString $h.profile.paths.testFolder)) "/vault" $test }}   {{- /* the body checked testFolder */}}
+{{- $paths := .paths }}
+{{- /* vault-mcp layout.ts DEFAULT_VAULT_PATHS, verbatim (tests/render-modes.sh checks it against naila's built layout.js) */ -}}
+{{- $defaultPaths := dict "system" "Naila" "finance" "Finance" "inbox" "Inbox" "daily" "Daily" "testFolder" "Harness-test" "views" (dict "decisions" "Decisions.md" "usage" "Usage.md" "selfChanges" "Self-changes.md" "vaultChanges" "Vault changes.md" "changelog" "Engine changelog.md") }}
+{{- $vaultPaths := ternary "" (toJson $paths) (eq (toJson $paths) (toJson $defaultPaths)) }}
 {{- $creds := list }}
 {{- range $id, $e := $h.services | default dict }}{{ if and (kindIs "map" $e) (kindIs "slice" $e.writeCredentials) }}{{ range $e.writeCredentials }}{{ $creds = append $creds (toString .) }}{{ end }}{{ end }}{{ end }}
 {{- $ids := list }}
@@ -62,6 +69,19 @@
 {{- $_ := set $x "description" $d }}
 {{- $_ := set $x "ceiling" (splitList ", " (trimSuffix "\n" $tools)) }}
 {{- end }}
+{{- if $vaultPaths }}
+{{- $servers := list }}
+{{- range $x.servers }}
+{{- $sv := deepCopy . }}
+{{- if and (eq (toString $sv.transport) "stdio") (kindIs "slice" $sv.args) (gt (len $sv.args) 0) (hasPrefix "/naila/packages/vault-mcp/dist/" (toString (first $sv.args))) }}
+{{- $env := ternary (deepCopy ($sv.env | default dict)) dict (kindIs "map" $sv.env) }}
+{{- $_ := set $env "VAULT_PATHS" $vaultPaths }}
+{{- $_ := set $sv "env" $env }}
+{{- end }}
+{{- $servers = append $servers $sv }}
+{{- end }}
+{{- $_ := set $x "servers" $servers }}
+{{- end }}
 {{- range $x.servers }}
 {{- $j := toJson . }}
 {{- if contains "$" $j }}{{ fail (printf "%s: a server holds a $" $at) }}{{ end }}
@@ -70,7 +90,7 @@
 {{- end }}
 {{- $roles = append $roles $x }}
 {{- end }}
-{{- $json := printf "{\"version\":3,\"roles\":%s,\"retired\":%s,\"summary\":%s}" (toJson $roles) (toJson $retired) (toJson $h.roleSpec.summary) | replace "__FINANCE_HOST__" $finance | replace "__VAULT_ROOT__" $vaultRoot }}
+{{- $json := printf "{\"version\":3,\"roles\":%s,\"retired\":%s,\"summary\":%s}" (toJson $roles) (toJson $retired) (toJson $h.roleSpec.summary) | replace "__FINANCE_HOST__" $finance | replace "__VAULT_ROOT__" $vaultRoot | replace "__FINANCE_FOLDER__" (toString $paths.finance) }}
 {{- with regexFind "__[A-Z_]+__" $json }}{{ fail (printf "harness.roleSpec: the marker %s is not resolved" .) }}{{ end }}
 {{- $json }}
 {{- end }}
@@ -173,14 +193,67 @@
 {{- range $ch := $chs }}{{ with $ch.gateway }}
 {{- $gws = append $gws $ch.name }}
 {{- end }}{{ end }}
-{{- $vaultRoot := ternary "/vault/Harness-test" "/vault" $test }}
+{{- /* The owner's profile and the schedules (pure-core phase 4; naila packages/harness/src/setup.ts and schedules-file.ts) as
+       harness-setup.json: {"version":1,"profile":{"timeZone":<tz>,…},"schedules":{"jobs":[…]}}, the profile's time zone the
+       top-level tz (one source with TZ), the jobs in values order, each without its chart-only `uses`, and a job's request
+       text (files/schedules/<id>.txt) the key harness-job-<id>.txt beside it. The chart checks only what it uses itself or
+       alone knows: the vault folders' shape (testFolder is the test phase's mount and VAULT_EXCLUDE), a job's id, enabled and
+       request file, and the services an enabled job uses; the core refuses everything else at start (render-modes runs its
+       parseSetup and checkSchedules on the render). */ -}}
+{{- if not (kindIs "map" ($h.profile | default dict)) }}{{ fail "harness.profile must be a map (quietUntil, currency, figureWords, paths)" }}{{ end }}
+{{- $prof := deepCopy ($h.profile | default dict) }}
+{{- if hasKey $prof "timeZone" }}{{ fail "harness.profile.timeZone is set: the time zone is the top-level tz (one source)" }}{{ end }}
+{{- $paths := ternary $prof.paths dict (kindIs "map" $prof.paths) }}
+{{- range $k := list "system" "finance" "inbox" "daily" "testFolder" }}
+{{- $v := index $paths $k }}
+{{- $ok := kindIs "string" $v }}
+{{- if $ok }}{{ range splitList "/" $v }}{{ if not (regexMatch "^[A-Za-z0-9 _-][A-Za-z0-9 ._-]*$" .) }}{{ $ok = false }}{{ end }}{{ end }}{{ end }}
+{{- if not $ok }}{{ fail (printf "harness.profile.paths.%s must be a plain relative path (segments of letters, digits, space, . _ -; no empty, . or .. segment; no leading dot), got %s" $k (toJson $v)) }}{{ end }}
+{{- if and (has $k (list "system" "testFolder")) (not (regexMatch "^[A-Za-z0-9_-][A-Za-z0-9._-]*$" $v)) }}{{ fail (printf "harness.profile.paths.%s must be one folder name of letters, digits and . _ - (no leading dot), got %s" $k (toJson $v)) }}{{ end }}
+{{- /* vault-mcp protects Workers/ (the soft workers' definitions), by case: no profile folder is it or lies in it (setup.ts) */ -}}
+{{- if or (eq (lower $v) "workers") (hasPrefix "workers/" (lower $v)) }}{{ fail (printf "harness.profile.paths.%s is or lies under Workers/ (the soft workers' protected folder), got %s" $k (toJson $v)) }}{{ end }}
+{{- end }}
+{{- $testFolder := $paths.testFolder }}
+{{- $_ := set $prof "timeZone" (toString .Values.tz) }}
+{{- $jobs := list }}
+{{- $jobIds := list }}
+{{- $requests := dict }}
+{{- range $i, $j := $h.schedules | default list }}
+{{- if not (and (kindIs "map" $j) $j.id) }}{{ fail (printf "harness.schedules[%d] has no id" $i) }}{{ end }}
+{{- $id := toString $j.id }}
+{{- /* the core's job id (schedules-file.ts JOB_ID_RE): the chart builds a ConfigMap key and a file path from it */ -}}
+{{- if not (regexMatch "^[a-z][a-z0-9-]{0,31}$" $id) }}{{ fail (printf "harness.schedules[%d].id %s is not a job id (^[a-z][a-z0-9-]{0,31}$)" $i (toJson $j.id)) }}{{ end }}
+{{- if has $id $jobIds }}{{ fail (printf "harness.schedules: %s is listed twice" $id) }}{{ end }}
+{{- $jobIds = append $jobIds $id }}
+{{- $at := printf "harness.schedules.%s" $id }}
+{{- if not (kindIs "bool" $j.enabled) }}{{ fail (printf "%s.enabled must be true or false" $at) }}{{ end }}
+{{- $x := omit $j "uses" }}
+{{- if hasKey $j "request" }}
+{{- $name := printf "harness-job-%s.txt" $id }}
+{{- $file := printf "files/schedules/%s.txt" $id }}
+{{- if ne (toString $j.request) $name }}{{ fail (printf "%s.request must be %s (its text is %s), got %s" $at $name $file (toJson $j.request)) }}{{ end }}
+{{- $text := $.Files.Get $file }}
+{{- if not $text }}{{ fail (printf "%s.request %s is missing" $at $file) }}{{ end }}
+{{- $_ := set $requests $name $text }}
+{{- $_ := set $x "request" $name }}
+{{- end }}
+{{- $uses := $j.uses | default list }}
+{{- if not (kindIs "slice" $uses) }}{{ fail (printf "%s.uses must be a list of service ids" $at) }}{{ end }}
+{{- range $uses }}
+{{- if not (hasKey ($h.services | default dict) (toString .)) }}{{ fail (printf "%s uses %s, which harness.services does not list" $at (toString .)) }}{{ end }}
+{{- if and $j.enabled (not (hasKey $on (toString .))) }}{{ fail (printf "%s uses %s, which harness.services leaves disabled" $at (toString .)) }}{{ end }}
+{{- end }}
+{{- $jobs = append $jobs $x }}
+{{- end }}
+{{- $setupJson := printf "{\"version\":1,\"profile\":%s,\"schedules\":{\"jobs\":%s}}" (toJson $prof) (toJson $jobs) }}
+{{- $vaultRoot := ternary (printf "/vault/%s" $testFolder) "/vault" $test }}
 {{- $vaultSub := "" }}
-{{- if eq .Values.vault.mode "smb" }}{{ $vaultSub = ternary (printf "%s/Harness-test" .Values.vault.subPath) .Values.vault.subPath $test }}
-{{- else if $test }}{{ $vaultSub = "Harness-test" }}{{ end }}
+{{- if eq .Values.vault.mode "smb" }}{{ $vaultSub = ternary (printf "%s/%s" .Values.vault.subPath $testFolder) .Values.vault.subPath $test }}
+{{- else if $test }}{{ $vaultSub = $testFolder }}{{ end }}
 {{- $finance := ternary "assistant-finance-test" "assistant-finance" $test }}
 {{- $tokenKey := ternary "MCP_FINANCE_TEST_TOKEN" "MCP_FINANCE_TOKEN" $test }}
 {{- $readKey := ternary "MCP_FINANCE_TEST_READ_TOKEN" "MCP_FINANCE_READ_TOKEN" $test }}
-{{- $workerSpec := include "assistant.workerSpec" (dict "root" . "financeOn" $financeOn) }}
+{{- $workerSpec := include "assistant.workerSpec" (dict "root" . "financeOn" $financeOn "paths" $paths) }}
 # Harness mode as its own pod: the core (packages/harness) runs each worker as a one-shot Claude Code run with this pod's
 # own Max login (naila.nopsqi.dev/harness), each channel's gateway (harness.channels) carries the user's messages and
 # confirmations, and the core alone carries out an approved decision. The RC pod (assistant-claude) is not touched.
@@ -196,6 +269,14 @@ data:
   # harness-* keys, beside it in /config.
   harness-workers.json: |
     {{ $workerSpec }}
+  # The owner's profile and the schedules (pure-core phase 4): the core reads it at start (HARNESS_SETUP's default,
+  # /config/harness-setup.json), and each job's request text beside it.
+  harness-setup.json: |
+    {{ $setupJson }}
+{{- range $k, $t := $requests }}
+  {{ $k }}: |
+{{ $t | indent 4 }}
+{{- end }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -221,7 +302,7 @@ spec:
       labels: { app: assistant-harness }
       # What the core and its runs are built from at start, including what harness-start.sh takes from the RC ConfigMap
       # (settings.json, finance-test-note, the harness-* keys) and the worker spec. Not the RC-only mode files: an RC edit doesn't restart the harness.
-      annotations: { checksum/config: {{ print (.Files.Get "files/CLAUDE.md") (include "assistant.agentFiles" .) (include "assistant.harnessModeFiles" .) (toJson .Values.workers) (.Files.Get "files/harness-settings.json") (.Files.Get "files/harness-write-guard.mjs") (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/harness-start.sh") (include "assistant.settingsJson" .) (include "assistant.testCopyNote" .) (toJson $h) $workerSpec .Values.claude.version .Values.finance.testBudget | sha256sum | trunc 12 | quote }} }
+      annotations: { checksum/config: {{ print (.Files.Get "files/CLAUDE.md") (include "assistant.agentFiles" .) (include "assistant.harnessModeFiles" .) (toJson .Values.workers) (.Files.Get "files/harness-settings.json") (.Files.Get "files/harness-write-guard.mjs") (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/harness-start.sh") (include "assistant.settingsJson" .) (include "assistant.testCopyNote" .) (toJson $h) $workerSpec $setupJson (toJson $requests) .Values.claude.version .Values.finance.testBudget | sha256sum | trunc 12 | quote }} }
     spec:
       automountServiceAccountToken: false
       shareProcessNamespace: true   # the login sidecar sees the core (status) and restarts it after a login; pause reaps exited runs
@@ -285,10 +366,8 @@ spec:
             - { name: MCP_FINANCE_URL, value: http://{{ $finance }}:8080/mcp }
             {{- end }}
             - { name: VAULT_ROOT, value: {{ $vaultRoot }} }
-            - { name: FINANCE_NOTES_ROOT, value: {{ $vaultRoot }}/Finance }
-            - { name: VIEW_FILE, value: {{ $vaultRoot }}/Naila/Decisions.md }
             {{- if not $test }}
-            - { name: VAULT_EXCLUDE, value: Harness-test }   # the test phase's folder: out of the real phase's vault tools (Ruling 29)
+            - { name: VAULT_EXCLUDE, value: {{ $testFolder | quote }} }   # the test phase's folder: out of the real phase's vault tools (Ruling 29)
             {{- end }}
             # All three bearers stay in the core's env (its own loop opens the workers' servers with the read-only one and
             # the ops one); harness-start.sh also puts those two into the agent files for Claude Code runs, and unsets each

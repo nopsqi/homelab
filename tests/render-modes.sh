@@ -112,7 +112,8 @@
 #  the Monday review off) and the job request keys in ConfigMap assistant-harness; naila's parseSetup and start checks
 #  (NAILA_WORKTREE's built dist) accept the prod, test-phase and staging setups, and the requests expand to b5f5bbf's texts;
 #  TZ, the test phase's vault root and VAULT_EXCLUDE follow it, VIEW_FILE and FINANCE_NOTES_ROOT are gone; bad profile paths,
-#  request files and job ids, and an enabled job's disabled service, fail the render; the render is <git-ref>'s but for those
+#  request files, job ids (the core's shape) and uses, a profile that is no map, and an enabled job's disabled service, fail
+#  the render; the render is <git-ref>'s but for those
 #  (skipped with a notice once <git-ref> renders harness-setup.json itself).
 set -euo pipefail
 ref="${1:-origin/master}"
@@ -2923,7 +2924,15 @@ for what, args, says in (
         ("a job listed twice", jobs_with(lambda js: js.append(copy.deepcopy(js[1]))), "harness.schedules: due-today is listed twice"),
         ("enabled yes", jobs_with(lambda js: by(js, "due-today").update(enabled="yes")), "harness.schedules.due-today.enabled must be true or false"),
         ("no enabled", jobs_with(lambda js: by(js, "due-today").pop("enabled")), "harness.schedules.due-today.enabled must be true or false"),
-        ("profile.timeZone", ["--set", "harness.profile.timeZone=UTC"], "harness.profile.timeZone is set: the time zone is the top-level tz (one source)")):
+        ("profile.timeZone", ["--set", "harness.profile.timeZone=UTC"], "harness.profile.timeZone is set: the time zone is the top-level tz (one source)"),
+        # review follow-up (Minors 2-4): the core's job id shape, a clear uses message, a profile that is no map
+        ("a job id with a space", jobs_with(lambda js: by(js, "monday-spending").update(id="monday spending")), 'harness.schedules[2].id "monday spending" is not a job id (^[a-z][a-z0-9-]{0,31}$)'),
+        ("a job id with a slash", jobs_with(lambda js: by(js, "monday-spending").update(id="x/y")), 'harness.schedules[2].id "x/y" is not a job id'),
+        ("a capitalised job id", jobs_with(lambda js: by(js, "due-today").update(id="Due-today")), 'harness.schedules[1].id "Due-today" is not a job id'),
+        ("uses a service harness.services doesn't list", jobs_with(lambda js: by(js, "due-today").update(uses=["vualt"])), "harness.schedules.due-today uses vualt, which harness.services does not list"),
+        ("a disabled job using an unlisted service", jobs_with(lambda js: by(js, "monday-spending").update(uses=["fiance"])), "harness.schedules.monday-spending uses fiance, which harness.services does not list"),
+        ("uses not a list", jobs_with(lambda js: by(js, "due-today").update(uses="vault")), "harness.schedules.due-today.uses must be a list of service ids"),
+        ("a profile that is no map", ["--set-json", 'harness.profile="Asia/Jakarta"'], "harness.profile must be a map (quietUntil, currency, figureWords, paths)")):
     if not fails(p := render(*args), says): bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()[-300:]!r}, want a failed render saying {says!r}")
 tag = "a moved test folder moves the test phase's vault root, mount and the real phase's VAULT_EXCLUDE"
 for ph, k, want in (("test", "VAULT_ROOT", "/vault/Probe-x"), ("real", "VAULT_EXCLUDE", "Probe-x")):

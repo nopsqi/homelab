@@ -180,6 +180,7 @@
        alone knows: the vault folders' shape (testFolder is the test phase's mount and VAULT_EXCLUDE), a job's id, enabled and
        request file, and the services an enabled job uses; the core refuses everything else at start (render-modes runs its
        parseSetup and checkSchedules on the render). */ -}}
+{{- if not (kindIs "map" ($h.profile | default dict)) }}{{ fail "harness.profile must be a map (quietUntil, currency, figureWords, paths)" }}{{ end }}
 {{- $prof := deepCopy ($h.profile | default dict) }}
 {{- if hasKey $prof "timeZone" }}{{ fail "harness.profile.timeZone is set: the time zone is the top-level tz (one source)" }}{{ end }}
 {{- $paths := ternary $prof.paths dict (kindIs "map" $prof.paths) }}
@@ -198,6 +199,8 @@
 {{- range $i, $j := $h.schedules | default list }}
 {{- if not (and (kindIs "map" $j) $j.id) }}{{ fail (printf "harness.schedules[%d] has no id" $i) }}{{ end }}
 {{- $id := toString $j.id }}
+{{- /* the core's job id (schedules-file.ts JOB_ID_RE): the chart builds a ConfigMap key and a file path from it */ -}}
+{{- if not (regexMatch "^[a-z][a-z0-9-]{0,31}$" $id) }}{{ fail (printf "harness.schedules[%d].id %s is not a job id (^[a-z][a-z0-9-]{0,31}$)" $i (toJson $j.id)) }}{{ end }}
 {{- if has $id $jobIds }}{{ fail (printf "harness.schedules: %s is listed twice" $id) }}{{ end }}
 {{- $jobIds = append $jobIds $id }}
 {{- $at := printf "harness.schedules.%s" $id }}
@@ -212,7 +215,12 @@
 {{- $_ := set $requests $name $text }}
 {{- $_ := set $x "request" $name }}
 {{- end }}
-{{- if $j.enabled }}{{ range $j.uses | default list }}{{ if not (hasKey $on (toString .)) }}{{ fail (printf "%s uses %s, which harness.services leaves disabled" $at (toString .)) }}{{ end }}{{ end }}{{ end }}
+{{- $uses := $j.uses | default list }}
+{{- if not (kindIs "slice" $uses) }}{{ fail (printf "%s.uses must be a list of service ids" $at) }}{{ end }}
+{{- range $uses }}
+{{- if not (hasKey ($h.services | default dict) (toString .)) }}{{ fail (printf "%s uses %s, which harness.services does not list" $at (toString .)) }}{{ end }}
+{{- if and $j.enabled (not (hasKey $on (toString .))) }}{{ fail (printf "%s uses %s, which harness.services leaves disabled" $at (toString .)) }}{{ end }}
+{{- end }}
 {{- $jobs = append $jobs $x }}
 {{- end }}
 {{- $setupJson := printf "{\"version\":1,\"profile\":%s,\"schedules\":{\"jobs\":%s}}" (toJson $prof) (toJson $jobs) }}

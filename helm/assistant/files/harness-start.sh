@@ -22,12 +22,12 @@ case "${HARNESS_PHASE:-}" in test|real) ;; *) die "HARNESS_PHASE must be test or
 # The worker spec (chart) and the claude-code adapter that writes the agent files from it (image) come together: roll back both.
 [ -f "$PREPARE" ] || die "$PREPARE is missing: this naila image predates the worker spec"
 [ -f /config/harness-workers.json ] || die "/config/harness-workers.json is missing: this chart predates the worker spec"
-# The roles config (harness-workers.json version 3, pure-core phase 2: quarantine derived from what a role holds, path
-# grants in `paths`) and the image that reads it come together: an image whose ROLES_SPEC_VERSION is not 3 would refuse it
-# at start, or misread it (a phase 2 image refuses a version 2 spec, and HARNESS_CHANNELS without each channel's kind, in
-# turn). The roles' instructions files are the spec's to name: prepare.js refuses one that is missing.
+# The roles config (harness-workers.json version 4, pure-core phase 5: every role permanent or temporary, a temporary one
+# hired by the lead for one job and released, `hireable` on a temporary role) and the image that reads it come together: an
+# image whose ROLES_SPEC_VERSION is not 4 would refuse it at start, or misread it (a phase 5 image refuses a version 3 spec
+# in turn). The roles' instructions files are the spec's to name: prepare.js refuses one that is missing.
 SPEC_JS=/naila/packages/harness/dist/workers-spec.js
-node -e 'import(process.argv[1]).then((m) => process.exit(m.ROLES_SPEC_VERSION === 3 ? 0 : 1), (e) => { console.error(String(e?.message ?? e)); process.exit(1) })' "$SPEC_JS" || die "this naila image predates pure-core phase 2 (roles spec 3): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+node -e 'import(process.argv[1]).then((m) => process.exit(m.ROLES_SPEC_VERSION === 4 ? 0 : 1), (e) => { console.error(String(e?.message ?? e)); process.exit(1) })' "$SPEC_JS" || die "this naila image predates pure-core phase 5 (roles spec 4): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
 # PAIRING: the image's services
 # Pure-core phase 3 (services as plug-ins): the services this chart enables (HARNESS_SERVICES: {"version":1,"services":{"<id>":
 # {"writeCredentials":[…]}}}) and the image that declares them (dist/services/registry.js) come together. An image without

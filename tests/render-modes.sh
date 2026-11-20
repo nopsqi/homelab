@@ -59,10 +59,11 @@
 # Then the core's run metrics: 3102 open to monitoring only, its own Service and ServiceMonitor (job assistant-harness-core),
 #  the login Service and ServiceMonitor as at <git-ref>, and the three core alerts, scoped by job, none naming Discord.
 # Then the worker spec (harness-workers.json in ConfigMap assistant-harness, both phases): pure core Task 9 and phase 2 Task 11,
-#  it is the roles spec v3 (version 3; the roles naila, finance-bookkeeper, finance-advisor, ops-oncall, researcher in that
+#  it is the roles spec v4 (version 4; the roles naila, finance-bookkeeper, finance-advisor, ops-oncall, researcher in that
 #  order, naila alone the lead and first; retired []; each role's display and seed the chart's literals; paths
-#  [finance-documents] on the two finance roles alone; no role key beyond the spec's, quarantined never one), the render fails on a duplicate id, two
-#  leads or none, a lead not first and a retired active role, and harness-start dies on an image without ROLES_SPEC_VERSION 3;
+#  [finance-documents] on the two finance roles alone; lifecycle permanent on the four, temporary with hireable true on the
+#  researcher (phase 5); no role key beyond the spec's, quarantined never one), the render fails on a duplicate id, two
+#  leads or none, a lead not first and a retired active role, and harness-start dies on an image without ROLES_SPEC_VERSION 4;
 #  naila's own validator accepts it and every seed entry applies (naila's checkSeeds, from its built dist) when
 #  NAILA_WORKTREE points at a naila checkout (skipped with a notice otherwise), no __MARKER__ survives, each model is the
 #  chart's per-worker model (direct-lines), each description the RC agent file's, each ceiling its tools.md, the URLs and the
@@ -122,6 +123,12 @@
 #  same FIGURE_WORDS); a non-default profile reaches the user-scope vault server and the advisor's finance-notes server as
 #  VAULT_PATHS (the chart's DEFAULT_VAULT_PATHS copy is the image's); P8, the test-phase allow check, the finance notes folder
 #  and the write guard's root follow the profile; the settings stay byte-identical to the SETTINGS_REF chart's.
+# Then the roles spec 4 (pure core phase 5 Task 9): naila's parser and start checks (NAILA_WORKTREE's built dist) accept the
+#  prod and staging renders, the researcher temporary and hireable, the other four permanent, and refuse a quarantined
+#  permanent role and a temporary job role; the prod render's roles-spec guard pairs with the built image; a bad lifecycle or
+#  hireable, a temporary lead, and a temporary role in workers[] or a DISCORD_CHANNELS fail the render; the render is
+#  <git-ref>'s but for the spec's version, lifecycle and hireable, harness-start.sh and the harness checksum, and the built
+#  core refuses <git-ref>'s spec v3 (skipped with a notice once <git-ref> renders version 4).
 set -euo pipefail
 ref="${1:-origin/master}"
 root="$(git rev-parse --show-toplevel)"
@@ -204,11 +211,11 @@ def keys(path):
     sys.exit(f"FAIL: ConfigMap assistant-claude not found in {path}")
 
 old, new = keys(sys.argv[1]), keys(sys.argv[2])
-# The worker spec (harness-workers.json, ConfigMap assistant-harness): each worker's ceiling and servers come from it. A v2 or
-# v3 spec (the roles config: an ordered list of roles) reads into the same {id: role} dict as a v1 one ({workers: {id: worker}}).
+# The worker spec (harness-workers.json, ConfigMap assistant-harness): each worker's ceiling and servers come from it. A v2, v3
+# or v4 spec (the roles config: an ordered list of roles) reads into the same {id: role} dict as a v1 one ({workers: {id: worker}}).
 import json
 def spec_roles(spec):
-    if spec.get("version") in (2, 3): return {r["id"]: {k: v for k, v in r.items() if k != "id"} for r in spec["roles"]}
+    if spec.get("version") in (2, 3, 4): return {r["id"]: {k: v for k, v in r.items() if k != "id"} for r in spec["roles"]}
     return spec["workers"]
 def spec_workers(path):
     for d in yaml.safe_load_all(open(path)):
@@ -336,11 +343,11 @@ for w, srv in SERVERS.items():
 # researcher) and nothing else: no server (not even the core's: its run mounts none, Task 4 ruling), no core tool, no colleague.
 # It is no RC worker: no RC agent file, no direct line, no message peer, no Discord conversation.
 WEB = {t for c in ("web.search", "web.open") for t in CAPS[c]}
-tag = "harness-workers.json has the researcher on claude-subscription/sonnet, ceiling WebSearch and WebFetch, no servers"
+tag = "harness-workers.json has the researcher temporary and hireable, on claude-subscription/sonnet, ceiling WebSearch and WebFetch, no servers"
 rs = SPEC.get("researcher", {})
 fm_ = re.match(r"(?s)\A---\n(.*?)\n---\n", open("helm/assistant/files/agents/researcher.md").read()) if os.path.exists("helm/assistant/files/agents/researcher.md") else None
 rdesc = yaml.safe_load(fm_.group(1)).get("description") if fm_ else None
-if rs != {"display": {"name": "Researcher", "avatar": "researcher"}, "seed": ["web.search", "web.open"], "instructions": "harness-agent-researcher.md",
+if rs != {"lifecycle": "temporary", "hireable": True, "display": {"name": "Researcher", "avatar": "researcher"}, "seed": ["web.search", "web.open"], "instructions": "harness-agent-researcher.md",
           "brain": {"provider": "claude-subscription", "model": "sonnet"}, "ceiling": ["WebSearch", "WebFetch"], "servers": [], "description": rdesc} or not rdesc:
     bad.append(f"{tag}: it is {rs!r}")
 if set(rs.get("ceiling", [])) != WEB: bad.append(f"{tag}: its ceiling is not exactly the web capabilities' tools {sorted(WEB)}")
@@ -1430,13 +1437,13 @@ else:
     if open(f"{d}/args").read() != "/p.js --spec /config/harness-workers.json --claude-dir /c --work-dir /h/work\n": bad.append(f"{tag}: prepare.js ran with {open(f'{d}/args').read()!r}")
     __import__("shutil").rmtree(d)
 
-# pure core Task 9, phase 2 Task 10: harness-start dies on an image without ROLES_SPEC_VERSION 3 (dist/workers-spec.js), before
-# prepare.js reads the roles config, naming the image as older and what to do. Run as rendered on stand-in images (none, 2, 3
-# and a few broken ones), and on naila's built dist.
-tag = "harness-start dies on an image without ROLES_SPEC_VERSION 3"
+# pure core Task 9, phase 2 Task 10, phase 5 Task 9: harness-start dies on an image whose ROLES_SPEC_VERSION is not 4
+# (dist/workers-spec.js), before prepare.js reads the roles config, naming the image as older and what to do. Run as rendered
+# on stand-in images (none, 1, 2, 3, 4 and a few broken ones), and on naila's built dist.
+tag = "harness-start dies on an image whose ROLES_SPEC_VERSION is not 4"
 sl = start.splitlines()
 sj = [i for i, l in enumerate(sl) if l == "SPEC_JS=/naila/packages/harness/dist/workers-spec.js"]
-OLD_SPEC = "this naila image predates pure-core phase 2 (roles spec 3): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+OLD_SPEC = "this naila image predates pure-core phase 5 (roles spec 4): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
 sc = [i for i, l in enumerate(sl) if "ROLES_SPEC_VERSION" in l and l.startswith("node -e ") and l.endswith(f' "$SPEC_JS" || die "{OLD_SPEC}"')]
 pc9 = [i for i, l in enumerate(sl) if l.startswith('out=$(node "$PREPARE" ')]
 if len(sj) != 1 or len(sc) != 1 or len(pc9) != 1 or not sj[0] < sc[0] < pc9[0]: bad.append(f"{tag}: want one SPEC_JS= line, then one node -e check dying with {OLD_SPEC!r}, before prepare.js (got {len(sj)}, {len(sc)}, {len(pc9)})")
@@ -1450,9 +1457,10 @@ else:
         snippet = "\n".join(sl[sj[0]:sc[0] + 1]).replace("/naila/packages/harness/dist/", dist + "/")
         p = subprocess.run(["bash", "-c", 'set -eu; die() { echo "harness-start: $*" >&2; exit 2; }\n' + snippet + "\necho started"], capture_output=True, text=True)
         shutil.rmtree(d); return p
-    if (p := spec_check("export const ROLES_SPEC_VERSION = 3\n")).returncode != 0 or p.stdout.strip() != "started": bad.append(f"{tag}: refuses an image with ROLES_SPEC_VERSION 3: {p.stderr.strip()}")
+    if (p := spec_check("export const ROLES_SPEC_VERSION = 4\n")).returncode != 0 or p.stdout.strip() != "started": bad.append(f"{tag}: refuses an image with ROLES_SPEC_VERSION 4: {p.stderr.strip()}")
     for what, body in (("no workers-spec.js", None), ("no ROLES_SPEC_VERSION", "export const other = 1\n"), ("ROLES_SPEC_VERSION 1", "export const ROLES_SPEC_VERSION = 1\n"),
-                       ("ROLES_SPEC_VERSION 2 (pure-core phase 1)", "export const ROLES_SPEC_VERSION = 2\n"), ("ROLES_SPEC_VERSION \"3\"", "export const ROLES_SPEC_VERSION = '3'\n"), ("a workers-spec.js that throws", "throw new Error('boom')\n")):
+                       ("ROLES_SPEC_VERSION 2 (pure-core phase 1)", "export const ROLES_SPEC_VERSION = 2\n"), ("ROLES_SPEC_VERSION 3 (pure-core phases 2 to 4)", "export const ROLES_SPEC_VERSION = 3\n"),
+                       ("ROLES_SPEC_VERSION \"4\"", "export const ROLES_SPEC_VERSION = '4'\n"), ("a workers-spec.js that throws", "throw new Error('boom')\n")):
         p = spec_check(body)
         if p.returncode != 2 or OLD_SPEC not in p.stderr or "started" in p.stdout: bad.append(f"{tag}: an image with {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {OLD_SPEC!r}")
     nw9 = os.environ.get("NAILA_WORKTREE", "")
@@ -1544,9 +1552,9 @@ bad = []
 AGENTS = ["finance-bookkeeper", "finance-advisor", "ops-oncall", "researcher"]   # the roles config's order, minus the lead
 WORKERS = ["naila", *AGENTS]
 def spec_roles(spec):
-    """A worker spec as {id: role}: a v2 or v3 one (the roles config: an ordered list of roles) or a v1 one ({workers: {id:
+    """A worker spec as {id: role}: a v2, v3 or v4 one (the roles config: an ordered list of roles) or a v1 one ({workers: {id:
     worker}}, as ORACLE_REF has it)."""
-    if spec.get("version") in (2, 3): return {r["id"]: {k: v for k, v in r.items() if k != "id"} for r in spec["roles"]}
+    if spec.get("version") in (2, 3, 4): return {r["id"]: {k: v for k, v in r.items() if k != "id"} for r in spec["roles"]}
     return spec["workers"]
 # pure core Task 9: each role's display and seed in the roles config, literally (today's seeds and display names)
 DISPLAY = {"naila": "Naila", "finance-bookkeeper": "Finance Bookkeeper", "finance-advisor": "Finance Advisor", "ops-oncall": "Ops Oncall", "researcher": "Researcher"}
@@ -1556,6 +1564,10 @@ SEED = {"naila": ["files.read", "messaging.ask", "vault.read", "vault.write", "d
 # phase 2 Task 11: the path grants (roles spec v3 `paths`): the vault's Finance/ folder through files.read, for the two finance
 # roles alone (absent on every other role)
 PATHS = {"finance-bookkeeper": ["finance-documents"], "finance-advisor": ["finance-documents"]}
+# phase 5 Task 9: each role's lifecycle (roles spec v4): the researcher temporary and hireable, the other four permanent (no
+# hireable key: it is only for a temporary role)
+LIFECYCLE = {"naila": "permanent", "finance-bookkeeper": "permanent", "finance-advisor": "permanent", "ops-oncall": "permanent", "researcher": "temporary"}
+HIREABLE = {"researcher": True}
 # researcher Task 12: the researcher is new since ORACLE_REF (no RC line: its model is the spec's, its description its chart
 # agent file's); the three agents of the ref lose WebSearch and WebFetch from their ceilings (their tools: lines)
 OLD_AGENTS = AGENTS[:3]
@@ -1676,11 +1688,12 @@ for ph in ("test", "real"):
     try: spec = json.loads(raw)
     except ValueError as e: bad.append(f"{tag}: harness-workers.json is not JSON: {e}"); continue
     specs[ph] = spec
-    # pure core Task 9, phase 2 Task 11: harness-workers.json is the roles spec v3: the five roles in order, naila alone the
-    # lead and first, nothing retired, each role's display and seed the literals above, paths [finance-documents] on the two
-    # finance roles and on no other, and no role key beyond the spec's (quarantine is derived, never a key)
-    t9 = f"harness-workers.json is the roles spec v3 ({ph} phase)"
-    if spec.get("version") != 3: bad.append(f"{t9}: version is {spec.get('version')!r}, want 3")
+    # pure core Task 9, phase 2 Task 11, phase 5 Task 9: harness-workers.json is the roles spec v4: the five roles in order,
+    # naila alone the lead and first, nothing retired, each role's display and seed the literals above, paths
+    # [finance-documents] on the two finance roles and on no other, lifecycle on every role (hireable on the researcher alone),
+    # and no role key beyond the spec's (quarantine is derived, never a key)
+    t9 = f"harness-workers.json is the roles spec v4 ({ph} phase)"
+    if spec.get("version") != 4: bad.append(f"{t9}: version is {spec.get('version')!r}, want 4")
     if sorted(spec) != ["retired", "roles", "summary", "version"]: bad.append(f"{t9}: its keys are {sorted(spec)}")
     roles_ = spec.get("roles") if isinstance(spec.get("roles"), list) else []
     if [r.get("id") for r in roles_] != WORKERS: bad.append(f"{t9}: the roles are {[r.get('id') for r in roles_]}, want {WORKERS} in that order"); continue
@@ -1690,7 +1703,10 @@ for ph in ("test", "real"):
         if r.get("display") != {"name": DISPLAY[r["id"]], "avatar": r["id"]}: bad.append(f"{t9}: {r['id']}'s display is {r.get('display')!r}, want {DISPLAY[r['id']]!r} with avatar {r['id']}")
         if r.get("seed") != SEED[r["id"]]: bad.append(f"{t9}: {r['id']}'s seed is {r.get('seed')!r}, want {SEED[r['id']]!r}")
         if r.get("paths") != PATHS.get(r["id"]): bad.append(f"{t9}: {r['id']}'s paths are {r.get('paths')!r}, want {PATHS.get(r['id'])!r}")
-        want_keys = {"id", "display", "seed", "instructions", "brain", "servers"} | ({"lead"} if r["id"] == "naila" else {"description", "ceiling"}) | ({"paths"} if r["id"] in PATHS else set())
+        if r.get("lifecycle") != LIFECYCLE[r["id"]]: bad.append(f"{t9}: {r['id']}'s lifecycle is {r.get('lifecycle')!r}, want {LIFECYCLE[r['id']]!r}")
+        if r.get("hireable") is not HIREABLE.get(r["id"]): bad.append(f"{t9}: {r['id']}'s hireable is {r.get('hireable')!r}, want {HIREABLE.get(r['id'])!r}")
+        want_keys = ({"id", "lifecycle", "display", "seed", "instructions", "brain", "servers"} | ({"lead"} if r["id"] == "naila" else {"description", "ceiling"})
+                     | ({"paths"} if r["id"] in PATHS else set()) | ({"hireable"} if r["id"] in HIREABLE else set()))
         if set(r) != want_keys: bad.append(f"{t9}: {r['id']}'s keys are {sorted(r)}, want {sorted(want_keys)}")
     ws = spec_roles(spec)
     if spec.get("summary") != {"brain": {"provider": "claude-subscription", "model": "default"}}: bad.append(f"{tag}: summary is {spec.get('summary')!r}")
@@ -1852,7 +1868,7 @@ else:
         dist = f"{nw}/packages/harness/dist"
         seeds_js = ("const [d, f, bad] = process.argv.slice(1); const { loadWorkerSpecs, parseWorkerSpecs, ROLES_SPEC_VERSION } = await import(`${d}/workers-spec.js`); "
                     "const { checkSeeds } = await import(`${d}/capabilities.js`); const fs = await import('node:fs'); const path = await import('node:path'); "
-                    "if (ROLES_SPEC_VERSION !== 3) throw new Error(`ROLES_SPEC_VERSION ${ROLES_SPEC_VERSION}`); "
+                    "if (ROLES_SPEC_VERSION !== 4) throw new Error(`ROLES_SPEC_VERSION ${ROLES_SPEC_VERSION}`); "
                     "if (bad) { const j = JSON.parse(fs.readFileSync(f, 'utf8')); j.roles.find((r) => r.id === 'ops-oncall').seed.push('budget.read'); "
                     "checkSeeds(parseWorkerSpecs(JSON.stringify(j), (n) => fs.readFileSync(path.join(path.dirname(f), n), 'utf8'))) } "
                     "else checkSeeds(loadWorkerSpecs(f)); console.log('seeds apply')")
@@ -1900,7 +1916,7 @@ else:
                 "const out = []; try { parseWorkerSpecs(spec, () => ''); out.push('spec ok') } catch (e) { out.push(`spec: ${e.message}`) } "
                 "const secrets = Object.fromEntries((JSON.parse(ch) ?? []).map((c) => [c.name, 'x'])); "
                 "try { parseChannelTable(ch, { secrets, test: false }); out.push('channels ok') } catch (e) { out.push(`channels: ${e.message}`) } console.log(out.join('\\n'))")
-    for label, r_, want_spec, want_ch in ((sys.argv[7], old_r, "version must be 3 (got 2): the chart predates pure-core phase 2", "kind must be owner or test"), ("this chart", new_r, "spec ok", "channels ok")):
+    for label, r_, want_spec, want_ch in ((sys.argv[7], old_r, "version must be 4 (got 2): the chart predates pure-core phase 2", "kind must be owner or test"), ("this chart", new_r, "spec ok", "channels ok")):
         try: sj, cj = config(r_)["harness-workers.json"], chans(r_)
         except (KeyError, StopIteration) as e: bad.append(f"{tag}: the {label} render has no spec or HARNESS_CHANNELS: {e!r}"); continue
         p = subprocess.run(["node", "--input-type=module", "-e", guard_js, f"{nw}/packages/harness/dist", sj, cj or "[]"], capture_output=True, text=True)
@@ -1960,9 +1976,9 @@ def channels(c):
     return v if isinstance(v, list) else None
 def compact(d): return json.dumps(d, separators=(",", ":"))
 
-# Task 13 (R9): as at the ref but for the mount, which is gone. HARNESS_UPLOADS stays one release as a rollback leftover (P24:
-# a gateway image older than naila 95dd7a2 exits without it); the new gateway ignores it. So the env is compared minus
-# HARNESS_UPLOADS, which may only be the leftover, checked below.
+# Task 13 (R9): as at the ref but for the mount, which is gone. HARNESS_UPLOADS was a rollback leftover (P24: a gateway image
+# older than naila 95dd7a2 exits without it), removed 2026-11-20; a ref may still render it. So the env is compared minus
+# HARNESS_UPLOADS, which must now be absent, checked below.
 tag = f"channel loop: the discord container renders as at {ref}, without its volume mount"
 o, n = ctr(oldh, "discord"), ctr(test, "discord")
 if o is None or n is None: bad.append(f"{tag}: no discord container ({'at the ref' if o is None else 'now'})")
@@ -1977,19 +1993,12 @@ for label, r in (("test", test), ("real", real), ("two channels", two)):
     if {c["name"] for c in gws} != ({"discord", "example"} if label == "two channels" else {"discord"}): bad.append(f"{tag}: the gateways are {[c['name'] for c in gws]} ({label})")
     for c in gws:
         if c.get("volumeMounts"): bad.append(f"{tag}: {c['name']} mounts {c['volumeMounts']!r} ({label})")
-tag = "HARNESS_UPLOADS is only the discord gateway's rollback leftover, marked for removal"
-LEFT = "/home/claude/.claude/uploads/discord"
+tag = "no HARNESS_UPLOADS anywhere: the discord gateway's rollback leftover (P24) is gone and stays gone"
 for label, r in (("test", test), ("real", real), ("two channels", two)):
     for c in pod(r)["containers"] + pod(r).get("initContainers", []):
-        has = "HARNESS_UPLOADS" in envmap(c)
-        if c["name"] == "discord" and (not has or val(c, "HARNESS_UPLOADS") != LEFT): bad.append(f"{tag}: discord HARNESS_UPLOADS is {val(c, 'HARNESS_UPLOADS')!r}, want the leftover {LEFT!r} ({label})")
-        if c["name"] != "discord" and has: bad.append(f"{tag}: {c['name']} has HARNESS_UPLOADS ({label})")
+        if "HARNESS_UPLOADS" in envmap(c): bad.append(f"{tag}: {c['name']} has HARNESS_UPLOADS={val(c, 'HARNESS_UPLOADS')!r} ({label})")
 tpl = open("helm/assistant/templates/harness.yaml").read()
-if not re.search(r"HARNESS_UPLOADS[^\n]*remove after 2026-11-19", tpl): bad.append(f"{tag}: the template's HARNESS_UPLOADS line does not say \"remove after 2026-11-19\"")
-import datetime
-today = os.environ.get("RENDER_MODES_TODAY") or datetime.date.today().isoformat()   # set it to test the deadline
-if today > "2026-11-19" and any("HARNESS_UPLOADS" in envmap(c) for r in (test, real, two) for c in pod(r)["containers"]):   # rendered, not the reserved name
-    bad.append(f"{tag}: it is {today}, past 2026-11-19: remove the HARNESS_UPLOADS leftover from the discord gateway (and turn this check into \"no HARNESS_UPLOADS anywhere\")")
+if re.search(r"name: HARNESS_UPLOADS\b(?!_)", tpl): bad.append(f"{tag}: the template still names HARNESS_UPLOADS as an env")
 for f in ("values.yaml", "values.prod.yaml", "values.staging.yaml"):
     if re.search(r"^\s+uploads:", open(f"helm/assistant/{f}").read(), re.M): bad.append(f"{tag}: helm/assistant/{f} still sets gateway.uploads")
 
@@ -2082,6 +2091,7 @@ for what, args, msg in (("a missing secretKey", ["--set", "harness.channels.disc
                         ("a gateway handed another channel's secretKey", ["--set-json", 'harness.channels.tg={"enabled":true,"kind":"owner","label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"GATEWAY_DISCORD_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X"),
                         ("a gateway handed a GATEWAY_*_SECRET key not its own", ["--set-json", 'harness.channels.tg={"enabled":true,"kind":"owner","label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"GATEWAY_OTHER_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X"),
                         ("a leftover gateway.uploads (the core owns uploads)", ["--set", "harness.channels.discord.gateway.uploads=true"], "harness.channels.discord.gateway.uploads"),
+                        ("a gateway env bringing back HARNESS_UPLOADS", ["--set", "harness.channels.discord.gateway.env.HARNESS_UPLOADS=/x"], "harness.channels.discord.gateway.env.HARNESS_UPLOADS"),
                         ("DISCORD_CHANNELS without decisions", ["--set", "harness.channels.discord.gateway.env.DISCORD_CHANNELS=naila:1566334318752567368\\,legal-clerk:1566334318752567369"], "DISCORD_CHANNELS"),
                         ("DISCORD_CHANNELS with an uppercase name", ["--set", "harness.channels.discord.gateway.env.DISCORD_CHANNELS=Naila:1566334318752567368\\,decisions:1566334318752567369"], "DISCORD_CHANNELS"),
                         ("a gateway handed CORE_TOOLS_SECRET", ["--set-json", 'harness.channels.tg={"enabled":true,"kind":"owner","label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"CORE_TOOLS_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X")):
@@ -2682,7 +2692,7 @@ def sh(lines, env, prefix=""):
 def died(p, *says): return p.returncode == 2 and "started" not in p.stdout and all(s in p.stderr for s in says)
 def started(p): return p.returncode == 0 and p.stdout.strip() == "started"
 
-roles_check = one(lambda l: l.startswith("node -e ") and "ROLES_SPEC_VERSION" in l)
+roles_check = one(lambda l: l.startswith("node -e ") and "m.ROLES_SPEC_VERSION === 4 " in l)   # the roles spec 4 check
 prepare_at = one(lambda l: l.startswith('out=$(node "$PREPARE" '))
 settings_at = one(lambda l: l.startswith("# Settings:"))
 lead_at = one(lambda l: l.startswith("LEAD=$(node -e '"))
@@ -3349,4 +3359,177 @@ if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
 print("setup pairing: harness-start pairs with the image's setup (spec version 1, parseSetup" + (", the built image" if HAVE else "")
       + "), VAULT_EXCLUDE names the profile's test folder; the vault servers get VAULT_PATHS only for a non-default profile; P8, the allow check and the write guard's root follow the profile")
+PY
+# Pure core phase 5 Task 9: the roles spec 4 (every role's lifecycle; hireable on a temporary role alone), both sides:
+#  - naila's parseWorkerSpecs and start checks (NAILA_WORKTREE's built dist: loadWorkerSpecs, the roster, checkSeeds,
+#    checkServiceUse, parseSetup and checkSchedules as phase 4 runs them) accept the prod and staging (harness on) renders, the
+#    researcher temporary and hireable, the other four permanent; the core's own rules bite: a quarantined permanent role (the
+#    chart renders it: the rule is the core's) and a temporary job role are refused;
+#  - the prod render pairs with the built image: harness-start's roles-spec guard, extracted as rendered, exits 0 on its dist;
+#  - the render fails on a role without lifecycle (or another value), hireable on a permanent role or not a boolean, a temporary
+#    lead, and a temporary role that workers[] gives an RC line or a channel's DISCORD_CHANNELS a channel;
+#  - prod, test phase, harness off and staging render as at <git-ref> but for harness-workers.json (its version, lifecycle and
+#    hireable), harness-start.sh and the harness checksum, and naila's built core refuses <git-ref>'s spec v3 naming the chart
+#    as older (skipped with a notice once <git-ref> renders version 4).
+python3 - "$ref" "$tmp/prod.yaml" "$tmp/prod-ref.yaml" "$tmp/new.yaml" "$tmp/old-harness.yaml" "$tmp/off.yaml" "$tmp/old.yaml" "$tmp/staging.yaml" "$tmp/staging-ref.yaml" "$tmp/staging-on.yaml" <<'PY'
+import sys, yaml, json, os, subprocess, copy, tempfile, shutil
+ref = sys.argv[1]
+def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
+def loads(s): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(s) if d}
+prod, prod_ref, test, test_ref, off, off_ref, staging, staging_ref, staging_on = (load(p) for p in sys.argv[2:11])
+H, HC, CC = ("Deployment", "assistant-harness"), ("ConfigMap", "assistant-harness"), ("ConfigMap", "assistant-claude")
+def ctr(r, n): return next((c for c in r[H]["spec"]["template"]["spec"]["containers"] if c["name"] == n), None)
+def spec(r):
+    try: return json.loads(r[HC]["data"]["harness-workers.json"])
+    except (KeyError, ValueError): return None
+NW = os.environ.get("NAILA_WORKTREE", "")
+DIST = f"{NW}/packages/harness/dist"
+HAVE = bool(NW) and all(os.path.isfile(f"{DIST}/{f}") for f in ("workers-spec.js", "setup.js", "schedules.js", "roster.js", "capabilities.js", "services/config.js"))
+if not HAVE: print("NOTICE: NAILA_WORKTREE has no built dist: the roles spec 4 was not run through naila's parseWorkerSpecs, start checks and harness-start's guard")
+bad = []
+LIFE = {"naila": ["permanent", False, False], "finance-bookkeeper": ["permanent", False, False], "finance-advisor": ["permanent", False, False],
+        "ops-oncall": ["permanent", False, False], "researcher": ["temporary", True, True]}   # [lifecycle, hireable, quarantined]
+
+# naila's parser and start checks on a render's /config (the two ConfigMaps) and the harness container's env
+JS = r"""
+const [dist, dir, envJson] = process.argv.slice(1)
+const { readFileSync } = await import('node:fs')
+const { join } = await import('node:path')
+const { parseSetup, installSetup, checkSetupEnv, checkProfileServices } = await import(`${dist}/setup.js`)
+const { checkSchedules } = await import(`${dist}/schedules.js`)
+const { loadWorkerSpecs, serversOf } = await import(`${dist}/workers-spec.js`)
+const { installRoster, rosterFrom } = await import(`${dist}/roster.js`)
+const { checkSeeds } = await import(`${dist}/capabilities.js`)
+const { parseServicesConfig, checkServiceUse } = await import(`${dist}/services/config.js`)
+const env = JSON.parse(envJson)
+const specs = loadWorkerSpecs(join(dir, 'harness-workers.json'))
+const r = rosterFrom(specs)
+installRoster(r)
+checkSeeds(specs)
+const enabled = parseServicesConfig(env.HARNESS_SERVICES)
+checkServiceUse(specs, enabled)
+const file = join(dir, 'harness-setup.json')
+const s = parseSetup(readFileSync(file, 'utf8'), file, (name) => readFileSync(join(dir, name), 'utf8'))
+installSetup(s)
+checkSetupEnv(s.profile, env)
+checkProfileServices(s.profile, enabled)
+checkSchedules(s.jobs, r, enabled, (w) => serversOf(specs, w, enabled.ids))
+console.log(JSON.stringify(Object.fromEntries(specs.roles.map((w) => [w, [specs.workers[w].lifecycle, specs.workers[w].hireable, specs.workers[w].quarantined]]))))
+"""
+def naila(r):
+    d = tempfile.mkdtemp()
+    try:
+        for cm in (CC, HC):
+            for k, v in ((r.get(cm) or {}).get("data") or {}).items(): open(os.path.join(d, k), "w").write(v)
+        env = {e["name"]: e["value"] for e in (ctr(r, "harness") or {}).get("env", []) if "value" in e}
+        return subprocess.run(["node", "--input-type=module", "-e", JS, DIST, d, json.dumps(env)], capture_output=True, text=True)
+    finally: shutil.rmtree(d)
+def why(p):
+    """a failed node run's error line (its message, not the stack under it)"""
+    err = (p.stderr or p.stdout).strip()
+    return next((l for l in err.splitlines() if "Error" in l), err[-300:])
+def render(*args):
+    return subprocess.run(["helm", "template", "helm/assistant", "-f", "helm/assistant/values.yaml", "-f", "helm/assistant/values.prod.yaml", *args], capture_output=True, text=True)
+ROLES = yaml.safe_load(open("helm/assistant/values.yaml"))["harness"]["roleSpec"]["roles"]
+BYID = {r["id"]: r for r in ROLES}
+def roles_with(**changes):
+    """values' roles, each id in `changes` merged with its dict (a None value drops that key)"""
+    out = []
+    for r in ROLES:
+        x = copy.deepcopy(r)
+        for k, v in changes.get(r["id"].replace("-", "_"), {}).items():
+            if v is None: x.pop(k, None)
+            else: x[k] = v
+        out.append(x)
+    return ["--set-json", f"harness.roleSpec.roles={json.dumps(out)}"]
+
+if HAVE:
+    tag = "the prod and staging renders parse with the built image"
+    for label, r in (("prod", prod), ("test phase", test), ("staging (harness on)", staging_on)):
+        p = naila(r)
+        if p.returncode != 0: bad.append(f"{tag}: the {label} render is refused: {why(p)}"); continue
+        if json.loads(p.stdout) != LIFE: bad.append(f"{tag}: the {label} roles parse as {p.stdout.strip()}, want {json.dumps(LIFE)} ([lifecycle, hireable, quarantined])")
+    tag = "the built image refuses a quarantined permanent role (the chart renders it) and a temporary job role"
+    p = render(*roles_with(researcher={"lifecycle": "permanent", "hireable": None}))
+    if p.returncode != 0: bad.append(f"{tag}: a permanent researcher fails the render (the rule is the core's): {p.stderr.strip()[-300:]}")
+    elif "is quarantined" not in (q := naila(loads(p.stdout))).stderr or "it must be temporary, so the web text it reads lives no longer than its job" not in q.stderr:
+        bad.append(f"{tag}: a permanent researcher is not refused as quarantined: exit {q.returncode} {why(q)!r}")
+    bent = copy.deepcopy(prod); j = spec(bent)
+    for x in j["roles"]:
+        if x["id"] == "finance-advisor": x.update(lifecycle="temporary", hireable=False)
+    bent[HC]["data"]["harness-workers.json"] = json.dumps(j)
+    if "schedules: monthly-review: role finance-advisor is temporary: a scheduled job runs on a permanent role" not in (q := naila(bent)).stderr:
+        bad.append(f"{tag}: a temporary finance-advisor with the monthly review is not refused: exit {q.returncode} {why(q)!r}")
+
+    tag = "the prod render pairs with the built image"
+    sl = prod[HC]["data"]["harness-start.sh"].splitlines()
+    sj = [i for i, l in enumerate(sl) if l == "SPEC_JS=/naila/packages/harness/dist/workers-spec.js"]
+    sc = [i for i, l in enumerate(sl) if l.startswith("node -e ") and "m.ROLES_SPEC_VERSION === 4 " in l and l.endswith('"$SPEC_JS" || die "this naila image predates pure-core phase 5 (roles spec 4): deploy the image that ships with this chart, or roll both back (revert the promote merge)"')]
+    if len(sj) != 1 or len(sc) != 1 or not sj[0] < sc[0]: bad.append(f"{tag}: want one SPEC_JS= line, then one roles spec 4 check (got {len(sj)}, {len(sc)})")
+    else:
+        snippet = "\n".join(sl[sj[0]:sc[0] + 1]).replace("/naila/packages/harness/dist/", DIST + "/")
+        p = subprocess.run(["bash", "-c", 'set -eu; die() { echo "harness-start: $*" >&2; exit 2; }\n' + snippet + "\necho started"], capture_output=True, text=True)
+        if p.returncode != 0 or p.stdout.strip() != "started": bad.append(f"{tag}: the roles spec guard exits {p.returncode} on {DIST}: {p.stderr.strip()!r}")
+
+# the render fails on what the core would refuse at start, each with its message
+tag = "the render fails on a bad lifecycle or hireable, a temporary lead, and a temporary role with an RC line or a channel"
+CH = next(c for c in yaml.safe_load(open("helm/assistant/values.prod.yaml"))["harness"]["channels"].values() if "DISCORD_CHANNELS" in ((c.get("gateway") or {}).get("env") or {}))["gateway"]["env"]["DISCORD_CHANNELS"]
+WORKERS = yaml.safe_load(open("helm/assistant/values.yaml"))["workers"]
+A = "harness.roleSpec.roles."
+for what, args, says in (
+        ("a role without lifecycle", roles_with(finance_bookkeeper={"lifecycle": None}), f"{A}finance-bookkeeper.lifecycle must be permanent or temporary"),
+        ("a lifecycle other than permanent or temporary", roles_with(ops_oncall={"lifecycle": "forever"}), f"{A}ops-oncall.lifecycle must be permanent or temporary"),
+        ("hireable false on a permanent role", roles_with(ops_oncall={"hireable": False}), f"{A}ops-oncall.hireable is only for a temporary role"),
+        ("hireable true on a permanent role", roles_with(finance_advisor={"hireable": True}), f"{A}finance-advisor.hireable is only for a temporary role"),
+        ("a temporary role without hireable", roles_with(researcher={"hireable": None}), f"{A}researcher.hireable must be true or false"),
+        ("a hireable that is no boolean", roles_with(researcher={"hireable": "yes"}), f"{A}researcher.hireable must be true or false"),
+        ("a temporary lead", roles_with(naila={"lifecycle": "temporary", "hireable": False}), f"{A}naila: the lead must be permanent"),
+        ("a temporary role workers[] lists", roles_with(ops_oncall={"lifecycle": "temporary", "hireable": False}), f"{A}ops-oncall is temporary: workers[] gives it an RC line"),
+        ("the researcher in workers[]", ["--set-json", f"workers={json.dumps([*WORKERS, {'name': 'researcher', 'model': 'sonnet', 'direct': True}])}"], f"{A}researcher is temporary: workers[] gives it an RC line"),
+        ("a temporary role in DISCORD_CHANNELS", [*roles_with(ops_oncall={"lifecycle": "temporary", "hireable": False}), "--set-json", f"workers={json.dumps([w for w in WORKERS if w['name'] != 'ops-oncall'])}"],
+         f"{A}ops-oncall is temporary: DISCORD_CHANNELS gives it a channel"),
+        ("the researcher in DISCORD_CHANNELS", ["--set-json", f"harness.channels.discord.gateway.env.DISCORD_CHANNELS={json.dumps(CH + ',researcher:123456789012345678')}"],
+         f"{A}researcher is temporary: DISCORD_CHANNELS gives it a channel")):
+    p = render(*args)
+    if p.returncode == 0 or says not in p.stderr: bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()[-300:]!r}, want a failed render saying {says!r}")
+tag = "a temporary role that is not hireable, in no RC line or channel, renders"
+if (p := render(*roles_with(researcher={"hireable": False}))).returncode != 0: bad.append(f"{tag}: {p.stderr.strip()[-300:]}")
+elif [x.get("hireable") for x in spec(loads(p.stdout))["roles"] if x["id"] == "researcher"] != [False]: bad.append(f"{tag}: the researcher's hireable is not false in the render")
+
+# the whole render, as at <git-ref> but for the spec's version, lifecycle and hireable, harness-start.sh, the harness checksum
+# and the discord gateway's HARNESS_UPLOADS rollback leftover (removed 2026-11-20; its absence is checked by the channel loop)
+def strip(r):
+    r = copy.deepcopy(r)
+    if HC in r:
+        r[HC]["data"].pop("harness-start.sh", None)
+        s = spec(r)
+        if s is not None and s.get("version") == 4:
+            s["version"] = 3
+            for x in s.get("roles", []): x.pop("lifecycle", None); x.pop("hireable", None)
+        if s is not None: r[HC]["data"]["harness-workers.json"] = s
+    if H in r:
+        r[H]["spec"]["template"]["metadata"].get("annotations", {}).pop("checksum/config", None)
+        for c in r[H]["spec"]["template"]["spec"]["containers"]:
+            if c["name"] == "discord": c["env"] = [e for e in c.get("env", []) if e["name"] != "HARNESS_UPLOADS"]
+    return r
+diffs = (("prod", prod, prod_ref), ("test phase", test, test_ref), ("harness off", off, off_ref), ("staging", staging, staging_ref))
+if (spec(prod_ref) or {}).get("version") == 4:
+    print(f"NOTICE: the {ref} render already has a roles spec 4: the whole-render diff against it (Task 9's change alone) was skipped")
+    diffs = ()
+for label, a, b in diffs:
+    tag = f"the {label} render differs from {ref}'s only in harness-workers.json (version, lifecycle, hireable), harness-start.sh, the checksum and the discord gateway's HARNESS_UPLOADS leftover"
+    if HC in a and (spec(a) or {}).get("version") != 4: bad.append(f"{tag}: its harness-workers.json is not version 4")
+    if HC in b and (spec(b) or {}).get("version") != 3: bad.append(f"{tag}: the ref's harness-workers.json is not version 3")
+    sa, sb = strip(a), strip(b)
+    for k in sorted(set(sa) | set(sb)):
+        if sa.get(k) != sb.get(k): bad.append(f"{tag}: {k[0]}/{k[1]} differs{'' if k in sa and k in sb else ' (on one side only)'}")
+if diffs and HAVE:
+    # the pairing guard, new image and old chart: the built core refuses <git-ref>'s spec v3, naming the chart as older
+    tag = f"naila's built core refuses the {ref} chart's roles spec 3"
+    want = "version must be 4 (got 3): the chart predates pure-core phase 5 (temporary roles)"
+    if want not in (q := naila(prod_ref)).stderr: bad.append(f"{tag}: exit {q.returncode} {why(q)!r}, want {want!r}")
+if bad:
+    print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
+print("roles spec 4: the researcher temporary and hireable, the other four permanent" + (", naila's parser and start checks accept it, the prod render pairs with the built image" if HAVE else "")
+      + "; bad lifecycle, hireable, a temporary lead or RC line or channel fail the render" + (f"; the render is {ref}'s but for those" if diffs else ""))
 PY

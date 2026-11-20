@@ -1,5 +1,5 @@
 image:
-  tag: sha-f650403
+  tag: sha-344f2fa
 vault:
   # The Storage Box vault (Remotely Save over WebDAV on the devices, SMB here), since 2026-10-31.
   mode: smb

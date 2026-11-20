@@ -2,9 +2,10 @@
 {{- define "assistant.harnessModeFiles" -}}
 {{- range $p, $_ := .Files.Glob "files/modes/harness/**" }}{{ $.Files.Get $p }}{{ end }}
 {{- end }}
-{{- /* The roles config (harness.roleSpec; naila packages/harness/src/workers-spec.ts, ROLES_SPEC_VERSION 3) as
-       harness-workers.json for harness.phase: {"version":3,"roles":[…],"retired":[…],"summary":…}, the roles in values
-       order, each role's `paths` (its path grants) when it has them. One source per value: a role's model is its workers[].model, its description its files/agents/<id>.md
+{{- /* The roles config (harness.roleSpec; naila packages/harness/src/workers-spec.ts, ROLES_SPEC_VERSION 4) as
+       harness-workers.json for harness.phase: {"version":4,"roles":[…],"retired":[…],"summary":…}, the roles in values
+       order, each role's `lifecycle` (permanent or temporary), its `hireable` when set, and its `paths` (its path grants)
+       when it has them. One source per value: a role's model is its workers[].model, its description its files/agents/<id>.md
        frontmatter's, its ceiling files/modes/harness/<id>.<ceiling>.md split on ", ". The markers __FINANCE_HOST__ and
        __VAULT_ROOT__ resolve to this phase's finance server and vault root, and __FINANCE_FOLDER__ to the profile's finance
        folder (Helm renders no values, so a template local can't be written into them). A stdio server run from vault-mcp's
@@ -12,7 +13,11 @@
        (vault-mcp layout.ts vaultPathsEnv: none for DEFAULT_VAULT_PATHS, so production's spec is unchanged). Called with
        (dict "root" $ "financeOn" <services.finance enabled> "paths" <harness.profile.paths, checked>), worked out once in
        the body. Fails the render on what the core would refuse at start: a duplicate id, no lead or two, a lead not listed
-       first, a retired id that roles also lists, an unresolved marker, a server holding a $. Two chart-only checks besides:
+       first, a retired id that roles also lists, an unresolved marker, a server holding a $, a lifecycle other than
+       permanent or temporary, a hireable on a permanent role or not a boolean on a temporary one, a temporary lead (the rule
+       that a quarantined role is temporary is left to the core: tests/render-modes.sh runs it). A temporary role is hired for
+       one job by the lead, so it has no RC line (workers[]) and no channel conversation (a DISCORD_CHANNELS pair named after
+       it, in any channel's gateway env): either fails the render. Two chart-only checks besides:
        a server holding a write credential of any service harness.services lists, enabled or not (P11: a disabled service's
        write bearer must not reach a run either), and a server naming __FINANCE_HOST__ while finance is disabled. The rest of
        the core's service-use check (seeds, other servers, path grants of a disabled service) and unknown service ids are
@@ -32,11 +37,19 @@
 {{- range $id, $e := $h.services | default dict }}{{ if and (kindIs "map" $e) (kindIs "slice" $e.writeCredentials) }}{{ range $e.writeCredentials }}{{ $creds = append $creds (toString .) }}{{ end }}{{ end }}{{ end }}
 {{- $ids := list }}
 {{- $leads := list }}
+{{- $temporary := list }}
 {{- range $h.roleSpec.roles }}
 {{- if has (toString .id) $ids }}{{ fail (printf "harness.roleSpec.roles: %s is listed twice" (toString .id)) }}{{ end }}
 {{- $ids = append $ids (toString .id) }}
 {{- if and (hasKey . "lead") (not (and (kindIs "bool" .lead) .lead)) }}{{ fail (printf "harness.roleSpec.roles.%s.lead must be true or absent" (toString .id)) }}{{ end }}
 {{- if .lead }}{{ $leads = append $leads (toString .id) }}{{ end }}
+{{- $at := printf "harness.roleSpec.roles.%s" (toString .id) }}
+{{- if not (has .lifecycle (list "permanent" "temporary")) }}{{ fail (printf "%s.lifecycle must be permanent or temporary" $at) }}{{ end }}
+{{- if and (hasKey . "hireable") (not (kindIs "bool" .hireable)) }}{{ fail (printf "%s.hireable must be true or false" $at) }}{{ end }}
+{{- if and (eq .lifecycle "permanent") (hasKey . "hireable") }}{{ fail (printf "%s.hireable is only for a temporary role" $at) }}{{ end }}
+{{- if and (eq .lifecycle "temporary") (not (hasKey . "hireable")) }}{{ fail (printf "%s.hireable must be true or false" $at) }}{{ end }}
+{{- if and .lead (ne .lifecycle "permanent") }}{{ fail (printf "%s: the lead must be permanent" $at) }}{{ end }}
+{{- if eq .lifecycle "temporary" }}{{ $temporary = append $temporary (toString .id) }}{{ end }}
 {{- end }}
 {{- if ne (len $leads) 1 }}{{ fail "harness.roleSpec.roles: exactly one role must have lead: true" }}{{ end }}
 {{- if ne (first $ids) (first $leads) }}{{ fail "harness.roleSpec.roles: the lead must be listed first" }}{{ end }}
@@ -47,7 +60,15 @@
 {{- $models := dict }}
 {{- range $root.Values.workers }}
 {{- if not (has .name $ids) }}{{ fail (printf "harness.roleSpec.roles has no %s (workers[] names it)" .name) }}{{ end }}
+{{- if has .name $temporary }}{{ fail (printf "harness.roleSpec.roles.%s is temporary: workers[] gives it an RC line" .name) }}{{ end }}
 {{- $_ := set $models .name (toString .model) }}
+{{- end }}
+{{- range $_, $c := $h.channels | default dict }}
+{{- if and (kindIs "map" $c) (kindIs "map" $c.gateway) }}{{ if kindIs "map" $c.gateway.env }}
+{{- range splitList "," (toString ($c.gateway.env.DISCORD_CHANNELS | default "")) }}
+{{- if has (first (splitList ":" .)) $temporary }}{{ fail (printf "harness.roleSpec.roles.%s is temporary: DISCORD_CHANNELS gives it a channel" (first (splitList ":" .))) }}{{ end }}
+{{- end }}
+{{- end }}{{ end }}
 {{- end }}
 {{- $roles := list }}
 {{- range $s := $h.roleSpec.roles }}
@@ -58,8 +79,9 @@
 {{- if hasKey $brain "model" }}{{ fail (printf "%s.brain.model is set: the model is workers[].model (one source)" $at) }}{{ end }}
 {{- $_ := set $brain "model" (index $models $w) }}
 {{- end }}
-{{- $x := dict "id" $w "display" $s.display "seed" ($s.seed | default list) "instructions" $s.instructions "brain" $brain "servers" ($s.servers | default list) }}
+{{- $x := dict "id" $w "lifecycle" $s.lifecycle "display" $s.display "seed" ($s.seed | default list) "instructions" $s.instructions "brain" $brain "servers" ($s.servers | default list) }}
 {{- if $s.lead }}{{ $_ := set $x "lead" true }}{{ end }}
+{{- if hasKey $s "hireable" }}{{ $_ := set $x "hireable" $s.hireable }}{{ end }}
 {{- if hasKey $s "paths" }}{{ $_ := set $x "paths" $s.paths }}{{ end }}
 {{- if $s.ceiling }}
 {{- $fm := regexFind "(?s)\\A---\\n.*?\\n---\\n" ($root.Files.Get (printf "files/agents/%s.md" $w)) }}
@@ -90,7 +112,7 @@
 {{- end }}
 {{- $roles = append $roles $x }}
 {{- end }}
-{{- $json := printf "{\"version\":3,\"roles\":%s,\"retired\":%s,\"summary\":%s}" (toJson $roles) (toJson $retired) (toJson $h.roleSpec.summary) | replace "__FINANCE_HOST__" $finance | replace "__VAULT_ROOT__" $vaultRoot | replace "__FINANCE_FOLDER__" (toString $paths.finance) }}
+{{- $json := printf "{\"version\":4,\"roles\":%s,\"retired\":%s,\"summary\":%s}" (toJson $roles) (toJson $retired) (toJson $h.roleSpec.summary) | replace "__FINANCE_HOST__" $finance | replace "__VAULT_ROOT__" $vaultRoot | replace "__FINANCE_FOLDER__" (toString $paths.finance) }}
 {{- with regexFind "__[A-Z_]+__" $json }}{{ fail (printf "harness.roleSpec: the marker %s is not resolved" .) }}{{ end }}
 {{- $json }}
 {{- end }}
@@ -161,6 +183,7 @@
 {{- if has $uid $uids }}{{ fail (printf "%s.gateway.uid %d is taken (root, the core, docs or another gateway)" $at $uid) }}{{ end }}
 {{- $uids = append $uids $uid }}
 {{- if hasKey . "uploads" }}{{ fail (printf "%s.gateway.uploads is gone: the core owns uploads (Task 13), so no gateway mounts anything; drop the key" $at) }}{{ end }}
+{{- /* HARNESS_UPLOADS stays reserved although the chart no longer sets it: a gateway env may not bring back the retired variable */}}
 {{- $names := list "CORE_URL" "GATEWAY_SECRET" "HARNESS_UPLOADS" }}
 {{- range $k, $_ := .env }}{{ if has $k $names }}{{ fail (printf "%s.gateway.env.%s is set by the chart or twice" $at $k) }}{{ end }}{{ $names = append $names $k }}{{ end }}
 {{- range $k, $v := .secretEnv }}
@@ -423,16 +446,6 @@ spec:
             - { name: CORE_URL, value: "http://127.0.0.1:3100" }
             - name: GATEWAY_SECRET
               valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: {{ $ch.secretKey | quote }} } }
-            {{- if eq $ch.name "discord" }}
-            # Rollback leftover (P24), remove after 2026-11-19: HARNESS_UPLOADS, which a discord gateway older than naila 95dd7a2
-            # exits without ("missing env HARNESS_UPLOADS"); the gateway since 95dd7a2 ignores it. That older gateway on this
-            # chart has no mount, so the path doesn't exist in its read-only root: it stays up, and a message with files reaches
-            # the core as "Files not saved: storage error"; its core sets no HARNESS_ORIGIN, so runs read and convert no uploads
-            # (degraded, never wider). Roll back the chart and the image together (one revert of this chart change and the
-            # values.prod.yaml image.tag bump); if only one can go back, the image first: the older chart on the new image
-            # remounts uploads and opens every channel's to docs-grant.
-            - { name: HARNESS_UPLOADS, value: {{ $up }}/{{ $ch.name }} }   # remove after 2026-11-19
-            {{- end }}
             {{- range $k, $v := .env }}{{ $s := ternary "" (toString $v) (kindIs "invalid" $v) }}{{ if ne $s "" }}
             - { name: {{ $k | quote }}, value: {{ $s | quote }} }
             {{- end }}{{ end }}

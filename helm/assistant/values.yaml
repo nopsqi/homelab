@@ -142,10 +142,13 @@ harness:
       needs: [budget.read]
       phase: any
       uses: [finance]
-  # The roles config (naila packages/harness/src/workers-spec.ts, ROLES_SPEC_VERSION 3): templates/harness.yaml renders it as
+  # The roles config (naila packages/harness/src/workers-spec.ts, ROLES_SPEC_VERSION 4): templates/harness.yaml renders it as
   # harness-workers.json beside each role's instructions (/config), the core installs its roles from it at start (in this
   # order, the lead first), and the claude-code adapter's prepare.js writes the agent files from it. `roles` is an ordered
-  # list: each role's `id` (immutable once rows are written under it), `lead: true` on exactly one (listed first), `display`
+  # list: each role's `id` (immutable once rows are written under it), `lead: true` on exactly one (listed first), `lifecycle`
+  # (spec 4: permanent, keeping its history and conversation; or temporary, hired by the lead for one job and released, with
+  # no RC line in workers[] and no DISCORD_CHANNELS conversation; the lead is permanent, a quarantined role temporary),
+  # `hireable` (a temporary role's only, true or false: whether the lead may hire it), `display`
   # (how every channel shows it: name, avatar key), `seed` (its switches on first sight; each must apply to it, as the core
   # checks at start: tests/render-modes.sh runs naila's checkSeeds on the render), `instructions`, `brain`, `ceiling`,
   # `servers` and `paths` (spec 3: its path grants, e.g. finance-documents, the vault's Finance/ folder through files.read;
@@ -160,17 +163,21 @@ harness:
   # a stdio server run from vault-mcp's dist also gets VAULT_PATHS (the profile's paths) when they are not production's
   # (vault-mcp layout.ts vaultPathsEnv: none for DEFAULT_VAULT_PATHS). No server string may hold a $ or a write credential
   # of any service in services above, enabled or not (MCP_FINANCE_TOKEN, the finance write bearer): the render fails. So do
-  # a duplicate id, no lead or two, a lead not listed first, and a retired id that roles also lists.
+  # a duplicate id, no lead or two, a lead not listed first, a retired id that roles also lists, a lifecycle other than
+  # permanent or temporary, a misplaced or non-boolean hireable, a temporary lead, and a temporary role in workers[] or in a
+  # channel's DISCORD_CHANNELS.
   roleSpec:
     roles:
       - id: naila
         lead: true
+        lifecycle: permanent
         display: { name: Naila, avatar: naila }
         seed: [files.read, messaging.ask, vault.read, vault.write, docs.convert, vault.organize]
         instructions: harness-CLAUDE.md
         brain: { provider: claude-subscription, model: default }
         servers: []
       - id: finance-bookkeeper
+        lifecycle: permanent
         display: { name: Finance Bookkeeper, avatar: finance-bookkeeper }
         seed: [files.read, messaging.ask, budget.read, budget.write-plans, docs.convert]
         paths: [finance-documents]
@@ -180,6 +187,7 @@ harness:
         servers:
           - { name: finance, transport: http, url: "http://__FINANCE_HOST__:8080/mcp", bearer: MCP_FINANCE_READ_TOKEN }
       - id: finance-advisor
+        lifecycle: permanent
         display: { name: Finance Advisor, avatar: finance-advisor }
         seed: [files.read, messaging.ask, budget.read, budget.write-plans, docs.convert]
         paths: [finance-documents]
@@ -192,6 +200,7 @@ harness:
           # change is a plan the user approves, carried out by the core's own notes executor, which never gets NOTES_READONLY
           - { name: finance-notes, transport: stdio, command: node, args: [/naila/packages/vault-mcp/dist/notes-server.js], env: { VAULT_ROOT: "__VAULT_ROOT__/__FINANCE_FOLDER__/", NOTES_READONLY: "1" } }
       - id: ops-oncall
+        lifecycle: permanent
         display: { name: Ops Oncall, avatar: ops-oncall }
         seed: [messaging.ask, cluster.read]
         instructions: harness-agent-ops-oncall.md
@@ -201,7 +210,10 @@ harness:
           - { name: ops, transport: http, url: "http://assistant-ops:8080/mcp", bearer: MCP_OPS_TOKEN }
       # The web and nothing else (WebSearch and WebFetch, through web-guard.mjs --by-worker): no server, not even the core's.
       # Not in workers[] above: no RC line, no direct line or channel of its own; only naila asks it. Its model is set here.
+      # Temporary and hireable (spec 4, the core's rule for a quarantined role): naila hires it for one job, released after.
       - id: researcher
+        lifecycle: temporary
+        hireable: true
         display: { name: Researcher, avatar: researcher }
         seed: [web.search, web.open]
         instructions: harness-agent-researcher.md

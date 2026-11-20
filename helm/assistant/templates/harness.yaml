@@ -183,6 +183,7 @@
 {{- if has $uid $uids }}{{ fail (printf "%s.gateway.uid %d is taken (root, the core, docs or another gateway)" $at $uid) }}{{ end }}
 {{- $uids = append $uids $uid }}
 {{- if hasKey . "uploads" }}{{ fail (printf "%s.gateway.uploads is gone: the core owns uploads (Task 13), so no gateway mounts anything; drop the key" $at) }}{{ end }}
+{{- /* HARNESS_UPLOADS stays reserved although the chart no longer sets it: a gateway env may not bring back the retired variable */}}
 {{- $names := list "CORE_URL" "GATEWAY_SECRET" "HARNESS_UPLOADS" }}
 {{- range $k, $_ := .env }}{{ if has $k $names }}{{ fail (printf "%s.gateway.env.%s is set by the chart or twice" $at $k) }}{{ end }}{{ $names = append $names $k }}{{ end }}
 {{- range $k, $v := .secretEnv }}
@@ -445,16 +446,6 @@ spec:
             - { name: CORE_URL, value: "http://127.0.0.1:3100" }
             - name: GATEWAY_SECRET
               valueFrom: { secretKeyRef: { name: assistant-harness-secret, key: {{ $ch.secretKey | quote }} } }
-            {{- if eq $ch.name "discord" }}
-            # Rollback leftover (P24), remove after 2026-11-19: HARNESS_UPLOADS, which a discord gateway older than naila 95dd7a2
-            # exits without ("missing env HARNESS_UPLOADS"); the gateway since 95dd7a2 ignores it. That older gateway on this
-            # chart has no mount, so the path doesn't exist in its read-only root: it stays up, and a message with files reaches
-            # the core as "Files not saved: storage error"; its core sets no HARNESS_ORIGIN, so runs read and convert no uploads
-            # (degraded, never wider). Roll back the chart and the image together (one revert of this chart change and the
-            # values.prod.yaml image.tag bump); if only one can go back, the image first: the older chart on the new image
-            # remounts uploads and opens every channel's to docs-grant.
-            - { name: HARNESS_UPLOADS, value: {{ $up }}/{{ $ch.name }} }   # remove after 2026-11-19
-            {{- end }}
             {{- range $k, $v := .env }}{{ $s := ternary "" (toString $v) (kindIs "invalid" $v) }}{{ if ne $s "" }}
             - { name: {{ $k | quote }}, value: {{ $s | quote }} }
             {{- end }}{{ end }}

@@ -1976,9 +1976,9 @@ def channels(c):
     return v if isinstance(v, list) else None
 def compact(d): return json.dumps(d, separators=(",", ":"))
 
-# Task 13 (R9): as at the ref but for the mount, which is gone. HARNESS_UPLOADS stays one release as a rollback leftover (P24:
-# a gateway image older than naila 95dd7a2 exits without it); the new gateway ignores it. So the env is compared minus
-# HARNESS_UPLOADS, which may only be the leftover, checked below.
+# Task 13 (R9): as at the ref but for the mount, which is gone. HARNESS_UPLOADS was a rollback leftover (P24: a gateway image
+# older than naila 95dd7a2 exits without it), removed 2026-11-20; a ref may still render it. So the env is compared minus
+# HARNESS_UPLOADS, which must now be absent, checked below.
 tag = f"channel loop: the discord container renders as at {ref}, without its volume mount"
 o, n = ctr(oldh, "discord"), ctr(test, "discord")
 if o is None or n is None: bad.append(f"{tag}: no discord container ({'at the ref' if o is None else 'now'})")
@@ -1993,19 +1993,12 @@ for label, r in (("test", test), ("real", real), ("two channels", two)):
     if {c["name"] for c in gws} != ({"discord", "example"} if label == "two channels" else {"discord"}): bad.append(f"{tag}: the gateways are {[c['name'] for c in gws]} ({label})")
     for c in gws:
         if c.get("volumeMounts"): bad.append(f"{tag}: {c['name']} mounts {c['volumeMounts']!r} ({label})")
-tag = "HARNESS_UPLOADS is only the discord gateway's rollback leftover, marked for removal"
-LEFT = "/home/claude/.claude/uploads/discord"
+tag = "no HARNESS_UPLOADS anywhere: the discord gateway's rollback leftover (P24) is gone and stays gone"
 for label, r in (("test", test), ("real", real), ("two channels", two)):
     for c in pod(r)["containers"] + pod(r).get("initContainers", []):
-        has = "HARNESS_UPLOADS" in envmap(c)
-        if c["name"] == "discord" and (not has or val(c, "HARNESS_UPLOADS") != LEFT): bad.append(f"{tag}: discord HARNESS_UPLOADS is {val(c, 'HARNESS_UPLOADS')!r}, want the leftover {LEFT!r} ({label})")
-        if c["name"] != "discord" and has: bad.append(f"{tag}: {c['name']} has HARNESS_UPLOADS ({label})")
+        if "HARNESS_UPLOADS" in envmap(c): bad.append(f"{tag}: {c['name']} has HARNESS_UPLOADS={val(c, 'HARNESS_UPLOADS')!r} ({label})")
 tpl = open("helm/assistant/templates/harness.yaml").read()
-if not re.search(r"HARNESS_UPLOADS[^\n]*remove after 2026-11-19", tpl): bad.append(f"{tag}: the template's HARNESS_UPLOADS line does not say \"remove after 2026-11-19\"")
-import datetime
-today = os.environ.get("RENDER_MODES_TODAY") or datetime.date.today().isoformat()   # set it to test the deadline
-if today > "2026-11-19" and any("HARNESS_UPLOADS" in envmap(c) for r in (test, real, two) for c in pod(r)["containers"]):   # rendered, not the reserved name
-    bad.append(f"{tag}: it is {today}, past 2026-11-19: remove the HARNESS_UPLOADS leftover from the discord gateway (and turn this check into \"no HARNESS_UPLOADS anywhere\")")
+if re.search(r"name: HARNESS_UPLOADS\b(?!_)", tpl): bad.append(f"{tag}: the template still names HARNESS_UPLOADS as an env")
 for f in ("values.yaml", "values.prod.yaml", "values.staging.yaml"):
     if re.search(r"^\s+uploads:", open(f"helm/assistant/{f}").read(), re.M): bad.append(f"{tag}: helm/assistant/{f} still sets gateway.uploads")
 
@@ -2098,6 +2091,7 @@ for what, args, msg in (("a missing secretKey", ["--set", "harness.channels.disc
                         ("a gateway handed another channel's secretKey", ["--set-json", 'harness.channels.tg={"enabled":true,"kind":"owner","label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"GATEWAY_DISCORD_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X"),
                         ("a gateway handed a GATEWAY_*_SECRET key not its own", ["--set-json", 'harness.channels.tg={"enabled":true,"kind":"owner","label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"GATEWAY_OTHER_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X"),
                         ("a leftover gateway.uploads (the core owns uploads)", ["--set", "harness.channels.discord.gateway.uploads=true"], "harness.channels.discord.gateway.uploads"),
+                        ("a gateway env bringing back HARNESS_UPLOADS", ["--set", "harness.channels.discord.gateway.env.HARNESS_UPLOADS=/x"], "harness.channels.discord.gateway.env.HARNESS_UPLOADS"),
                         ("DISCORD_CHANNELS without decisions", ["--set", "harness.channels.discord.gateway.env.DISCORD_CHANNELS=naila:1566334318752567368\\,legal-clerk:1566334318752567369"], "DISCORD_CHANNELS"),
                         ("DISCORD_CHANNELS with an uppercase name", ["--set", "harness.channels.discord.gateway.env.DISCORD_CHANNELS=Naila:1566334318752567368\\,decisions:1566334318752567369"], "DISCORD_CHANNELS"),
                         ("a gateway handed CORE_TOOLS_SECRET", ["--set-json", 'harness.channels.tg={"enabled":true,"kind":"owner","label":"x","settle":"none","secretKey":"GATEWAY_TG_SECRET","gateway":{"uid":1005,"secretEnv":{"X":"CORE_TOOLS_SECRET"}}}'], "harness.channels.tg.gateway.secretEnv.X")):
@@ -3502,7 +3496,8 @@ tag = "a temporary role that is not hireable, in no RC line or channel, renders"
 if (p := render(*roles_with(researcher={"hireable": False}))).returncode != 0: bad.append(f"{tag}: {p.stderr.strip()[-300:]}")
 elif [x.get("hireable") for x in spec(loads(p.stdout))["roles"] if x["id"] == "researcher"] != [False]: bad.append(f"{tag}: the researcher's hireable is not false in the render")
 
-# the whole render, as at <git-ref> but for the spec's version, lifecycle and hireable, harness-start.sh and the harness checksum
+# the whole render, as at <git-ref> but for the spec's version, lifecycle and hireable, harness-start.sh, the harness checksum
+# and the discord gateway's HARNESS_UPLOADS rollback leftover (removed 2026-11-20; its absence is checked by the channel loop)
 def strip(r):
     r = copy.deepcopy(r)
     if HC in r:
@@ -3512,14 +3507,17 @@ def strip(r):
             s["version"] = 3
             for x in s.get("roles", []): x.pop("lifecycle", None); x.pop("hireable", None)
         if s is not None: r[HC]["data"]["harness-workers.json"] = s
-    if H in r: r[H]["spec"]["template"]["metadata"].get("annotations", {}).pop("checksum/config", None)
+    if H in r:
+        r[H]["spec"]["template"]["metadata"].get("annotations", {}).pop("checksum/config", None)
+        for c in r[H]["spec"]["template"]["spec"]["containers"]:
+            if c["name"] == "discord": c["env"] = [e for e in c.get("env", []) if e["name"] != "HARNESS_UPLOADS"]
     return r
 diffs = (("prod", prod, prod_ref), ("test phase", test, test_ref), ("harness off", off, off_ref), ("staging", staging, staging_ref))
 if (spec(prod_ref) or {}).get("version") == 4:
     print(f"NOTICE: the {ref} render already has a roles spec 4: the whole-render diff against it (Task 9's change alone) was skipped")
     diffs = ()
 for label, a, b in diffs:
-    tag = f"the {label} render differs from {ref}'s only in harness-workers.json (version, lifecycle, hireable), harness-start.sh and the checksum"
+    tag = f"the {label} render differs from {ref}'s only in harness-workers.json (version, lifecycle, hireable), harness-start.sh, the checksum and the discord gateway's HARNESS_UPLOADS leftover"
     if HC in a and (spec(a) or {}).get("version") != 4: bad.append(f"{tag}: its harness-workers.json is not version 4")
     if HC in b and (spec(b) or {}).get("version") != 3: bad.append(f"{tag}: the ref's harness-workers.json is not version 3")
     sa, sb = strip(a), strip(b)

@@ -62,24 +62,29 @@ for (const [id, s] of Object.entries(cfg.services)) {
 }
 })().catch((e) => fail(`${e?.message ?? e}: ${differ}`))' "$SERVICES_JS"
 # PAIRING: the image's setup
-# Pure-core phase 4 (schedules and profile) and phase 6 (places): the owner's profile, the schedules and the Git base of
-# channel places (/config/harness-setup.json, the chart's: setup spec 2, its `places` and the places view) and the image that
-# reads them (dist/setup.js) come together. An image without setup.js, or whose SETUP_SPEC_VERSION is not 2, predates the
-# chart (the import error printed first): a phase 4 image would refuse the places, or misread them. A setup file the
-# image's parseSetup refuses (the jobs' requests read beside it) means the two were not shipped together. Either fails the
-# start. The profile's paths then place what this script makes and checks, one per line: the test folder (VAULT_EXCLUDE, the
-# test phase's rules), the finance folder, the workspace root (vault-mcp's layout: the write guard's root) and the vault
-# server's VAULT_PATHS (empty for production's paths: vaultPathsEnv gives none).
+# Pure-core phase 4 (schedules and profile), phase 6 (places) and plan 7a (budgets and provider settings): the owner's
+# profile, the schedules, the Git base of channel places, the budgets and the provider settings (/config/harness-setup.json,
+# the chart's: setup spec 3) and the image that reads them (dist/setup.js) come together. An image without setup.js, or whose
+# SETUP_SPEC_VERSION is below 3 or no number, predates the chart (the import error printed first): a phase 6 image would
+# refuse the budgets, or run without them. One whose SETUP_SPEC_VERSION is above 3 is newer than the chart, and says so (the
+# image refuses an older chart's setup in turn, naming the chart). A setup file the image's parseSetup refuses (the jobs'
+# requests read beside it) means the two were not shipped together. Each fails the start. The profile's paths then place
+# what this script makes and checks, one per line: the test folder (VAULT_EXCLUDE, the test phase's rules), the finance
+# folder, the workspace root (vault-mcp's layout: the write guard's root) and the vault server's VAULT_PATHS (empty for
+# production's paths: vaultPathsEnv gives none).
 SETUP_JS=/naila/packages/harness/dist/setup.js
 LAYOUT_JS=/naila/packages/vault-mcp/dist/layout.js
 setup=$(node -e '
 const fs = require("fs"), path = require("path"), [file, layoutFile, setupFile] = process.argv.slice(1)
 const fail = (m) => { console.error(`harness-start: ${m}`); process.exit(2) }
-const old = "this naila image predates pure-core phase 6 (places): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+const old = "this naila image predates plan 7a (budgets and provider settings): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+const SPEC = 3
 ;(async () => {
 let img, layout
 try { img = await import(file) } catch (e) { fail(`cannot load ${file}: ${e?.message ?? e}: ${old}`) }
-if (img.SETUP_SPEC_VERSION !== 2) fail(old)
+const v = img.SETUP_SPEC_VERSION
+if (Number.isInteger(v) && v > SPEC) fail(`this naila image reads setup spec ${v}, newer than this chart\x27s ${SPEC}: deploy the chart that ships with this image, or roll the image back (revert the promote merge)`)
+if (v !== SPEC) fail(old)
 try { layout = await import(layoutFile) } catch (e) { fail(`cannot load ${layoutFile}: ${e?.message ?? e}: ${old}`) }
 let s
 try { s = img.parseSetup(fs.readFileSync(setupFile, "utf8"), setupFile, (name) => fs.readFileSync(path.join(path.dirname(setupFile), name), "utf8")) }
@@ -164,6 +169,23 @@ missing=; for b in $bearers; do [ -n "${!b:-}" ] || missing="${missing:+$missing
 [ -z "$missing" ] || die "a bearer is missing ($missing)"
 
 [ "$(claude --version 2>/dev/null | cut -d' ' -f1)" = "$CLAUDE_VERSION" ] || npm i -g @anthropic-ai/claude-code@$CLAUDE_VERSION
+# PAIRING: the image's Claude Code probe
+# Plan 7a: what the image's claude-code adapter uses of the CLI (the appended system prompt, session resume, the cache TTL,
+# the per-run cap, compaction kept off) was probed offline on one Claude Code version, CC_VERSION in
+# dist/providers/claude-code/features.js, and holds for that version alone. The CLI installed above is the chart's
+# (claude.version): one the probe never ran would be driven by answers recorded for another, so the start fails unless the
+# two are the same, naming both and the fix. An image without features.js, or without a CC_VERSION, predates plan 7a.
+FEATURES_JS=/naila/packages/harness/dist/providers/claude-code/features.js
+CC_PROBED=$(node -e '
+const [file] = process.argv.slice(1)
+const fail = (m) => { console.error(`harness-start: ${m}`); process.exit(2) }
+const old = "this naila image predates plan 7a (budgets and provider settings): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+import(file).then((m) => {
+  if (typeof m.CC_VERSION !== "string" || !/^[0-9]+\.[0-9]+\.[0-9]+$/.test(m.CC_VERSION)) fail(`${file} has no CC_VERSION: ${old}`)
+  console.log(m.CC_VERSION)
+}, (e) => fail(`cannot load ${file}: ${e?.message ?? e}: ${old}`))' "$FEATURES_JS") || exit 2
+CC_INSTALLED=$(claude --version 2>/dev/null | cut -d' ' -f1) || true
+[ "$CC_INSTALLED" = "$CC_PROBED" ] || die "Claude Code ${CC_INSTALLED:-(no version)} is installed, but this naila image's Claude Code probe was recorded for $CC_PROBED: set claude.version back to $CC_PROBED, or re-run the probe (plan 7a Task 3) and ship an image recorded for the new version"
 # The Runner relies on these; an older CLI would fail every run in a less obvious way. --disallowedTools takes the write tools
 # from a run another worker asked (P25), and --settings carries each run's capability settings: without either a run would
 # keep tools it must not have, so fail closed.
@@ -183,11 +205,12 @@ fi
 # Workers from the worker spec (/config/harness-workers.json, already resolved for this phase by the chart): the claude-code
 # adapter replaces ~/.claude/agents/ with one agent file per worker (its frontmatter from the spec, the read-only bearer of this
 # phase's finance server and the ops one filled in from the env; its instructions file verbatim), writes each worker's work dir
-# (HARNESS_HOME/work/<worker>: the core runs it there) with its agent and model, naila's with her harness CLAUDE.md, and
-# _summary's, and prints the dirs to trust. It refuses (exit 2, nothing written) an unset bearer or an agent file that would
-# hold the finance write bearer. In the test phase every role with a server named finance (the bookkeeper today) is also told
-# its budget is a test copy: the roles come from the spec, no file name is written here, and a listed role without an agent
-# file fails the start.
+# (HARNESS_HOME/work/<worker>: the core runs it there) with its agent and model, and _summary's, and prints the dirs to
+# trust. It writes no CLAUDE.md (plan 7a): the core appends the lead's instructions (the spec's instructions file) to each of
+# its runs' system prompt, and prepare.js removes a CLAUDE.md an older image left in a work dir, so they arrive once. It
+# refuses (exit 2, nothing written) an unset bearer or an agent file that would hold the finance write bearer. In the test
+# phase every role with a server named finance (the bookkeeper today) is also told its budget is a test copy: the roles come
+# from the spec, no file name is written here, and a listed role without an agent file fails the start.
 W=$HARNESS_HOME/work
 out=$(node "$PREPARE" --spec /config/harness-workers.json --claude-dir "$C" --work-dir "$W") || die "prepare.js refused the worker spec (its reason is above)"
 [ -n "$out" ] || die "prepare.js printed no work dirs"

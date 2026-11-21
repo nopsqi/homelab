@@ -215,10 +215,12 @@
 {{- $gws = append $gws $ch.name }}
 {{- end }}{{ end }}
 {{- /* The owner's profile and the schedules (pure-core phase 4; naila packages/harness/src/setup.ts and schedules-file.ts),
-       and the Git base of places (setup spec 2, pure-core phase 6; places-config.ts) as harness-setup.json:
-       {"version":2,"profile":{"timeZone":<tz>,…},"schedules":{"jobs":[…]},"places":[…]}, the profile's time zone the
-       top-level tz (one source with TZ), the jobs in values order, each without its chart-only `uses`, and a job's request
-       text (files/schedules/<id>.txt) the key harness-job-<id>.txt beside it. The chart checks only what it uses itself or
+       the Git base of places (setup spec 2, pure-core phase 6; places-config.ts), and the budgets and the provider settings
+       (setup spec 3, plan 7a; economy-config.ts) as harness-setup.json:
+       {"version":3,"profile":{"timeZone":<tz>,…},"schedules":{"jobs":[…]},"places":[…],"budgets":{…},"providerSettings":{…}},
+       the profile's time zone the top-level tz (one source with TZ), the jobs in values order, each without its chart-only
+       `uses`, and a job's request text (files/schedules/<id>.txt) the key harness-job-<id>.txt beside it (the budgets and the
+       provider settings are rendered and checked after the roles spec, below). The chart checks only what it uses itself or
        alone knows: the vault folders' shape (testFolder is the test phase's mount and VAULT_EXCLUDE), a job's id, enabled and
        request file, and the services an enabled job uses; the core refuses everything else at start (render-modes runs its
        parseSetup and checkSchedules on the render). */ -}}
@@ -301,7 +303,6 @@
 {{- $placeList = append $placeList (dict "conversation" $p.conversation "channel" $p.channel "ref" $p.ref) }}
 {{- end }}
 {{- if and (has "discord" $chNames) (not (has "pool on discord" $named)) }}{{ fail "harness.channels.discord is enabled without a pool place in harness.places" }}{{ end }}
-{{- $setupJson := printf "{\"version\":2,\"profile\":%s,\"schedules\":{\"jobs\":%s},\"places\":%s}" (toJson $prof) (toJson $jobs) (toJson $placeList) }}
 {{- $vaultRoot := ternary (printf "/vault/%s" $testFolder) "/vault" $test }}
 {{- $vaultSub := "" }}
 {{- if eq .Values.vault.mode "smb" }}{{ $vaultSub = ternary (printf "%s/%s" .Values.vault.subPath $testFolder) .Values.vault.subPath $test }}
@@ -310,6 +311,41 @@
 {{- $tokenKey := ternary "MCP_FINANCE_TEST_TOKEN" "MCP_FINANCE_TOKEN" $test }}
 {{- $readKey := ternary "MCP_FINANCE_TEST_READ_TOKEN" "MCP_FINANCE_READ_TOKEN" $test }}
 {{- $workerSpec := include "assistant.workerSpec" (dict "root" . "financeOn" $financeOn "paths" $paths) }}
+{{- /* The budgets and the provider settings (harness.budgets, harness.providerSettings; plan 7a, setup spec 3), rendered as the
+       values hold them. The chart checks what it uses itself: a budgets role and a resume role must be permanent roles of
+       harness.roleSpec (the core says so too, but a role's alert renders a rule here; checked after the roles spec's own
+       checks), and every budget and alert value must be a number (an alert value goes into a PromQL expr). The core refuses
+       the rest at start: shapes, ranges and cents, the providers, and what each adapter supports (render-modes runs its
+       parseSetup and checkEconomy on the render). */ -}}
+{{- $permanent := list }}
+{{- range $h.roleSpec.roles }}{{ if eq (toString .lifecycle) "permanent" }}{{ $permanent = append $permanent (toString .id) }}{{ end }}{{ end }}
+{{- $budgets := $h.budgets | default dict }}
+{{- $psettings := $h.providerSettings | default dict }}
+{{- $isNumber := list "float64" "int64" "int" }}
+{{- $roleAlerts := list }}
+{{- $liveAlert := "" }}
+{{- if kindIs "map" $budgets }}
+{{- range $p, $b := ($budgets.providers | default dict) }}{{ if kindIs "map" $b }}
+{{- range $k := list "monthlyUsd" "runCapUsd" }}{{ if hasKey $b $k }}
+{{- if not (has (kindOf (index $b $k)) $isNumber) }}{{ fail (printf "harness.budgets.providers.%s.%s must be a number" $p $k) }}{{ end }}
+{{- end }}{{ end }}
+{{- end }}{{ end }}
+{{- range $id, $b := ($budgets.roles | default dict) }}
+{{- if not (has $id $permanent) }}{{ fail (printf "harness.budgets.roles.%s is no permanent role of harness.roleSpec" $id) }}{{ end }}
+{{- if not (and (kindIs "map" $b) (has (kindOf (index ($b | default dict) "dailyAlertUsd")) $isNumber)) }}{{ fail (printf "harness.budgets.roles.%s.dailyAlertUsd must be a number" $id) }}{{ end }}
+{{- $roleAlerts = append $roleAlerts (dict "id" $id "usd" (toString $b.dailyAlertUsd)) }}
+{{- end }}
+{{- with $budgets.liveChecks }}{{ if and (kindIs "map" .) (hasKey . "dailyAlertUsd") }}
+{{- if not (has (kindOf .dailyAlertUsd) $isNumber) }}{{ fail "harness.budgets.liveChecks.dailyAlertUsd must be a number" }}{{ end }}
+{{- $liveAlert = toString .dailyAlertUsd }}
+{{- end }}{{ end }}
+{{- end }}
+{{- if kindIs "map" $psettings }}
+{{- range $p, $st := $psettings }}{{ if and (kindIs "map" $st) (kindIs "map" $st.resume) (kindIs "slice" $st.resume.roles) }}
+{{- range $st.resume.roles }}{{ if not (has (toString .) $permanent) }}{{ fail (printf "harness.providerSettings.%s.resume.roles names %s, which is no permanent role of harness.roleSpec" $p (toString .)) }}{{ end }}{{ end }}
+{{- end }}{{ end }}
+{{- end }}
+{{- $setupJson := printf "{\"version\":3,\"profile\":%s,\"schedules\":{\"jobs\":%s},\"places\":%s,\"budgets\":%s,\"providerSettings\":%s}" (toJson $prof) (toJson $jobs) (toJson $placeList) (toJson $budgets) (toJson $psettings) }}
 # Harness mode as its own pod: the core (packages/harness) runs each worker as a one-shot Claude Code run with this pod's
 # own Max login (naila.nopsqi.dev/harness), each channel's gateway (harness.channels) carries the user's messages and
 # confirmations, and the core alone carries out an approved decision. The RC pod (assistant-claude) is not touched.
@@ -321,12 +357,13 @@ data:
   harness-start.sh: |
 {{ .Files.Get "files/harness-start.sh" | indent 4 }}
   # The worker spec: the core reads it (HARNESS_WORKER_SPEC), and harness-start.sh's prepare.js (the claude-code adapter)
-  # writes the agent files, work dirs and the lead's CLAUDE.md from it. The instructions files it names are assistant-claude's
-  # harness-* keys, beside it in /config.
+  # writes the agent files and work dirs from it (no CLAUDE.md since plan 7a: the core appends the lead's instructions to its
+  # runs' system prompt). The instructions files it names are assistant-claude's harness-* keys, beside it in /config.
   harness-workers.json: |
     {{ $workerSpec }}
-  # The owner's profile, the schedules (pure-core phase 4) and the Git base of places (phase 6): the core reads it at start
-  # (HARNESS_SETUP's default, /config/harness-setup.json), and each job's request text beside it.
+  # The owner's profile, the schedules (pure-core phase 4), the Git base of places (phase 6), the budgets and the provider
+  # settings (plan 7a): the core reads it at start (HARNESS_SETUP's default, /config/harness-setup.json), and each job's
+  # request text beside it.
   harness-setup.json: |
     {{ $setupJson }}
 {{- range $k, $t := $requests }}
@@ -673,6 +710,29 @@ spec:
           annotations:
             summary: '{{ "{{" }} $value | printf "%.0f" {{ "}}" }} harness runs had tools that differ from their capability switches ({{ "{{" }} $labels.reason {{ "}}" }}) in the last 30 minutes'
             description: "A run's tools did not match its worker's switches: an unexpected tool stops the run before it acts, a missing one leaves a switched-on capability without its tools (an agent file's tools list lacking it, a CLI change, or an MCP server (finance, docs) failed to connect for that run). A run killed for an unexpected tool also counts in NailaRunsFailing (kind spawn), so that alert fires too, on purpose: one problem, two views. `kubectl -n {{ .Release.Namespace }} logs deploy/assistant-harness -c harness | grep 'capability mismatch'` names the worker and the tools."
+    {{- if or $roleAlerts $liveAlert }}
+    # The daily spend alerts (plan 7a; harness.budgets): a rolling 24h sum of the core's cost figure, per permanent role's owner
+    # runs and for the live checks' runs. Rendered only for a value set there. The core also tells the owner, once a local day
+    # (the profile's time zone), so the two can fire a few hours apart. Neither stops a run.
+    - name: naila-harness-spend
+      rules:
+        {{- range $roleAlerts }}
+        - alert: NailaRoleSpend
+          expr: sum by (namespace) (increase(naila_harness_cost_usd_total{job="assistant-harness-core",origin="owner",worker="{{ .id }}"}[24h])) > {{ .usd }}
+          labels: { severity: warning, role: {{ .id }} }
+          annotations:
+            summary: '{{ "{{" }} $value | printf "%.2f" {{ "}}" }} USD spent by the owner runs of {{ .id }} in the last 24 hours, above its daily alert of {{ .usd }} USD'
+            description: "The runs of {{ .id }} for the owner cost more today than harness.budgets.roles.{{ .id }}.dailyAlertUsd allows, by the providers' own cost figures. Nothing is stopped. Usage.md shows the day's spend per worker; raise the value in Git if this is the new normal."
+        {{- end }}
+        {{- with $liveAlert }}
+        - alert: NailaLiveCheckSpend
+          expr: sum by (namespace) (increase(naila_harness_cost_usd_total{job="assistant-harness-core",origin="test"}[24h])) > {{ . }}
+          labels: { severity: warning }
+          annotations:
+            summary: '{{ "{{" }} $value | printf "%.2f" {{ "}}" }} USD spent by the live checks in the last 24 hours, above their daily alert of {{ . }} USD'
+            description: "The live checks' runs (origin test) cost more today than harness.budgets.liveChecks.dailyAlertUsd allows, by the providers' own cost figures. Nothing is stopped. Usage.md shows the day's spend; check for a live run left looping, or raise the value in Git."
+        {{- end }}
+    {{- end }}
 {{- if .Values.networkPolicy.enabled }}
 ---
 # Out: DNS, the internet on 443 (Anthropic, Discord, npm for the CLI install, Cloudflare Access keys), this phase's finance

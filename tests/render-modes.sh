@@ -76,14 +76,14 @@
 #  (origin/prod with phase 1 live; helm/assistant as at 39540bd): a ref with a spec is rebuilt from its own
 #  harness-workers.json through the same port; a ref without one (2a6ccab, the prod chart before the spec) from its
 #  harness-agent keys through the old start script's sed. With NAILA_WORKTREE, the adapter's real prepare (run with tsx)
-#  writes those same files, work-dir settings, CLAUDE.md and dirs.
+#  writes those same files, work-dir settings and dirs, and (plan 7a) no CLAUDE.md: a stale one in the lead's work dir is removed.
 #  Researcher Task 12: the oracle also allows each tools: line losing WebSearch and WebFetch, and a new researcher.md (naila's
 #  golden frontmatter: tools WebSearch, WebFetch, an empty mcpServers; then its instructions key). The researcher is in the
 #  spec (claude-subscription/sonnet, ceiling WebSearch and WebFetch, no servers, the golden's description), no other ceiling
 #  holds the web, it has no RC agent file, direct line, message peer or Discord conversation, its prompt carries the spec's
 #  text and names no core tool, and the "every harness worker" checks leave it out.
 #  Researcher Task 13 changed the workers' prompts, so the oracle holds each agent file's frontmatter to the ref's and its
-#  instructions to this chart's harness-agent key (and prepare's naila CLAUDE.md to harness-CLAUDE.md). Naila names the
+#  instructions to this chart's harness-agent key (prepare's naila CLAUDE.md, until plan 7a). Naila names the
 #  researcher (her colleagues, her ask_worker line), the no-figures rule, one request per message, the JSON report as data,
 #  unchecked facts without sources, the ⚠️ plans and no capability or brain change after a search; the other harness workers
 #  ask naila for web facts and name no web tool; the RC advisor (the slots web and web-source) stays byte-identical; no
@@ -119,8 +119,9 @@
 #  the render; the render is <git-ref>'s but for those
 #  (skipped with a notice once <git-ref> renders harness-setup.json itself).
 # Then the setup pairing (pure core phase 4 Task 13): harness-start dies on an image without setup.js or whose
-#  SETUP_SPEC_VERSION is not 2 (1 until phase 6 Task 13; printing the import error), without vault-mcp's layout.js, and when
-#  the image's parseSetup refuses the chart's setup (the built image refuses a setup 1, naming the chart); the
+#  SETUP_SPEC_VERSION is not 3 (2 until plan 7a Task 17, 1 until phase 6 Task 13; printing the import error; one above 3 says
+#  the image is the newer side), without vault-mcp's layout.js, and when the image's parseSetup refuses the chart's setup
+#  (the built image refuses a setup 1 and a setup 2, naming the chart, and one without budgets or providerSettings); the
 #  real phase needs VAULT_EXCLUDE to name the profile's test folder; the prod render pairs with the built image (Harness-test,
 #  Finance, Naila/Workspace, no VAULT_PATHS); the web-rules check judges both copies with the profile's figure words (and the
 #  same FIGURE_WORDS); a non-default profile reaches the user-scope vault server and the advisor's finance-notes server as
@@ -145,6 +146,12 @@
 #  search), harness-start.sh and the checksum, and the built core refuses <git-ref>'s setup 1 naming the chart (skipped with
 #  a notice once <git-ref> renders setup 2; against a setup 2 <git-ref>, Task 16's: but for the setup's places and the
 #  harness checksum).
+# Then the token economy (plan 7a Task 17, setup spec 3): harness.budgets (the API's 100/5 from naila 74d97f5, no daily
+#  alert) and harness.providerSettings (the owner roles resume; no cacheTtl) render into the setup, naila's built parseSetup
+#  and checkEconomy accept it, a non-permanent role and a non-number value fail the render, the spend rules render only for
+#  an alert value set, harness-start dies unless the installed CLI is the image's CC_VERSION (claude.version is the built
+#  image's), no user-scope setting sets a cache TTL, and the render is <git-ref>'s but for the setup, harness-start.sh's
+#  setup guard and CLI pairing, and the checksum (skipped with a notice once <git-ref> renders setup 3).
 set -euo pipefail
 ref="${1:-origin/master}"
 root="$(git rev-parse --show-toplevel)"
@@ -1905,6 +1912,8 @@ else:
         p = subprocess.run(["node", "--input-type=module", "-e", seeds_js, dist, sf, "bad"], capture_output=True, text=True)
         if p.returncode == 0 or "roles.ops-oncall.seed has budget.read, which does not apply to ops-oncall" not in p.stderr: bad.append(f"{tag}: naila's checkSeeds accepts an ops-oncall seed with budget.read: {(p.stderr or p.stdout).strip()[-300:]}")
         prep = ["packages/harness/src/providers/claude-code/prepare.ts", "--spec", sf, "--claude-dir", f"{d}/c", "--work-dir", f"{d}/w"]
+        # a CLAUDE.md left in the lead's work dir by an older image (a rollback, then forward again) is removed
+        os.makedirs(f"{d}/w/naila"); open(f"{d}/w/naila/CLAUDE.md", "w").write("stale instructions\n")
         p = tsx(prep, {**ENV, "MCP_FINANCE_TOKEN": "placeholder-write-bearer"}, d)
         if p.returncode != 0: bad.append(f"{tag}: prepare exits {p.returncode}: {p.stderr.strip()[-300:]}"); continue
         if p.stdout.splitlines() != [f"{d}/w/{x}" for x in ("naila", "_summary", *AGENTS)]: bad.append(f"{tag}: prepare printed {p.stdout.splitlines()}")
@@ -1925,7 +1934,11 @@ else:
             if not l.strip(): continue
             n, m = l.split()
             if open(f"{d}/w/{n}/.claude/settings.json").read() != f'{{"agent": "{n}", "model": "{m}"}}\n': bad.append(f"{tag}: {n}'s work-dir settings differ from the old start script's")
-        if open(f"{d}/w/naila/CLAUDE.md").read() != new[ph]["harness-CLAUDE.md"] or not os.path.isdir(f"{d}/w/_summary"): bad.append(f"{tag}: naila's CLAUDE.md is not harness-CLAUDE.md, or _summary is missing")
+        # plan 7a Task 11/17: the lead's instructions reach its runs through --append-system-prompt-file (the core reads
+        # harness-CLAUDE.md, the spec's instructions file), so prepare writes no CLAUDE.md into any work dir: one there would
+        # be read as project memory too, and the lead would get its instructions twice
+        if not os.path.isdir(f"{d}/w/_summary"): bad.append(f"{tag}: _summary is missing")
+        if (cm := sorted(os.path.relpath(os.path.join(a, f), d) for a, _, fs in os.walk(f"{d}/w") for f in fs if f == "CLAUDE.md")): bad.append(f"{tag}: prepare wrote {cm}: the lead's instructions would reach its runs twice")
         # refused before writing anything: the write bearer's value in an agent file, an unset bearer
         for what, env_ in (("the write bearer's value in an agent file", {**ENV, "MCP_FINANCE_TOKEN": ENV["MCP_FINANCE_READ_TOKEN"]}), ("MCP_OPS_TOKEN unset", {"MCP_FINANCE_READ_TOKEN": "x"})):
             e = tempfile.mkdtemp()
@@ -2271,6 +2284,13 @@ for label, r in (("test", test), ("real", real), ("two channels", two)):
         bad.append(f"{tag}: NailaCapabilityMismatch's description does not name an MCP server (finance, docs) that failed to connect for that run")
     for a, x in rs.items():
         if "naila_harness_" in x["expr"] and J not in x["expr"]: bad.append(f"{tag}: {a} reads the core's metrics without {J}")
+    # plan 7a Task 17: the four core rules above are unchanged; the daily spend rules (NailaRoleSpend, NailaLiveCheckSpend) live
+    # in their own group, naila-harness-spend, which renders only when harness.budgets sets an alert value: none is set here
+    # (Task 19 sets them), so neither the group nor either rule renders (the spend section checks them when set)
+    groups = [g["name"] for g in (r.get(("PrometheusRule", "assistant-harness-login")) or {"spec": {"groups": []}})["spec"]["groups"]]
+    if groups != ["naila-harness", "naila-harness-core"]: bad.append(f"{tag}: the rule groups are {groups}, want naila-harness and naila-harness-core alone (no alert value is set)")
+    for a in ("NailaRoleSpend", "NailaLiveCheckSpend"):
+        if a in rs: bad.append(f"{tag}: {a} renders without an alert value")
 
 tag = "harness prompts name no channel"
 for f in sorted(os.path.basename(x) for x in glob.glob("helm/assistant/files/modes/harness/*.md")):
@@ -2998,10 +3018,18 @@ PROFILE = {"timeZone": "Asia/Jakarta", "quietUntil": "07:00", "currency": {"code
 # pure core phase 6 Task 13: setup spec 2 adds the Git base of places, production's Discord channels (pool: the decision pool):
 # two since Task 16, naila and pool (finance-bookkeeper, finance-advisor and ops-oncall left Git: the engine manages them)
 PLACES = [{"conversation": c, "channel": "discord", "ref": r} for c, r in (("naila", "1566334318752567368"), ("pool", "1566334486054961293"))]
+# plan 7a Task 17: setup spec 3 adds the budgets (the API's monthly budget and per-run cap, moved unchanged from naila
+# 74d97f5's providers/roster.ts; no daily alert until Task 19) and the provider settings (the owner-scope roles' session
+# resume on the subscription; no cacheTtl, no subscription cap)
+BUDGETS = {"providers": {"anthropic-api": {"monthlyUsd": 100, "runCapUsd": 5}}, "roles": {}, "liveChecks": {}}
+PSETTINGS = {"claude-subscription": {"resume": {"roles": ["naila", "finance-bookkeeper", "finance-advisor", "ops-oncall"], "maxInputTokens": 100000, "maxIdleMinutes": 55}}}
 tag = "the profile equals today's literals"
-for label, r in (("prod", prod), ("test phase", test), ("real phase", real)):
+for label, r in (("prod", prod), ("test phase", test), ("real phase", real), ("staging (harness on)", staging_on)):
     s = setup(r)
-    if not isinstance(s, dict) or sorted(s) != ["places", "profile", "schedules", "version"] or s["version"] != 2: bad.append(f"{tag}: the {label} setup file is {s!r}"); continue
+    if not isinstance(s, dict) or sorted(s) != ["budgets", "places", "profile", "providerSettings", "schedules", "version"] or s["version"] != 3: bad.append(f"{tag}: the {label} setup file is {s!r}"); continue
+    if s["budgets"] != BUDGETS: bad.append(f"{tag}: the {label} budgets are {s['budgets']!r}, want {BUDGETS!r}")
+    if s["providerSettings"] != PSETTINGS: bad.append(f"{tag}: the {label} provider settings are {s['providerSettings']!r}, want {PSETTINGS!r}")
+    if label.startswith("staging"): continue   # staging's own profile and places are not production's
     if s["profile"] != PROFILE: bad.append(f"{tag}: the {label} profile is {s['profile']!r}, want {PROFILE!r}")
     if s["places"] != PLACES: bad.append(f"{tag}: the {label} places are {s['places']!r}, want {PLACES!r}")
     h = ctr(r, "harness")
@@ -3209,14 +3237,15 @@ print("setup: harness-setup.json is the owner's profile (today's literals) and t
       + "; the test folder, TZ and views follow it, VIEW_FILE and FINANCE_NOTES_ROOT are gone; bad config fails"
       + (f"; the render is {ref}'s but for those" if diffs else ""))
 PY
-# Pure core phase 4 Task 13: harness-start pairs with the image's setup (dist/setup.js: SETUP_SPEC_VERSION 2 since phase 6
-# Task 13, 1 before; parseSetup on
+# Pure core phase 4 Task 13: harness-start pairs with the image's setup (dist/setup.js: SETUP_SPEC_VERSION 3 since plan 7a
+# Task 17, 2 since phase 6 Task 13, 1 before; parseSetup on
 # /config/harness-setup.json with the requests read beside it) and takes the profile's paths from it (vault-mcp's layout.js),
 # run as rendered on stand-in images and on naila's built dist (NAILA_WORKTREE):
 #  - the pairing block (marker `# PAIRING: the image's setup`, after the services pairing, before the vault server checks and
 #    the settings) dies on an image without setup.js (printing the import error), without layout.js, or whose
-#    SETUP_SPEC_VERSION is not 2, and when the image's parseSetup refuses the chart's setup (the built image: a setup 1 naming
-#    the chart, 3, none without places, a numeric ref); the real phase dies unless
+#    SETUP_SPEC_VERSION is not 3 (an image above 3 says it is the newer side), and when the image's parseSetup refuses the
+#    chart's setup (the built image: a setup 1 and a setup 2 naming the chart, 4, none without places, budgets or
+#    providerSettings, a numeric ref); the real phase dies unless
 #    VAULT_EXCLUDE names the profile's test folder; a test folder or workspace root that is no plain path dies;
 #  - the prod render pairs with the built image, printing Harness-test, Finance, Naila/Workspace and an empty VAULT_PATHS;
 #  - a non-default profile (system Home) reaches the user-scope vault server as VAULT_PATHS (prod's adds nothing), and the
@@ -3234,7 +3263,8 @@ def ctr(r, n): return next((c for c in r[H]["spec"]["template"]["spec"]["contain
 def val(r, k): return next((e.get("value") for e in (ctr(r, "harness") or {}).get("env", []) if e["name"] == k), None)
 bad = []
 sl = test[CMH]["data"]["harness-start.sh"].splitlines()
-OLD = "this naila image predates pure-core phase 6 (places): deploy the image that ships with this chart, or roll both back (revert the promote merge)"   # phase 4 (schedules and profile) before phase 6 Task 13
+OLD = "this naila image predates plan 7a (budgets and provider settings): deploy the image that ships with this chart, or roll both back (revert the promote merge)"   # pure-core phase 6 (places) before plan 7a Task 17
+NEWER = "this naila image reads setup spec 4, newer than this chart's 3: deploy the chart that ships with this image, or roll the image back (revert the promote merge)"   # plan 7a Task 17: worded both ways
 REFUSES = "the image refuses this chart's setup: "
 NW = os.environ.get("NAILA_WORKTREE", "")
 DIST, VDIST = f"{NW}/packages/harness/dist", f"{NW}/packages/vault-mcp/dist"
@@ -3248,7 +3278,7 @@ def started(p): return p.returncode == 0 and p.stdout.strip().endswith("started"
 def one(pred): return [i for i, l in enumerate(sl) if pred(l)]
 
 # where the block is
-tag = "harness-start dies on an image whose SETUP_SPEC_VERSION is not 2"   # 1 before pure core phase 6 Task 13
+tag = "harness-start dies on an image whose SETUP_SPEC_VERSION is not 3"   # 2 before plan 7a Task 17, 1 before pure core phase 6 Task 13
 mk = one(lambda l: l == "# PAIRING: the image's setup")
 end = [j for j in range(mk[0], len(sl)) if sl[j] == "fi"][:1] if len(mk) == 1 else []
 svc_end = one(lambda l: l.startswith("})().catch(") and l.endswith(' "$SERVICES_JS"'))
@@ -3278,8 +3308,8 @@ def config(r, setup=None):
     if setup is not None: open(os.path.join(d, "harness-setup.json"), "w").write(setup if isinstance(setup, str) else json.dumps(setup))
     return d
 def prof(r): return json.loads(r[CMH]["data"]["harness-setup.json"])
-SETUP_OK = ("export const SETUP_SPEC_VERSION = 2\n"
-            "export function parseSetup(raw, file, read) { const s = JSON.parse(raw); for (const j of s.schedules.jobs) if (j.request) read(j.request); return { profile: s.profile, jobs: [], places: s.places } }\n")
+SETUP_OK = ("export const SETUP_SPEC_VERSION = 3\n"
+            "export function parseSetup(raw, file, read) { const s = JSON.parse(raw); for (const j of s.schedules.jobs) if (j.request) read(j.request); return { profile: s.profile, jobs: [], places: s.places, budgets: s.budgets, providerSettings: s.providerSettings } }\n")
 LAYOUT_OK = ("const D = JSON.stringify({ system: 'Naila', finance: 'Finance', inbox: 'Inbox', daily: 'Daily', testFolder: 'Harness-test' })\n"
              "export const vaultLayout = (p) => ({ workspaces: `${p.system}/Workspace` })\n"
              "export const vaultPathsEnv = (p) => JSON.stringify({ system: p.system, finance: p.finance, inbox: p.inbox, daily: p.daily, testFolder: p.testFolder }) === D ? {} : { VAULT_PATHS: JSON.stringify(p) }\n")
@@ -3293,14 +3323,18 @@ def stub_pairing(setup_js=SETUP_OK, layout_js=LAYOUT_OK, r=test, setup=None, **k
     d, cfg = stub(setup_js, layout_js), config(r, setup)
     p = pairing(f"{d}/h", f"{d}/v", cfg, **kw); shutil.rmtree(d); shutil.rmtree(cfg); return p, d
 
-if not started(p := stub_pairing()[0]) or shown(p) != "Harness-test|Finance|Naila/Workspace|": bad.append(f"{tag}: refuses (or misreads) an image with SETUP_SPEC_VERSION 2: exit {p.returncode} {p.stderr.strip()!r} {p.stdout!r}")
+if not started(p := stub_pairing()[0]) or shown(p) != "Harness-test|Finance|Naila/Workspace|": bad.append(f"{tag}: refuses (or misreads) an image with SETUP_SPEC_VERSION 3: exit {p.returncode} {p.stderr.strip()!r} {p.stdout!r}")
 p, d = stub_pairing(None)
 if not died(p, OLD, f"cannot load {d}/h/setup.js: ", "Cannot find module"): bad.append(f"{tag}: an image without setup.js: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying cannot load <path>: <the import error>: {OLD}")
 p, d = stub_pairing("throw new Error('setup boom')\n")
 if not died(p, OLD, f"cannot load {d}/h/setup.js: setup boom"): bad.append(f"{tag}: a setup.js that throws: exit {p.returncode} {p.stderr.strip()!r}")
-for what, v in (("SETUP_SPEC_VERSION 1 (phase 4: no places)", "1"), ("SETUP_SPEC_VERSION 0", "0"), ('SETUP_SPEC_VERSION "2"', '"2"'), ("SETUP_SPEC_VERSION 3", "3"), ("no SETUP_SPEC_VERSION", None)):
-    js = SETUP_OK.replace("export const SETUP_SPEC_VERSION = 2\n", "" if v is None else f"export const SETUP_SPEC_VERSION = {v}\n")
+for what, v in (("SETUP_SPEC_VERSION 2 (pure-core phase 6: no budgets or provider settings)", "2"), ("SETUP_SPEC_VERSION 1 (phase 4: no places)", "1"), ("SETUP_SPEC_VERSION 0", "0"),
+                ('SETUP_SPEC_VERSION "3"', '"3"'), ("no SETUP_SPEC_VERSION", None)):
+    js = SETUP_OK.replace("export const SETUP_SPEC_VERSION = 3\n", "" if v is None else f"export const SETUP_SPEC_VERSION = {v}\n")
     if not died(p := stub_pairing(js)[0], OLD): bad.append(f"{tag}: an image with {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {OLD!r}")
+# plan 7a Task 17 (worded both ways): an image newer than the chart says so, and names the chart as the older side
+js = SETUP_OK.replace("export const SETUP_SPEC_VERSION = 3\n", "export const SETUP_SPEC_VERSION = 4\n")
+if not died(p := stub_pairing(js)[0], NEWER) or OLD in p.stderr: bad.append(f"{tag}: an image with SETUP_SPEC_VERSION 4: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {NEWER!r} (and not that the image predates the chart)")
 p, d = stub_pairing(layout_js=None)
 if not died(p, OLD, f"cannot load {d}/v/layout.js: "): bad.append(f"{tag}: an image without vault-mcp's layout.js: exit {p.returncode} {p.stderr.strip()!r}")
 tag = "harness-start dies when the image refuses the chart's setup"
@@ -3332,10 +3366,19 @@ if HAVE:
     # refusal carries the setup's own `setup: <file>:` prefix, so it is matched by substring
     bent = prof(prod); bent["version"] = 1; bent.pop("places", None); bent["profile"]["paths"]["views"].pop("places", None)
     cfg = config(prod, bent); p = pairing(DIST, VDIST, cfg); shutil.rmtree(cfg)
-    if not died(p, REFUSES + "setup: ", "harness-setup.json: version must be 2 (got 1): the chart predates pure-core phase 6 (places)"): bad.append(f"{tag}: the built image accepts a setup of version 1: exit {p.returncode} {p.stderr.strip()!r}")
-    bent = prof(prod); bent["version"] = 3
+    if not died(p, REFUSES + "setup: ", "harness-setup.json: version must be 3 (got 1): the chart predates pure-core phase 6 (places)"): bad.append(f"{tag}: the built image accepts a setup of version 1: exit {p.returncode} {p.stderr.strip()!r}")
+    # plan 7a Task 17: the built image refuses promote 1's chart's setup (version 2, no budgets or provider settings), with
+    # naila Task 10's text naming the chart as the older side
+    bent = prof(prod); bent["version"] = 2; bent.pop("budgets", None); bent.pop("providerSettings", None)
     cfg = config(prod, bent); p = pairing(DIST, VDIST, cfg); shutil.rmtree(cfg)
-    if not died(p, REFUSES + "setup: ", "version must be 2 (got 3)"): bad.append(f"{tag}: the built image accepts a setup of version 3: exit {p.returncode} {p.stderr.strip()!r}")
+    if not died(p, REFUSES + "setup: ", "harness-setup.json: version must be 3 (got 2): the chart predates plan 7a (budgets and provider settings)"): bad.append(f"{tag}: the built image accepts a setup of version 2: exit {p.returncode} {p.stderr.strip()!r}")
+    bent = prof(prod); bent["version"] = 4
+    cfg = config(prod, bent); p = pairing(DIST, VDIST, cfg); shutil.rmtree(cfg)
+    if not died(p, REFUSES + "setup: ", "version must be 3 (got 4)"): bad.append(f"{tag}: the built image accepts a setup of version 4: exit {p.returncode} {p.stderr.strip()!r}")
+    for k in ("budgets", "providerSettings"):
+        bent = prof(prod); bent.pop(k, None)
+        cfg = config(prod, bent); p = pairing(DIST, VDIST, cfg); shutil.rmtree(cfg)
+        if not died(p, REFUSES + "setup: ", f"{k} is missing"): bad.append(f"{tag}: the built image accepts a setup without {k}: exit {p.returncode} {p.stderr.strip()!r}")
     bent = prof(prod); bent.pop("places", None)
     cfg = config(prod, bent); p = pairing(DIST, VDIST, cfg); shutil.rmtree(cfg)
     if not died(p, REFUSES + "setup: ", "places is missing"): bad.append(f"{tag}: the built image accepts a setup without places: exit {p.returncode} {p.stderr.strip()!r}")
@@ -3457,7 +3500,7 @@ if r is not None:
 
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
-print("setup pairing: harness-start pairs with the image's setup (spec version 2, parseSetup" + (", the built image" if HAVE else "")
+print("setup pairing: harness-start pairs with the image's setup (spec version 3, parseSetup" + (", the built image" if HAVE else "")
       + "), VAULT_EXCLUDE names the profile's test folder; the vault servers get VAULT_PATHS only for a non-default profile; P8, the allow check and the write guard's root follow the profile")
 PY
 # Pure core phase 5 Task 9: the roles spec 4 (every role's lifecycle; hireable on a temporary role alone), both sides:
@@ -3903,4 +3946,315 @@ print("places: setup spec 2 carries harness.places, production's two former DISC
       + (", naila's paste block round-trips through the chart" if HAVE else "") + "; DISCORD_PLACES_CATEGORY renders only as an id; DISCORD_CHANNELS is gone"
       + (f"; the render is {ref}'s but for those" if diffs else "")
       + (f"; the render is {ref}'s but for its places minus the three and the harness checksum" if minus_three else ""))
+PY
+# Plan 7a Task 17 (promote 2): setup spec 3, the budgets and the provider settings, both sides, and the image's Claude Code
+# probe paired with the chart's CLI:
+#  - the prod, test-phase and staging (harness on) setups are version 3 with harness.budgets (the API's monthly budget and
+#    per-run cap, naila 74d97f5's providers/roster.ts:36 numbers, unchanged; no daily alert) and harness.providerSettings (the
+#    owner-scope subscription roles resume, at most 100000 input tokens, idle at most 55 minutes; no cacheTtl), and naila's
+#    built parseSetup and checkEconomy (NAILA_WORKTREE; the providers, the roster and the adapter features as main.ts hands
+#    them) accept them;
+#  - the render fails on a budgets role or a resume role that is no permanent role of harness.roleSpec, and on a budget or
+#    alert value that is no number (it reaches a PromQL expr);
+#  - the daily spend rules: none renders without an alert value; each budgets.roles.<id>.dailyAlertUsd renders one
+#    NailaRoleSpend (its role label and expr) and liveChecks.dailyAlertUsd one NailaLiveCheckSpend, in the group
+#    naila-harness-spend, each with a summary and a description naming no channel, no provider and no $labels.worker;
+#  - harness-start's CLI pairing (marker `# PAIRING: the image's Claude Code probe`, right after the CLI install) dies when
+#    the installed `claude --version` is not the image's CC_VERSION (dist/providers/claude-code/features.js), naming both and
+#    the fix, and as an image that predates plan 7a without features.js or its CC_VERSION, run as rendered on stand-in images
+#    and the built one; values.yaml's claude.version is the built image's CC_VERSION;
+#  - the user-scope settings (settings.json, harness-settings.json) and the harness container set no prompt-cache TTL;
+#  - prod, test phase, harness off and staging render as at <git-ref> but for harness-setup.json (version 3, budgets and
+#    providerSettings), harness-start.sh's setup guard and CLI pairing (and their comments) and the harness checksum (skipped
+#    with a notice once <git-ref> renders setup 3).
+python3 - "$ref" "$tmp/prod.yaml" "$tmp/prod-ref.yaml" "$tmp/new.yaml" "$tmp/old-harness.yaml" "$tmp/off.yaml" "$tmp/old.yaml" "$tmp/staging.yaml" "$tmp/staging-ref.yaml" "$tmp/real.yaml" "$tmp/staging-on.yaml" <<'PY'
+import sys, yaml, json, os, re, subprocess, copy, tempfile, shutil, difflib
+ref = sys.argv[1]
+def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
+def loads(s): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(s) if d}
+prod, prod_ref, test, test_ref, off, off_ref, staging, staging_ref, real, staging_on = (load(p) for p in sys.argv[2:12])
+H, HC, CC = ("Deployment", "assistant-harness"), ("ConfigMap", "assistant-harness"), ("ConfigMap", "assistant-claude")
+PR = ("PrometheusRule", "assistant-harness-login")
+def pod(r): return r[H]["spec"]["template"]["spec"] if H in r else {"containers": [], "initContainers": []}
+def ctr(r, n): return next((c for c in pod(r)["containers"] if c["name"] == n), None)
+def envmap(c): return {e["name"]: e for e in (c or {}).get("env", [])}
+def val(c, k): return (envmap(c).get(k) or {}).get("value")
+def setup(r):
+    try: return json.loads(r[HC]["data"]["harness-setup.json"])
+    except (KeyError, ValueError): return None
+def checksum(r): return r[H]["spec"]["template"]["metadata"].get("annotations", {}).get("checksum/config") if H in r else None
+BASE = ["helm", "template", "helm/assistant", "-f", "helm/assistant/values.yaml", "-f", "helm/assistant/values.prod.yaml"]
+def render(*a): return subprocess.run(BASE + list(a), capture_output=True, text=True)
+NW = os.environ.get("NAILA_WORKTREE", "")
+DIST = f"{NW}/packages/harness/dist"
+FEATURES = f"{DIST}/providers/claude-code/features.js"
+HAVE = bool(NW) and all(os.path.isfile(f"{DIST}/{f}") for f in ("setup.js", "economy-config.js", "providers/features.js", "providers/roster.js", "roster.js", "workers-spec.js", "providers/claude-code/features.js"))
+if not HAVE: print("NOTICE: NAILA_WORKTREE has no built dist: the setup's economy and the CLI pairing were not run against naila's built image")
+VALUES = yaml.safe_load(open("helm/assistant/values.yaml"))
+bad = []
+
+# the setups are version 3 with the budgets and the provider settings production ships
+API = {"anthropic-api": {"monthlyUsd": 100, "runCapUsd": 5}}
+OWNER = ["naila", "finance-bookkeeper", "finance-advisor", "ops-oncall"]
+BUDGETS = {"providers": API, "roles": {}, "liveChecks": {}}
+PSETTINGS = {"claude-subscription": {"resume": {"roles": OWNER, "maxInputTokens": 100000, "maxIdleMinutes": 55}}}
+tag = 'the prod render\'s budgets.providers equal {"anthropic-api": {"monthlyUsd": 100, "runCapUsd": 5}}, its provider settings resume the owner roles'
+for label, r in (("prod", prod), ("test phase", test), ("real phase", real), ("staging (harness on)", staging_on)):
+    s = setup(r) or {}
+    if s.get("version") != 3: bad.append(f"{tag}: the {label} setup's version is {s.get('version')!r}, want 3")
+    if s.get("budgets") != BUDGETS: bad.append(f"{tag}: the {label} budgets are {s.get('budgets')!r}, want {BUDGETS!r}")
+    if s.get("providerSettings") != PSETTINGS: bad.append(f"{tag}: the {label} provider settings are {s.get('providerSettings')!r}, want {PSETTINGS!r}")
+    if "cacheTtl" in json.dumps(s.get("providerSettings")): bad.append(f"{tag}: the {label} provider settings set a cacheTtl (the 1h default stays until the verdict)")
+    if any("runCapUsd" in (b or {}) or "monthlyUsd" in (b or {}) for p_, b in ((s.get("budgets") or {}).get("providers") or {}).items() if p_ != "anthropic-api"): bad.append(f"{tag}: the {label} budgets cap or budget another provider than the API (the subscription's cap stays unset)")
+# the numbers are the ones naila 74d97f5 held in PROVIDERS (providers/roster.ts:36), the API's budget and cap moved unchanged
+if NW and subprocess.run(["git", "-C", NW, "cat-file", "-e", "74d97f5:packages/harness/src/providers/roster.ts"], capture_output=True).returncode == 0:
+    src = subprocess.run(["git", "-C", NW, "show", "74d97f5:packages/harness/src/providers/roster.ts"], capture_output=True, text=True).stdout.splitlines()
+    m = re.search(r"cost: \{ basis: 'per-token', monthlyBudgetUsd: (\d+), runCostCapUsd: (\d+) \}", src[35]) if len(src) > 35 and src[34].strip().startswith("{ id: ANTHROPIC_API,") else None
+    if not m or {"monthlyUsd": int(m.group(1)), "runCapUsd": int(m.group(2))} != API["anthropic-api"]: bad.append(f"{tag}: naila 74d97f5's providers/roster.ts:35-36 is {src[34:36]!r}, not the API's entry with 100/5")
+else: print("NOTICE: NAILA_WORKTREE has no naila 74d97f5: the budgets were not compared with its providers/roster.ts")
+# Task 3 recorded resume on, and its compaction point needs no lower cap: the 100000 holds under half of it, or the off switch
+if HAVE:
+    q = subprocess.run(["node", "--input-type=module", "-e", "const m = await import(process.argv[1]); process.stdout.write(JSON.stringify({ resume: m.CC_FEATURES.resume, autoAt: m.CC_FEATURES.compaction.autoAt, autoOff: m.CC_FEATURES.compaction.autoOff !== null }))", FEATURES], capture_output=True, text=True)
+    f = json.loads(q.stdout or "null") or {}
+    if f.get("resume") is not True: bad.append(f"{tag}: the built image's CC_FEATURES.resume is {f.get('resume')!r}: with resume off, harness.providerSettings must leave out resume")
+    if not f.get("autoOff") and isinstance(f.get("autoAt"), int) and f["autoAt"] < 200000 and 100000 > (f["autoAt"] // 2 // 1000) * 1000: bad.append(f"{tag}: the probed auto-compact point {f['autoAt']} needs maxInputTokens at most {(f['autoAt'] // 2 // 1000) * 1000}")
+
+# the prod render pairs with the built image: parseSetup and checkEconomy, as main.ts runs them
+tag = "the prod render pairs with the built image (parseSetup, checkEconomy)"
+ECON = r"""
+const [dist, dir, mutate] = process.argv.slice(1)
+const { readFileSync } = await import('node:fs')
+const { join } = await import('node:path')
+const { parseSetup } = await import(`${dist}/setup.js`)
+const { checkEconomy, economyText } = await import(`${dist}/economy-config.js`)
+const { ADAPTER_FEATURES } = await import(`${dist}/providers/features.js`)
+const { PROVIDERS } = await import(`${dist}/providers/roster.js`)
+const { rosterFrom } = await import(`${dist}/roster.js`)
+const { loadWorkerSpecs } = await import(`${dist}/workers-spec.js`)
+const file = join(dir, 'harness-setup.json')
+const raw = JSON.parse(readFileSync(file, 'utf8')); if (mutate) new Function('s', mutate)(raw)
+const s = parseSetup(JSON.stringify(raw), file, (name) => readFileSync(join(dir, name), 'utf8'))
+checkEconomy(s, { providers: PROVIDERS, roster: rosterFrom(loadWorkerSpecs(join(dir, 'harness-workers.json'))), features: ADAPTER_FEATURES })
+process.stdout.write(economyText(s.budgets, s.providerSettings))
+"""
+def econ(r, mutate=""):
+    d = tempfile.mkdtemp()
+    try:
+        for cm in (CC, HC):
+            for k, v in r[cm]["data"].items(): open(os.path.join(d, k), "w").write(v)
+        return subprocess.run(["node", "--input-type=module", "-e", ECON, DIST, d, mutate], capture_output=True, text=True)
+    finally: shutil.rmtree(d)
+WANT_ECON = "economy: anthropic-api monthly $100.00 cap $5.00; resume claude-subscription: naila, finance-bookkeeper, finance-advisor, ops-oncall (max 100000 input tokens, idle 55 min)"
+if HAVE:
+    for label, r in (("prod", prod), ("test phase", test), ("staging (harness on)", staging_on)):
+        p = econ(r)
+        if p.returncode != 0 or p.stdout != WANT_ECON: bad.append(f"{tag}: the {label} render: exit {p.returncode} {(p.stderr or p.stdout).strip()[-300:]!r}, want {WANT_ECON!r}")
+    # the checks bite: the image refuses what the chart leaves to it
+    for what, mutate, says in (("a resume role that is temporary", "s.providerSettings['claude-subscription'].resume.roles.push('researcher')", "resume.roles names researcher, which is no active permanent role"),
+                               ("a subscription monthly budget", "s.budgets.providers['claude-subscription'] = { monthlyUsd: 10 }", "monthlyUsd is for a per-token provider"),
+                               ("a provider the roster lacks", "s.providerSettings.nobody = {}", "providerSettings names nobody, which is no provider of the roster"),
+                               ("a cap above the session ceiling", "s.providerSettings['claude-subscription'].resume.maxInputTokens = 150000", "is above 100000"),
+                               ("an idle limit past the TTL", "s.providerSettings['claude-subscription'].resume.maxIdleMinutes = 56", "maxIdleMinutes must be a whole number from 1 to 55")):
+        p = econ(prod, mutate)
+        if p.returncode == 0 or says not in p.stderr: bad.append(f"{tag}: the built image accepts {what}: exit {p.returncode} {p.stderr.strip()[-300:]!r}")
+
+# the render refuses what the chart itself uses: the roles (permanent ones of the roles spec) and the numbers (a PromQL expr)
+tag = "a budgets or resume role that is no permanent role, and a value that is no number, fail the render"
+def sj(path, v): return ["--set-json", f"{path}={json.dumps(v)}"]
+RES = "harness.providerSettings.claude-subscription.resume.roles"
+for what, args, says in (
+        ("a temporary budgets role", sj("harness.budgets.roles", {"researcher": {"dailyAlertUsd": 1}}), "harness.budgets.roles.researcher is no permanent role of harness.roleSpec"),
+        ("an unknown budgets role", sj("harness.budgets.roles", {"nobody": {"dailyAlertUsd": 1}}), "harness.budgets.roles.nobody is no permanent role of harness.roleSpec"),
+        ("a temporary resume role", sj(RES, [*OWNER, "researcher"]), f"{RES} names researcher, which is no permanent role of harness.roleSpec"),
+        ("an unknown resume role", sj(RES, ["naila", "nobody"]), f"{RES} names nobody, which is no permanent role of harness.roleSpec"),
+        ("a role's alert as text", sj("harness.budgets.roles", {"naila": {"dailyAlertUsd": "5"}}), "harness.budgets.roles.naila.dailyAlertUsd must be a number"),
+        ("a role's alert as PromQL", sj("harness.budgets.roles", {"naila": {"dailyAlertUsd": "1 or vector(1)"}}), "harness.budgets.roles.naila.dailyAlertUsd must be a number"),
+        ("a role without its alert", sj("harness.budgets.roles", {"naila": {}}), "harness.budgets.roles.naila.dailyAlertUsd must be a number"),
+        ("the live checks' alert as text", sj("harness.budgets.liveChecks", {"dailyAlertUsd": "x"}), "harness.budgets.liveChecks.dailyAlertUsd must be a number"),
+        ("a monthly budget as text", sj("harness.budgets.providers.anthropic-api.monthlyUsd", "100"), "harness.budgets.providers.anthropic-api.monthlyUsd must be a number"),
+        ("a run cap as a boolean", sj("harness.budgets.providers.anthropic-api.runCapUsd", True), "harness.budgets.providers.anthropic-api.runCapUsd must be a number")):
+    p = render(*args)
+    if p.returncode == 0 or says not in p.stderr: bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()[-300:]!r}, want the render to fail saying {says!r}")
+
+# the daily spend rules: none without an alert value; one per value set, in their own group
+def rules(r): return [(g["name"], x) for g in (r.get(PR) or {"spec": {"groups": []}})["spec"]["groups"] for x in g.get("rules") or []]
+SPEND = ("NailaRoleSpend", "NailaLiveCheckSpend")
+tag = "no spend rule renders without an alert value"
+for label, r in (("prod", prod), ("test phase", test), ("real phase", real), ("staging (harness on)", staging_on)):
+    if any(g == "naila-harness-spend" or x.get("alert") in SPEND for g, x in rules(r)): bad.append(f"{tag}: the {label} render has a spend rule or group")
+J = 'job="assistant-harness-core"'
+def role_expr(w, usd): return f'sum by (namespace) (increase(naila_harness_cost_usd_total{{{J},origin="owner",worker="{w}"}}[24h])) > {usd}'
+def live_expr(usd): return f'sum by (namespace) (increase(naila_harness_cost_usd_total{{{J},origin="test"}}[24h])) > {usd}'
+def spend_gaps(r, want):
+    """`want`: [(alert, labels, expr)] in order; the spend group holds exactly those, each with its texts."""
+    out = []
+    groups = [g["name"] for g in (r.get(PR) or {"spec": {"groups": []}})["spec"]["groups"]]
+    if groups != ["naila-harness", "naila-harness-core", "naila-harness-spend"]: out.append(f"the rule groups are {groups}")
+    got = [x for g, x in rules(r) if g == "naila-harness-spend"]
+    if [(x.get("alert"), x.get("labels"), (x.get("expr") or "").strip()) for x in got] != want: out.append(f"the spend group is {[(x.get('alert'), x.get('labels'), x.get('expr')) for x in got]!r}, want {want!r}")
+    if any(x.get("alert") in SPEND for g, x in rules(r) if g != "naila-harness-spend"): out.append("a spend rule renders outside naila-harness-spend")
+    for x in got:
+        a = x.get("annotations") or {}
+        if not a.get("summary") or not a.get("description"): out.append(f"{x.get('alert')} lacks a summary or a description")
+        for k, v in a.items():
+            if re.search(r"discord|telegram|channel", v, re.I): out.append(f"{x.get('alert')} {k} names a channel: {v!r}")
+            if re.search(r"anthropic|subscription|\bmax\b|claude", v, re.I): out.append(f"{x.get('alert')} {k} names a provider: {v!r}")
+            if re.search(r"\$labels\.worker\b", v): out.append(f"{x.get('alert')} {k} names $labels.worker, which the sum drops")
+        if "for" in x and x["for"] != "0m": out.append(f"{x.get('alert')} waits {x['for']} (a rolling 24h sum needs no wait)")
+    return out
+tag = "an alert renders one rule with the role's label and its expr"
+for what, args, want in (
+        ("one role", sj("harness.budgets.roles", {"finance-bookkeeper": {"dailyAlertUsd": 2.5}}),
+         [("NailaRoleSpend", {"severity": "warning", "role": "finance-bookkeeper"}, role_expr("finance-bookkeeper", "2.5"))]),
+        ("two roles", sj("harness.budgets.roles", {"naila": {"dailyAlertUsd": 10}, "ops-oncall": {"dailyAlertUsd": 1.25}}),
+         [("NailaRoleSpend", {"severity": "warning", "role": "naila"}, role_expr("naila", "10")), ("NailaRoleSpend", {"severity": "warning", "role": "ops-oncall"}, role_expr("ops-oncall", "1.25"))]),
+        ("the live checks alone", sj("harness.budgets.liveChecks", {"dailyAlertUsd": 3}), [("NailaLiveCheckSpend", {"severity": "warning"}, live_expr("3"))]),
+        ("a role and the live checks", [*sj("harness.budgets.roles", {"naila": {"dailyAlertUsd": 4}}), *sj("harness.budgets.liveChecks", {"dailyAlertUsd": 0.5})],
+         [("NailaRoleSpend", {"severity": "warning", "role": "naila"}, role_expr("naila", "4")), ("NailaLiveCheckSpend", {"severity": "warning"}, live_expr("0.5"))])):
+    p = render(*args)
+    if p.returncode != 0: bad.append(f"{tag}: {what}: the render fails: {p.stderr.strip()[-300:]}"); continue
+    r = loads(p.stdout)
+    bad += [f"{tag}: {what}: {g}" for g in spend_gaps(r, want)]
+    if HAVE and (q := econ(r)).returncode != 0: bad.append(f"{tag}: {what}: the built image refuses the setup: {q.stderr.strip()[-300:]}")
+    # the rest of the render is prod's: the setup's budgets, the rule group and the checksum alone move
+    a, b = copy.deepcopy(r), copy.deepcopy(prod)
+    for x in (a, b):
+        x[HC]["data"].pop("harness-setup.json"); x[H]["spec"]["template"]["metadata"]["annotations"].pop("checksum/config")
+        x[PR]["spec"]["groups"] = [g for g in x[PR]["spec"]["groups"] if g["name"] != "naila-harness-spend"]
+    if a != b: bad.append(f"{tag}: {what}: the render differs from prod's in more than the setup, the spend group and the checksum")
+    if (setup(r) or {}).get("budgets", {}).get("providers") != API: bad.append(f"{tag}: {what}: the budgets' providers moved")
+
+# harness-start's CLI pairing: the image's probe was recorded for one Claude Code version
+tag = "harness-start dies when the installed CLI is not the image's CC_VERSION, and when features.js is missing"
+OLD7A = "this naila image predates plan 7a (budgets and provider settings): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+def mismatch(installed, probed): return (f"Claude Code {installed} is installed, but this naila image's Claude Code probe was recorded for {probed}: set claude.version back to {probed}, "
+                                         "or re-run the probe (plan 7a Task 3) and ship an image recorded for the new version")
+sl = prod[HC]["data"]["harness-start.sh"].splitlines()
+def one(pred): return [i for i, l in enumerate(sl) if pred(l)]
+inst = one(lambda l: l.startswith('[ "$(claude --version 2>/dev/null | cut -d\' \' -f1)" = "$CLAUDE_VERSION" ] || npm i -g @anthropic-ai/claude-code@'))
+mk = one(lambda l: l == "# PAIRING: the image's Claude Code probe")
+end = one(lambda l: l.startswith('[ "$CC_INSTALLED" = "$CC_PROBED" ] || die '))
+helpl = one(lambda l: l.startswith("help=$(claude --help"))
+if not (len(inst) == len(mk) == len(end) == len(helpl) == 1 and inst[0] + 1 == mk[0] < end[0] < helpl[0]):
+    bad.append(f"{tag}: want the install line, then at once one block from '# PAIRING: the image's Claude Code probe' to '[ \"$CC_INSTALLED\" = \"$CC_PROBED\" ] || die', before the flag check (got {inst}, {mk}, {end}, {helpl})")
+else:
+    blk = sl[mk[0]:end[0] + 1]
+    if not any("/naila/packages/harness/dist/providers/claude-code/features.js" in l for l in blk): bad.append(f"{tag}: the block does not read the image's features.js")
+    def cli(features, version, dist=None):
+        d = tempfile.mkdtemp(); h = f"{d}/dist"; os.makedirs(f"{h}/providers/claude-code"); os.makedirs(f"{d}/bin")
+        open(f"{h}/package.json", "w").write('{"type":"module"}')
+        if features is not None: open(f"{h}/providers/claude-code/features.js", "w").write(features)
+        open(f"{d}/bin/claude", "w").write("#!/bin/sh\n" + ("exit 1\n" if version is None else f'[ "$1" = --version ] && echo "{version}"\nexit 0\n')); os.chmod(f"{d}/bin/claude", 0o755)
+        lines = [l.replace("/naila/packages/harness/dist/", (dist or h) + "/") for l in blk]
+        p = subprocess.run(["bash", "-c", 'set -eu; die() { echo "harness-start: $*" >&2; exit 2; }\n' + "\n".join(lines) + "\necho started"],
+                           env={"PATH": f"{d}/bin:{os.environ['PATH']}"}, capture_output=True, text=True)
+        shutil.rmtree(d); return p, h
+    def died(p, *says): return p.returncode == 2 and "started" not in p.stdout and all(s in p.stderr for s in says)
+    def started(p): return p.returncode == 0 and p.stdout.strip().endswith("started")
+    F = "export const CC_VERSION = '2.1.312'\n"
+    if not started(p := cli(F, "2.1.312 (Claude Code)")[0]): bad.append(f"{tag}: the probed version installed: exit {p.returncode} {p.stderr.strip()!r}, want a start")
+    if not started(p := cli(F, "2.1.312")[0]): bad.append(f"{tag}: the probed version, printed bare: exit {p.returncode} {p.stderr.strip()!r}, want a start")
+    for what, feats, inst_v, says in (("a newer CLI", F, "2.1.313 (Claude Code)", [mismatch("2.1.313", "2.1.312")]),
+                                      ("an older CLI", F, "2.1.290 (Claude Code)", [mismatch("2.1.290", "2.1.312")]),
+                                      ("an image probed on another version", "export const CC_VERSION = '2.1.400'\n", "2.1.312 (Claude Code)", [mismatch("2.1.312", "2.1.400")]),
+                                      ("a CLI that prints no version", F, None, ["is installed, but this naila image's Claude Code probe was recorded for 2.1.312"]),
+                                      ("features.js without CC_VERSION", "export const CC_FEATURES = {}\n", "2.1.312 (Claude Code)", [OLD7A]),
+                                      ("a CC_VERSION that is no version", "export const CC_VERSION = '2.1.312; rm -rf /'\n", "2.1.312 (Claude Code)", [OLD7A]),
+                                      ("a features.js that throws", "throw new Error('features boom')\n", "2.1.312 (Claude Code)", [OLD7A, "features boom"])):
+        if not died(p := cli(feats, inst_v)[0], *says): bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {says!r}")
+    p, h = cli(None, "2.1.312 (Claude Code)")
+    if not died(p, OLD7A, f"cannot load {h}/providers/claude-code/features.js: ", "Cannot find module"): bad.append(f"{tag}: an image without features.js: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying cannot load <path>: <the import error>: {OLD7A}")
+    if HAVE:
+        cv = str(VALUES["claude"]["version"])
+        if not started(p := cli(None, f"{cv} (Claude Code)", DIST)[0]): bad.append(f"{tag}: the built image with the chart's claude.version {cv}: exit {p.returncode} {p.stderr.strip()!r}, want a start")
+        if not died(p := cli(None, "2.1.311 (Claude Code)", DIST)[0], "Claude Code 2.1.311 is installed, but"): bad.append(f"{tag}: the built image with Claude Code 2.1.311: exit {p.returncode} {p.stderr.strip()!r}")
+
+tag = "claude.version equals the built image's CC_VERSION"
+if HAVE:
+    q = subprocess.run(["node", "--input-type=module", "-e", "process.stdout.write((await import(process.argv[1])).CC_VERSION)", FEATURES], capture_output=True, text=True)
+    if q.returncode != 0 or q.stdout != str(VALUES["claude"]["version"]): bad.append(f"{tag}: values.yaml's claude.version is {VALUES['claude']['version']!r}, the built image's CC_VERSION {q.stdout or q.stderr.strip()!r}")
+for label, r in (("prod", prod), ("test phase", test)):
+    if val(ctr(r, "harness"), "CLAUDE_VERSION") != str(VALUES["claude"]["version"]): bad.append(f"{tag}: the {label} harness container installs {val(ctr(r, 'harness'), 'CLAUDE_VERSION')!r}, not claude.version")
+
+# the TTL comes from the setup only: no user-scope setting and no container env sets it
+tag = "the user-scope settings.json sets no cache TTL"
+TTL_ENV = ("CLAUDE_CODE_PROMPT_CACHE_TTL", "FORCE_PROMPT_CACHING_5M")
+def keys(o):
+    if isinstance(o, dict):
+        for k, v in o.items(): yield k; yield from keys(v)
+    elif isinstance(o, list):
+        for v in o: yield from keys(v)
+for label, r in (("prod", prod), ("test phase", test), ("staging (harness on)", staging_on)):
+    for k in ("settings.json", "harness-settings.json"):
+        try: st = json.loads(r[CC]["data"][k])
+        except (KeyError, ValueError): bad.append(f"{tag}: the {label} render has no JSON {k}"); continue
+        if "promptCacheTtl" in set(keys(st)): bad.append(f"{tag}: the {label} {k} sets promptCacheTtl")
+        if any(n in (st.get("env") or {}) for n in TTL_ENV): bad.append(f"{tag}: the {label} {k}'s env names {[n for n in TTL_ENV if n in (st.get('env') or {})]}")
+    for c in pod(r)["containers"] + pod(r).get("initContainers", []):
+        if any(n in envmap(c) for n in TTL_ENV): bad.append(f"{tag}: the {label} {c['name']} container sets a cache TTL env")
+
+# the whole render, as at <git-ref> but for the setup (version, budgets, provider settings), harness-start.sh's setup guard
+# and CLI pairing, and the harness checksum
+def blocks(lines):
+    """The setup guard's and the CLI pairing's line ranges in harness-start.sh `lines` (comments outside them may move too)."""
+    out = []
+    for begin, stop in (("# PAIRING: the image's setup", lambda l: l.startswith("})().catch(") and '"$SETUP_JS"' in l),
+                        ("# PAIRING: the image's Claude Code probe", lambda l: l.startswith('[ "$CC_INSTALLED" = "$CC_PROBED" ] || die '))):
+        i = next((n for n, l in enumerate(lines) if l == begin), None)
+        j = next((n for n in range(i, len(lines)) if stop(lines[n])), None) if i is not None else None
+        if i is not None and j is not None: out.append(range(i, j + 1))
+    return out
+def start_gaps(a, b):
+    la, lb = a.splitlines(), b.splitlines()
+    ba, bb = blocks(la), blocks(lb)
+    if len(ba) != 2: return [f"harness-start.sh lacks the setup guard or the CLI pairing block ({len(ba)} found)"]
+    ok_a = lambda n: la[n].lstrip().startswith("#") or any(n in x for x in ba)
+    ok_b = lambda n: lb[n].lstrip().startswith("#") or any(n in x for x in bb)
+    out = []
+    for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, lb, la, autojunk=False).get_opcodes():
+        if op == "equal": continue
+        if not all(ok_b(n) for n in range(i1, i2)) or not all(ok_a(n) for n in range(j1, j2)): out.append(f"harness-start.sh changes {lb[i1:i2]!r} to {la[j1:j2]!r} outside the setup guard, the CLI pairing and comments")
+    return out
+def strip(r, now):
+    r = copy.deepcopy(r)
+    if HC in r:
+        r[HC]["data"].pop("harness-start.sh", None)
+        s = setup(r)
+        if s is not None and now: s["version"] = 2; s.pop("budgets", None); s.pop("providerSettings", None)
+        if s is not None: r[HC]["data"]["harness-setup.json"] = s
+    if H in r: r[H]["spec"]["template"]["metadata"].get("annotations", {}).pop("checksum/config", None)
+    return r
+diffs = (("prod", prod, prod_ref, True), ("test phase", test, test_ref, True), ("harness off", off, off_ref, False), ("staging", staging, staging_ref, False))
+if (setup(prod_ref) or {}).get("version") == 3:
+    print(f"NOTICE: the {ref} render already has setup spec 3: the whole-render diff against it (Task 17's change alone) was skipped")
+    diffs = ()
+for label, a, b, moved in diffs:
+    tag = f"the {label} render differs from {ref}'s only in harness-setup.json (version, budgets, providerSettings), harness-start.sh's setup guard and CLI pairing, and the checksum"
+    if moved:
+        if (setup(b) or {}).get("version") != 2: bad.append(f"{tag}: the ref's harness-setup.json is not version 2"); continue
+        if (setup(a) or {}).get("version") != 3: bad.append(f"{tag}: its harness-setup.json is not version 3")
+        if checksum(a) is None or checksum(a) == checksum(b): bad.append(f"{tag}: the harness checksum is {checksum(a)!r}, the ref's {checksum(b)!r}: want a new one")
+        bad += [f"{tag}: {g}" for g in start_gaps(a[HC]["data"]["harness-start.sh"], b[HC]["data"]["harness-start.sh"])]
+        if [c["image"] for c in pod(a)["containers"]] != [c["image"] for c in pod(b)["containers"]]: bad.append(f"{tag}: an image moved (CI bumps it)")
+        sa, sb = strip(a, True), strip(b, False)
+    else: sa, sb = a, b
+    for k in sorted(set(sa) | set(sb)):
+        if sa.get(k) != sb.get(k): bad.append(f"{tag}: {k[0]}/{k[1]} differs{'' if k in sa and k in sb else ' (on one side only)'}")
+if diffs and HAVE:
+    # the pairing guard, new image and old chart: the built core refuses <git-ref>'s setup 2, naming the chart as older
+    tag = f"naila's built core refuses the {ref} chart's setup 2"
+    want = "version must be 3 (got 2): the chart predates plan 7a (budgets and provider settings)"
+    d = tempfile.mkdtemp()
+    try:
+        for k, v in prod_ref[HC]["data"].items(): open(os.path.join(d, k), "w").write(v)
+        q = subprocess.run(["node", "--input-type=module", "-e", "const [dist, file] = process.argv.slice(1); const { parseSetup } = await import(`${dist}/setup.js`); const fs = await import('node:fs'); const path = await import('node:path'); parseSetup(fs.readFileSync(file, 'utf8'), file, (n) => fs.readFileSync(path.join(path.dirname(file), n), 'utf8'))",
+                            DIST, os.path.join(d, "harness-setup.json")], capture_output=True, text=True)
+        if q.returncode == 0 or want not in q.stderr or "setup: " not in q.stderr: bad.append(f"{tag}: exit {q.returncode} {q.stderr.strip()[-300:]!r}, want {want!r}")
+    finally: shutil.rmtree(d)
+if bad:
+    print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
+print("token economy: setup spec 3 carries the budgets (the API's 100/5, unchanged) and the provider settings (owner roles resume, no TTL)"
+      + (", naila's parseSetup and checkEconomy accept them" if HAVE else "") + "; bad roles and values fail the render; spend rules render only when set;"
+      + " harness-start pairs with the image's CC_VERSION" + (" (claude.version is the built image's)" if HAVE else "") + "; no settings set a cache TTL"
+      + (f"; the render is {ref}'s but for those" if diffs else ""))
 PY

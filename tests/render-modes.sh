@@ -111,8 +111,8 @@
 #  credential, and the settings check and a write-guard parity check take the image's WRITE_GUARD_TOOLS (the rendered matcher
 #  unchanged); the settings harness-start writes are byte-identical to the SETTINGS_REF chart's (default aefa661).
 # Then the setup (pure core phase 4 Task 12): harness-setup.json (the owner's profile, today's literals, and the three jobs,
-#  the Monday review off; since phase 6 Task 13 spec 2, with views.places and production's five places) and the job request
-#  keys in ConfigMap assistant-harness; naila's parseSetup and start checks
+#  the Monday review off; since phase 6 Task 13 spec 2, with views.places and production's places: five, two since Task 16,
+#  the other three engine-managed) and the job request keys in ConfigMap assistant-harness; naila's parseSetup and start checks
 #  (NAILA_WORKTREE's built dist) accept the prod, test-phase and staging setups, and the requests expand to b5f5bbf's texts;
 #  TZ, the test phase's vault root and VAULT_EXCLUDE follow it, VIEW_FILE and FINANCE_NOTES_ROOT are gone; bad profile paths,
 #  request files, job ids (the core's shape) and uses, a profile that is no map, and an enabled job's disabled service, fail
@@ -134,13 +134,17 @@
 #  <git-ref>'s but for the spec's version, lifecycle and hireable, harness-start.sh and the harness checksum, and the built
 #  core refuses <git-ref>'s spec v3 (skipped with a notice once <git-ref> renders version 4).
 # Then the places (pure core phase 6 Task 13, setup spec 2): harness.places is the Git base of channel places, production's
-#  five DISCORD_CHANNELS pairs (decisions as pool, the decision pool), and DISCORD_CHANNELS is gone (setting it fails the
-#  render); a bad place fails the render (its shape, a channel not enabled, no role or a temporary one, a conversation or ref
-#  twice on a channel, a ref the core refuses, an enabled discord without the pool); naila's paste block round-trips through
-#  the chart; DISCORD_PLACES_CATEGORY renders only as a 17-20 digit id ("" leaves it out); harness-start dies on an image
-#  whose SETUP_SPEC_VERSION is not 2; the render is <git-ref>'s but for the setup, the discord env, naila's two lines (engine_info's
-#  places section, propose_place_change after a web search), harness-start.sh and the checksum, and the built core refuses
-#  <git-ref>'s setup 1 naming the chart (skipped with a notice once <git-ref> renders setup 2).
+#  two DISCORD_CHANNELS pairs naila and decisions (as pool, the decision pool; phase 6 Task 16: finance-bookkeeper,
+#  finance-advisor and ops-oncall left Git, engine-managed in DISCORD_PLACES_CATEGORY, so the places are <git-ref>'s minus
+#  those three when <git-ref> has setup 2 places; the lead and pool stay; a permanent role left out needs the category set),
+#  and DISCORD_CHANNELS is gone (setting it fails the render); a bad place fails the render (its shape, a channel not
+#  enabled, no role or a temporary one, a conversation or ref twice on a channel, a ref the core refuses, an enabled discord
+#  without the pool); naila's paste block round-trips through the chart; DISCORD_PLACES_CATEGORY renders only as a 17-20
+#  digit id ("" leaves it out); harness-start dies on an image whose SETUP_SPEC_VERSION is not 2; the render is <git-ref>'s
+#  but for the setup, the discord env, naila's two lines (engine_info's places section, propose_place_change after a web
+#  search), harness-start.sh and the checksum, and the built core refuses <git-ref>'s setup 1 naming the chart (skipped with
+#  a notice once <git-ref> renders setup 2; against a setup 2 <git-ref>, Task 16's: but for the setup's places and the
+#  harness checksum).
 set -euo pipefail
 ref="${1:-origin/master}"
 root="$(git rev-parse --show-toplevel)"
@@ -2102,8 +2106,11 @@ tag = "a missing secretKey, an unknown settle, a failing check and test with app
 P = ["helm", "template", "helm/assistant", "-f", "helm/assistant/values.yaml", "-f", "helm/assistant/values.prod.yaml", "--set", "claude.rcLines=true"]
 def render(*a): return subprocess.run(P + list(a), capture_output=True, text=True)
 T = lambda settle: ["--set-json", 'harness.channels.test={"enabled":true,"kind":"test","label":"test","settle":"%s","secretKey":"GATEWAY_TEST_SECRET"}' % settle]
-# pure core phase 6 Task 13: production's places (values.prod.yaml harness.places), and lists bent from them
+# pure core phase 6 Task 13: production's places (values.prod.yaml harness.places), and lists bent from them; since Task 16
+# two, naila and pool (the three worker channels left Git: engine-managed), so a bend targets entry 0 or 1, or adds one
 PL0 = yaml.safe_load(open("helm/assistant/values.prod.yaml"))["harness"]["places"]
+OPS = {"conversation": "ops-oncall", "channel": "discord", "ref": "1566334447111110759"}   # ops-oncall's Git place until Task 16
+PL_OPS = [PL0[0], OPS, *PL0[1:]]   # a base that gives ops-oncall a place
 def pl_with(i, **kv):
     """PL0 with entry i changed (a None value drops that key)"""
     out = json.loads(json.dumps(PL0))
@@ -2116,24 +2123,25 @@ PRE = "harness.places"
 PLACE_REFUSALS = (
     ("that is no list", {"naila": NAILA_REF}, f"{PRE} must be a list of {{conversation, channel, ref}}"),
     ("with an entry without its ref", pl_with(0, ref=None), f"{PRE}[0] must be {{conversation, channel, ref}}"),
-    ("with an entry holding another key", pl_with(1, label="Bookkeeper"), f"{PRE}[1] must be {{conversation, channel, ref}}"),
-    ("with an entry that is a string", [*PL0, f"naila:{NAILA_REF}"], f"{PRE}[5] must be {{conversation, channel, ref}}"),
-    ("with a conversation that is no string (YAML 1.1 reads an unquoted yes as true)", pl_with(2, conversation=True), f"{PRE}[2] must be {{conversation, channel, ref}}"),
-    ("on a channel that is not enabled", [*PL0, {"conversation": "naila", "channel": "slack", "ref": "C0123"}], f"{PRE}[5].channel slack is no enabled channel"),
-    ("naming no role", [*PL0, {"conversation": "legal-clerk", "channel": "discord", "ref": "1566334318752567399"}], f"{PRE}[5].conversation legal-clerk is no role of harness.roleSpec (or pool)"),
+    ("with an entry holding another key", pl_with(1, label="Decisions"), f"{PRE}[1] must be {{conversation, channel, ref}}"),
+    ("with an entry that is a string", [*PL0, f"naila:{NAILA_REF}"], f"{PRE}[2] must be {{conversation, channel, ref}}"),
+    ("with a conversation that is no string (YAML 1.1 reads an unquoted yes as true)", pl_with(1, conversation=True), f"{PRE}[1] must be {{conversation, channel, ref}}"),
+    ("on a channel that is not enabled", [*PL0, {"conversation": "naila", "channel": "slack", "ref": "C0123"}], f"{PRE}[2].channel slack is no enabled channel"),
+    ("naming no role", [*PL0, {"conversation": "legal-clerk", "channel": "discord", "ref": "1566334318752567399"}], f"{PRE}[2].conversation legal-clerk is no role of harness.roleSpec (or pool)"),
     ("giving the researcher (temporary) a place", [*PL0, {"conversation": "researcher", "channel": "discord", "ref": "1566334318752567399"}], "harness.roleSpec.roles.researcher is temporary: harness.places gives it a place"),
     ("naming naila on discord twice", [*PL0, {"conversation": "naila", "channel": "discord", "ref": "1566334318752567399"}], f"{PRE} names naila on discord twice"),
-    ("using a ref on discord twice", pl_with(3, ref=NAILA_REF), f"{PRE} uses ref {NAILA_REF} on discord twice"),
+    ("using a ref on discord twice", pl_with(1, ref=NAILA_REF), f"{PRE} uses ref {NAILA_REF} on discord twice"),
     ("with a ref that is a number (unquoted in YAML)", pl_with(0, ref=int(NAILA_REF)), f"{PRE}[0].ref must match ^[A-Za-z0-9][A-Za-z0-9._:/-]{{0,99}}$"),
     ("with an empty ref", pl_with(1, ref=""), f"{PRE}[1].ref must match ^[A-Za-z0-9][A-Za-z0-9._:/-]{{0,99}}$"),
-    ("with a ref starting with a dash", pl_with(1, ref="-1566334383831654520"), f"{PRE}[1].ref must match ^[A-Za-z0-9][A-Za-z0-9._:/-]{{0,99}}$"),
+    ("with a ref starting with a dash", pl_with(1, ref="-1566334486054961293"), f"{PRE}[1].ref must match ^[A-Za-z0-9][A-Za-z0-9._:/-]{{0,99}}$"),
     ("with a ref of 101 characters", pl_with(1, ref="1" * 101), f"{PRE}[1].ref must match ^[A-Za-z0-9][A-Za-z0-9._:/-]{{0,99}}$"),
     ("without the pool", [p for p in PL0 if p["conversation"] != "pool"], "harness.channels.discord is enabled without a pool place in harness.places"),
     ("with the pool on the test channel alone", [*(p for p in PL0 if p["conversation"] != "pool"), {"conversation": "pool", "channel": "test", "ref": "test:pool"}],
      "harness.channels.discord is enabled without a pool place in harness.places"))
 PLACE_RENDERS = (
     ("in another order", PL0[::-1]),
-    ("without a role's place (the core files a plan for it)", [p for p in PL0 if p["conversation"] != "ops-oncall"]),
+    ("with a worker's place back in Git (ops-oncall's)", PL_OPS),
+    ("without a role's place (the core files a plan for it)", [p for p in PL_OPS if p["conversation"] != "ops-oncall"]),
     ("with the pool alone", [p for p in PL0 if p["conversation"] == "pool"]),
     ("with a place on the test channel too, the same ref as on discord", [*PL0, {"conversation": "naila", "channel": "test", "ref": NAILA_REF}]),
     ("with a ref of 100 characters, letters, digits and . _ : / -", pl_with(1, ref="A" + "b.c_d:e/f-9" * 9)))
@@ -2933,7 +2941,8 @@ print("pairing: harness-start pairs with the image's services (spec version, wri
 PY
 # Pure core phase 4 Task 12: the owner's profile and the schedules (harness.profile, harness.schedules) as harness-setup.json
 # in ConfigMap assistant-harness ({"version":1,"profile":{"timeZone":<tz>,…},"schedules":{"jobs":[…]}}; version 2 with
-# views.places and "places":[…] since phase 6 Task 13, production's five places checked here too), each job's request
+# views.places and "places":[…] since phase 6 Task 13, production's places checked here too: five, two since Task 16, the
+# three worker channels engine-managed), each job's request
 # text (files/schedules/<id>.txt) the key harness-job-<id>.txt beside it:
 #  - naila's parseSetup (NAILA_WORKTREE's built dist) accepts the prod, test-phase and staging (harness on) setup files with
 #    their request keys, and its start checks pass on them as main.ts runs them (loadWorkerSpecs, the roster, checkSeeds,
@@ -2986,9 +2995,9 @@ PROFILE = {"timeZone": "Asia/Jakarta", "quietUntil": "07:00", "currency": {"code
            "paths": {"system": "Naila", "finance": "Finance", "inbox": "Inbox", "daily": "Daily", "testFolder": "Harness-test",
                      "views": {"decisions": "Decisions.md", "usage": "Usage.md", "selfChanges": "Self-changes.md", "vaultChanges": "Vault changes.md",
                                "changelog": "Engine changelog.md", "places": "Places.md"}}}   # places: pure core phase 6 Task 13
-# pure core phase 6 Task 13: setup spec 2 adds the Git base of places, production's five Discord channels (pool: the decision pool)
-PLACES = [{"conversation": c, "channel": "discord", "ref": r} for c, r in (("naila", "1566334318752567368"), ("finance-bookkeeper", "1566334383831654520"),
-          ("finance-advisor", "1566334353871605820"), ("ops-oncall", "1566334447111110759"), ("pool", "1566334486054961293"))]
+# pure core phase 6 Task 13: setup spec 2 adds the Git base of places, production's Discord channels (pool: the decision pool):
+# two since Task 16, naila and pool (finance-bookkeeper, finance-advisor and ops-oncall left Git: the engine manages them)
+PLACES = [{"conversation": c, "channel": "discord", "ref": r} for c, r in (("naila", "1566334318752567368"), ("pool", "1566334486054961293"))]
 tag = "the profile equals today's literals"
 for label, r in (("prod", prod), ("test phase", test), ("real phase", real)):
     s = setup(r)
@@ -3554,12 +3563,16 @@ if HAVE:
         q = naila(r, show_places=True)
         want_ = json.loads(r[HC]["data"]["harness-setup.json"])["places"]
         if q.returncode != 0 or json.loads(q.stdout or "null") != want_: bad.append(f"{tag}: the {label} places parse as {(q.stdout or why(q)).strip()[:300]}, want {want_}")
-        if label != "staging (harness on)" and [x["conversation"] for x in want_] != ["naila", "finance-bookkeeper", "finance-advisor", "ops-oncall", "pool"]: bad.append(f"{tag}: the {label} places are {want_}")
+        if label != "staging (harness on)" and [x["conversation"] for x in want_] != ["naila", "pool"]: bad.append(f"{tag}: the {label} places are {want_}")   # Task 16: two
     tag = "the built image's checkPlaces refuses a rendered place on a channel HARNESS_CHANNELS lacks and one of a retired role"
     bent = copy.deepcopy(prod); sp = json.loads(bent[HC]["data"]["harness-setup.json"]); sp["places"].append({"conversation": "naila", "channel": "slack", "ref": "C1"})
     bent[HC]["data"]["harness-setup.json"] = json.dumps(sp)
     if "places: naila on slack: no channel slack in HARNESS_CHANNELS" not in (q := naila(bent)).stderr: bad.append(f"{tag}: a place on slack: exit {q.returncode} {why(q)!r}")
-    bent = copy.deepcopy(prod); j = spec(bent); j["roles"] = [x for x in j["roles"] if x["id"] != "ops-oncall"]; j["retired"] = ["ops-oncall"]
+    # phase 6 Task 16: the prod places are naila's and the pool's, so each bend below first gives its role the Git place it had
+    OLD_PLACE = {w: {"conversation": w, "channel": "discord", "ref": r} for w, r in (("finance-advisor", "1566334353871605820"), ("ops-oncall", "1566334447111110759"))}
+    def with_place(r, w):
+        sp = json.loads(r[HC]["data"]["harness-setup.json"]); sp["places"].insert(-1, OLD_PLACE[w]); r[HC]["data"]["harness-setup.json"] = json.dumps(sp)
+    bent = copy.deepcopy(prod); with_place(bent, "ops-oncall"); j = spec(bent); j["roles"] = [x for x in j["roles"] if x["id"] != "ops-oncall"]; j["retired"] = ["ops-oncall"]
     bent[HC]["data"]["harness-workers.json"] = json.dumps(j)
     if "places: ops-oncall on discord names a retired role" not in (q := naila(bent)).stderr: bad.append(f"{tag}: ops-oncall retired with its place kept: exit {q.returncode} {why(q)!r}")
     tag = "the built image refuses a quarantined permanent role (the chart renders it) and a temporary job role"
@@ -3567,7 +3580,7 @@ if HAVE:
     if p.returncode != 0: bad.append(f"{tag}: a permanent researcher fails the render (the rule is the core's): {p.stderr.strip()[-300:]}")
     elif "is quarantined" not in (q := naila(loads(p.stdout))).stderr or "it must be temporary, so the web text it reads lives no longer than its job" not in q.stderr:
         bad.append(f"{tag}: a permanent researcher is not refused as quarantined: exit {q.returncode} {why(q)!r}")
-    bent = copy.deepcopy(prod); j = spec(bent)
+    bent = copy.deepcopy(prod); with_place(bent, "finance-advisor"); j = spec(bent)
     for x in j["roles"]:
         if x["id"] == "finance-advisor": x.update(lifecycle="temporary", hireable=False)
     bent[HC]["data"]["harness-workers.json"] = json.dumps(j)
@@ -3604,7 +3617,9 @@ for what, args, says in (
         ("a temporary lead", roles_with(naila={"lifecycle": "temporary", "hireable": False}), f"{A}naila: the lead must be permanent"),
         ("a temporary role workers[] lists", roles_with(ops_oncall={"lifecycle": "temporary", "hireable": False}), f"{A}ops-oncall is temporary: workers[] gives it an RC line"),
         ("the researcher in workers[]", ["--set-json", f"workers={json.dumps([*WORKERS, {'name': 'researcher', 'model': 'sonnet', 'direct': True}])}"], f"{A}researcher is temporary: workers[] gives it an RC line"),
-        ("a temporary role in harness.places", [*roles_with(ops_oncall={"lifecycle": "temporary", "hireable": False}), "--set-json", f"workers={json.dumps([w for w in WORKERS if w['name'] != 'ops-oncall'])}"],
+        # phase 6 Task 16: ops-oncall has no place in values.prod.yaml any more, so the bend gives it its old one first
+        ("a temporary role in harness.places", [*roles_with(ops_oncall={"lifecycle": "temporary", "hireable": False}), "--set-json", f"workers={json.dumps([w for w in WORKERS if w['name'] != 'ops-oncall'])}",
+                                                "--set-json", f"harness.places={json.dumps([PL[0], {'conversation': 'ops-oncall', 'channel': 'discord', 'ref': '1566334447111110759'}, *PL[1:]])}"],
          f"{A}ops-oncall is temporary: harness.places gives it a place"),
         ("the researcher in harness.places", ["--set-json", f"harness.places={json.dumps([*PL, {'conversation': 'researcher', 'channel': 'discord', 'ref': '123456789012345678'}])}"],
          f"{A}researcher is temporary: harness.places gives it a place")):
@@ -3652,8 +3667,13 @@ print("roles spec 4: the researcher temporary and hireable, the other four perma
       + "; bad lifecycle, hireable, a temporary lead or RC line or place fail the render" + (f"; the render is {ref}'s but for those" if diffs else ""))
 PY
 # Pure core phase 6 Task 13: setup spec 2, the Git base of channel places (harness.places), both sides:
-#  - the prod render's places are <git-ref>'s DISCORD_CHANNELS pairs, the decision pool's (decisions) as pool, in order
-#    (skipped with a notice once <git-ref> renders no DISCORD_CHANNELS);
+#  - the prod render's places are <git-ref>'s DISCORD_CHANNELS pairs of naila and decisions (the decision pool's, as pool), in
+#    order: finance-bookkeeper, finance-advisor and ops-oncall left Git in Task 16 (skipped with a notice once <git-ref>
+#    renders no DISCORD_CHANNELS);
+#  - Task 16: against a setup 2 <git-ref> (promote 1's), the places are its minus those three, in order, and the render is
+#    its but for the setup's places and the harness checksum (a new one); harness off and staging render as at <git-ref>;
+#  - harness.places keeps the lead (harness-workers.json's) and the pool on discord, never adopted (call 40), and a
+#    permanent role it leaves out needs DISCORD_PLACES_CATEGORY set to an id in values.prod.yaml;
 #  - the paste block naila prints for them (view.js placesBlock, NAILA_WORKTREE's built dist) is values.prod.yaml's
 #    harness.places, and pasted over harness.places it renders the same places: ids stay strings through YAML 1.1;
 #  - a category id renders DISCORD_PLACES_CATEGORY on the discord gateway alone, "" leaves it out, and a bad id fails the render;
@@ -3685,16 +3705,81 @@ bad = []
 CATEGORY = "DISCORD_PLACES_CATEGORY"
 CAT_RE = re.compile(r"[0-9]{17,20}")
 
-# the places are the ref's DISCORD_CHANNELS pairs, pool for decisions (the decision pool's channel), in order
-tag = "the prod render's places equal the old DISCORD_CHANNELS pairs, pool for decisions"
+# the places are the ref's DISCORD_CHANNELS pairs of naila and decisions (pool, the decision pool's channel), in order; the
+# three worker channels left Git in phase 6 Task 16 (the engine adopts them into DISCORD_PLACES_CATEGORY by plan)
+LEFT_GIT = ("finance-bookkeeper", "finance-advisor", "ops-oncall")
+tag = "the prod render's places are the old DISCORD_CHANNELS pairs of naila and decisions (pool); finance-bookkeeper, finance-advisor and ops-oncall left Git (phase 6 Task 16)"
 old_pairs = val(ctr(prod_ref, "discord"), "DISCORD_CHANNELS")
 if old_pairs is None: print(f"NOTICE: the {ref} render has no DISCORD_CHANNELS: the prod places were not compared with its pairs")
 else:
-    want = [{"conversation": "pool" if n == "decisions" else n, "channel": "discord", "ref": i} for n, i in (x.split(":", 1) for x in old_pairs.split(","))]
+    pairs = [{"conversation": "pool" if n == "decisions" else n, "channel": "discord", "ref": i} for n, i in (x.split(":", 1) for x in old_pairs.split(","))]
+    want = [p for p in pairs if p["conversation"] not in LEFT_GIT]
     for label, r in (("prod", prod), ("test phase", test)):
         got = (setup(r) or {}).get("places")
         if got != want: bad.append(f"{tag}: the {label} places are {got!r}, want {want!r}")
-    if [p["conversation"] for p in want] != ["naila", "finance-bookkeeper", "finance-advisor", "ops-oncall", "pool"]: bad.append(f"{tag}: the ref's pairs are {old_pairs!r}")
+    if [p["conversation"] for p in pairs] != ["naila", "finance-bookkeeper", "finance-advisor", "ops-oncall", "pool"]: bad.append(f"{tag}: the ref's pairs are {old_pairs!r}")
+
+# phase 6 Task 16 (promote 2): the places are the ref's (promote 1's setup 2) minus the three, in order, and nothing else of
+# the render moves but the harness checksum, which must (the pod restarts onto the new base); prod's harness off and staging
+# render exactly as at the ref (skipped with a notice when the ref has no setup 2 places, or already lists none of the three)
+def wspec(r):
+    try: return json.loads(r[HC]["data"]["harness-workers.json"])
+    except (KeyError, ValueError): return None
+def checksum(r): return r[H]["spec"]["template"]["metadata"].get("annotations", {}).get("checksum/config") if H in r else None
+tag = (f"the prod render's places are {ref}'s minus finance-bookkeeper, finance-advisor and ops-oncall, in order, and the render differs from {ref} "
+       "only in harness-setup.json's places and the harness checksum")
+ref_setup = setup(prod_ref) or {}
+ref_places = ref_setup.get("places") if ref_setup.get("version") == 2 else None
+minus_three = False
+if ref_places is None: print(f"NOTICE: the {ref} render has no setup 2 places: the prod places were not compared with its places minus the three")
+elif not any(p.get("conversation") in LEFT_GIT for p in ref_places): print(f"NOTICE: the {ref} render's places already leave out the three: the comparison with its places minus the three (Task 16's change alone) was skipped")
+else:
+    minus_three = True
+    want = [p for p in ref_places if p.get("conversation") not in LEFT_GIT]
+    if sorted(p["conversation"] for p in ref_places if p.get("conversation") in LEFT_GIT and p.get("channel") == "discord") != sorted(LEFT_GIT) or len(want) != len(ref_places) - 3:
+        bad.append(f"{tag}: the ref's places are {ref_places!r}, want each of the three once on discord")
+    def strip16(r):
+        r = copy.deepcopy(r)
+        if HC in r and (s := setup(r)) is not None: s.pop("places", None); r[HC]["data"]["harness-setup.json"] = s
+        if H in r: r[H]["spec"]["template"]["metadata"].get("annotations", {}).pop("checksum/config", None)
+        return r
+    for label, a, b, moved in (("prod", prod, prod_ref, True), ("test phase", test, test_ref, True), ("harness off", off, off_ref, False), ("staging", staging, staging_ref, False)):
+        if moved:
+            if (setup(a) or {}).get("places") != want: bad.append(f"{tag}: the {label} places are {(setup(a) or {}).get('places')!r}, want {want!r}")
+            if checksum(a) is None or checksum(a) == checksum(b): bad.append(f"{tag}: the {label} harness checksum is {checksum(a)!r}, the ref's {checksum(b)!r}: want a new one")
+            sa, sb = strip16(a), strip16(b)
+        else: sa, sb = a, b
+        for k in sorted(set(sa) | set(sb)):
+            if sa.get(k) != sb.get(k): bad.append(f"{tag}: the {label} render's {k[0]}/{k[1]} differs{'' if k in sa and k in sb else ' (on one side only)'}")
+
+# call 40 (I1): the lead's and the pool's places are never adopted, so they stay Git's: harness.places keeps both on discord
+tag = "harness.places keeps the lead and pool on discord"
+def lead_pool_gaps(r):
+    leads = [x["id"] for x in (wspec(r) or {}).get("roles", []) if x.get("lead") is True]
+    if len(leads) != 1: return [f"harness-workers.json has leads {leads!r}, want one"]
+    on = [p["conversation"] for p in (setup(r) or {}).get("places") or [] if p.get("channel") == "discord"]
+    return [f"its places name {who} on discord {on.count(who)} times, want once ({on!r})" for who in (leads[0], "pool") if on.count(who) != 1]
+for label, r in (("prod", prod), ("test phase", test)):
+    bad += [f"{tag}: the {label} render: {g}" for g in lead_pool_gaps(r)]
+for who in ("naila", "pool"):   # the check bites: a render without either is caught
+    bent = copy.deepcopy(prod); s = setup(bent); s["places"] = [p for p in s["places"] if p["conversation"] != who]; bent[HC]["data"]["harness-setup.json"] = json.dumps(s)
+    if not lead_pool_gaps(bent): bad.append(f"{tag}: a prod render without {who}'s place passes it")
+
+# the engine makes and adopts a worker's channel only in DISCORD_PLACES_CATEGORY: a permanent role harness.places leaves out
+# needs it set, or the core's plan for its channel can never be carried
+tag = "values.prod.yaml sets DISCORD_PLACES_CATEGORY to an id whenever harness.places leaves out a permanent role"
+def category_gap(pv, roles):
+    on = {p.get("conversation") for p in pv.get("places") or [] if isinstance(p, dict) and p.get("channel") == "discord"}
+    out = [x["id"] for x in roles if x.get("lifecycle") == "permanent" and x["id"] not in on]
+    cat = ((((pv.get("channels") or {}).get("discord") or {}).get("gateway") or {}).get("env") or {}).get(CATEGORY)
+    return f"harness.places leaves out {out} on discord and {CATEGORY} is {cat!r}" if out and not (isinstance(cat, str) and CAT_RE.fullmatch(cat)) else None
+pv = yaml.safe_load(open("helm/assistant/values.prod.yaml"))["harness"]
+roles = (wspec(prod) or {}).get("roles") or []
+if not roles: bad.append(f"{tag}: the prod render has no harness-workers.json roles")
+elif (g := category_gap(pv, roles)): bad.append(f"{tag}: {g}")
+bent = copy.deepcopy(pv); bent["channels"]["discord"]["gateway"]["env"][CATEGORY] = ""   # the check bites: the pool's place alone, no category
+bent["places"] = [p for p in bent["places"] if p["conversation"] == "pool"]
+if roles and not category_gap(bent, roles): bad.append(f"{tag}: values without {CATEGORY} and with the pool's place alone pass it")
 
 # the paste block (naila's Places.md) round-trips through the chart: values.prod.yaml holds it verbatim, and pasted it renders
 # the same places (a ref is quoted, so YAML 1.1 never reads it as a number)
@@ -3813,7 +3898,9 @@ if diffs and HAVE:
     finally: shutil.rmtree(d)
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
-print("places: setup spec 2 carries harness.places, production's five former DISCORD_CHANNELS pairs (pool for decisions)"
+print("places: setup spec 2 carries harness.places, production's two former DISCORD_CHANNELS pairs naila and decisions (pool), the lead and pool kept;"
+      + " finance-bookkeeper, finance-advisor and ops-oncall left Git (engine-managed in DISCORD_PLACES_CATEGORY)"
       + (", naila's paste block round-trips through the chart" if HAVE else "") + "; DISCORD_PLACES_CATEGORY renders only as an id; DISCORD_CHANNELS is gone"
-      + (f"; the render is {ref}'s but for those" if diffs else ""))
+      + (f"; the render is {ref}'s but for those" if diffs else "")
+      + (f"; the render is {ref}'s but for its places minus the three and the harness checksum" if minus_three else ""))
 PY

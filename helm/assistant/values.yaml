@@ -50,17 +50,19 @@ harness:
       gateway:                            # absent: no container (a channel served from outside the pod, such as the tests')
         uid: 1002                         # its own uid (group 1000), never 0, 1000 (the core, login), 1001 (docs) or another gateway's
         # Plain env; "" leaves a variable out. Ids are not secret; quoted, they're too large for a YAML number.
-        # DISCORD_OWNER_ID: the only user whose messages and confirmations count. DISCORD_CHANNELS: name:id pairs; decisions is the
-        # decision pool's channel, every other name a conversation of the core's directory (no fixed roster; others are logged).
+        # DISCORD_OWNER_ID: the only user whose messages and confirmations count. Its channels are harness.places (pure-core
+        # phase 6): the gateway routes each conversation by the places the core's directory gives it, so no env names a channel
+        # (DISCORD_CHANNELS is gone; setting it fails the render). DISCORD_PLACES_CATEGORY: the owner's runtime category, where
+        # the gateway creates and deletes the places the owner approves (a hire's too), granted Manage Channels, View, Send,
+        # Manage Webhooks and Read History there. "" keeps create and delete off (a Git place is only ever linked).
         # DISCORD_AVATAR_BASE: webhook avatars, <base>/<speaker>.png (naila, finance-bookkeeper, finance-advisor, ops-oncall,
         # test); "" = Discord's default. The images live in this public repo under assets/naila/avatars.
-        env: { DISCORD_OWNER_ID: "", DISCORD_GUILD_ID: "", DISCORD_CHANNELS: "", DISCORD_AVATAR_BASE: "https://raw.githubusercontent.com/nopsqi/homelab/prod/assets/naila/avatars" }
+        env: { DISCORD_OWNER_ID: "", DISCORD_GUILD_ID: "", DISCORD_PLACES_CATEGORY: "", DISCORD_AVATAR_BASE: "https://raw.githubusercontent.com/nopsqi/homelab/prod/assets/naila/avatars" }
         secretEnv: { DISCORD_TOKEN: DISCORD_TOKEN }   # env name: key in assistant-harness-secret
         check:                            # env name: regex; a mismatch fails the render
           DISCORD_OWNER_ID: "^[0-9]{17,20}$"
           DISCORD_GUILD_ID: "^[0-9]{17,20}$"
-          # lowercase-name:snowflake pairs, decisions (the decision pool) required; the gateway refuses a name or id twice
-          DISCORD_CHANNELS: "^([a-z0-9][a-z0-9-]{0,63}:[0-9]{17,20},)*decisions:[0-9]{17,20}(,[a-z0-9][a-z0-9-]{0,63}:[0-9]{17,20})*$"
+          DISCORD_PLACES_CATEGORY: "^([0-9]{17,20})?$"   # "" or a category id
     # test: the unattended channel of the live checks (tests/live). It is served from outside the pod, so no gateway container.
     # Outside a test instance the core lets it only reject (or do nothing), and the render refuses settle approve.
     test:
@@ -70,6 +72,16 @@ harness:
       settle: reject
       retainMs: 3600000                   # nobody polls it between live runs
       secretKey: GATEWAY_TEST_SECRET
+  # The Git base of channel places (pure-core phase 6; naila packages/harness/src/places-config.ts): templates/harness.yaml
+  # renders it, in this order, as harness-setup.json's `places`. Each gives a conversation (a permanent role of roleSpec
+  # below, or pool, the decision pool) its place on an enabled channel, by the channel's own ref (Discord: the channel id,
+  # quoted: a string, never a YAML number). The core links each at start and never deletes one; a permanent role without a
+  # place gets one plan for it, and runtime places the owner approves live in the core alone until pasted here (Naila's
+  # Places.md prints the block to paste over this list). The render fails on what the core refuses at start: an entry other
+  # than {conversation, channel, ref}, a channel that is not enabled, a conversation that is no role (or pool), a temporary
+  # role, a conversation or a ref listed twice on one channel, a ref not matching ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$; and,
+  # chart-only, an enabled discord channel without a pool place (its gateway posts the decision pool there).
+  places: []
   # The services the core enables (pure-core phase 3; naila packages/harness/src/services/config.ts): templates/harness.yaml
   # renders each enabled one into the core's HARNESS_SERVICES ({"version":1,"services":{"<id>":{"writeCredentials":[…]}}}),
   # and finance's env and egress peer follow finance, the ops peer cluster. writeCredentials repeats the image's declaration
@@ -82,7 +94,8 @@ harness:
     cluster: { enabled: true, writeCredentials: [] }
     web: { enabled: true, writeCredentials: [] }
   # The owner's profile (pure-core phase 4; naila packages/harness/src/setup.ts): templates/harness.yaml renders it, with the
-  # schedules below, as harness-setup.json ({"version":1,"profile":…,"schedules":{"jobs":[…]}}) in ConfigMap assistant-harness;
+  # schedules below and the places above, as harness-setup.json ({"version":2,"profile":…,"schedules":{"jobs":[…]},"places":[…]})
+  # in ConfigMap assistant-harness;
   # the core refuses a setup it can't parse. timeZone is the top-level tz (one source: TZ is rendered from it too). paths: the
   # vault folders (the core's own `system` folder with its views, trash and workspaces; the finance notes; the inbox and daily
   # notes; the test phase's folder), each a plain relative path, system and testFolder one folder name of letters, digits and
@@ -98,7 +111,7 @@ harness:
       inbox: Inbox
       daily: Daily
       testFolder: Harness-test
-      views: { decisions: Decisions.md, usage: Usage.md, selfChanges: Self-changes.md, vaultChanges: Vault changes.md, changelog: Engine changelog.md }
+      views: { decisions: Decisions.md, usage: Usage.md, selfChanges: Self-changes.md, vaultChanges: Vault changes.md, changelog: Engine changelog.md, places: Places.md }
   # The jobs the core starts on its own (pure-core phase 4; naila packages/harness/src/schedules-file.ts), rendered into
   # harness-setup.json in this order. Ids are permanent: a job's sent marks are keyed by its id, so a renamed job runs its
   # current period again. `enabled` is required (true or false). A job with a `request` (run and ask jobs) has its text in
@@ -147,7 +160,7 @@ harness:
   # order, the lead first), and the claude-code adapter's prepare.js writes the agent files from it. `roles` is an ordered
   # list: each role's `id` (immutable once rows are written under it), `lead: true` on exactly one (listed first), `lifecycle`
   # (spec 4: permanent, keeping its history and conversation; or temporary, hired by the lead for one job and released, with
-  # no RC line in workers[] and no DISCORD_CHANNELS conversation; the lead is permanent, a quarantined role temporary),
+  # no RC line in workers[] and no place in harness.places; the lead is permanent, a quarantined role temporary),
   # `hireable` (a temporary role's only, true or false: whether the lead may hire it), `display`
   # (how every channel shows it: name, avatar key), `seed` (its switches on first sight; each must apply to it, as the core
   # checks at start: tests/render-modes.sh runs naila's checkSeeds on the render), `instructions`, `brain`, `ceiling`,
@@ -164,8 +177,8 @@ harness:
   # (vault-mcp layout.ts vaultPathsEnv: none for DEFAULT_VAULT_PATHS). No server string may hold a $ or a write credential
   # of any service in services above, enabled or not (MCP_FINANCE_TOKEN, the finance write bearer): the render fails. So do
   # a duplicate id, no lead or two, a lead not listed first, a retired id that roles also lists, a lifecycle other than
-  # permanent or temporary, a misplaced or non-boolean hireable, a temporary lead, and a temporary role in workers[] or in a
-  # channel's DISCORD_CHANNELS.
+  # permanent or temporary, a misplaced or non-boolean hireable, a temporary lead, and a temporary role in workers[] or in
+  # harness.places.
   roleSpec:
     roles:
       - id: naila

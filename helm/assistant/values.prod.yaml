@@ -33,7 +33,15 @@ harness:
         env:
           DISCORD_OWNER_ID: "702801867805294602"
           DISCORD_GUILD_ID: "1181630542819643482"
-          DISCORD_CHANNELS: "naila:1566334318752567368,finance-bookkeeper:1566334383831654520,finance-advisor:1566334353871605820,ops-oncall:1566334447111110759,decisions:1566334486054961293"
+          DISCORD_PLACES_CATEGORY: ""   # the owner's runtime category, once it exists (pure-core phase 6); "": no create or delete
+  # The Git base of places (pure-core phase 6): the five channels DISCORD_CHANNELS named until then, decisions as pool (the
+  # decision pool). Naila/Places.md prints this block, with any runtime places, to paste over it.
+  places:
+    - { conversation: naila,              channel: discord, ref: "1566334318752567368" }
+    - { conversation: finance-bookkeeper, channel: discord, ref: "1566334383831654520" }
+    - { conversation: finance-advisor,    channel: discord, ref: "1566334353871605820" }
+    - { conversation: ops-oncall,         channel: discord, ref: "1566334447111110759" }
+    - { conversation: pool,               channel: discord, ref: "1566334486054961293" }
 apiServer:
   cidr: 91.98.86.223/32
 sealedSecret:

@@ -16,8 +16,8 @@
        first, a retired id that roles also lists, an unresolved marker, a server holding a $, a lifecycle other than
        permanent or temporary, a hireable on a permanent role or not a boolean on a temporary one, a temporary lead (the rule
        that a quarantined role is temporary is left to the core: tests/render-modes.sh runs it). A temporary role is hired for
-       one job by the lead, so it has no RC line (workers[]) and no channel conversation (a DISCORD_CHANNELS pair named after
-       it, in any channel's gateway env): either fails the render. Two chart-only checks besides:
+       one job by the lead, so it has no RC line (workers[]) and no Git place (an entry of harness.places, pure-core phase 6):
+       either fails the render. Two chart-only checks besides:
        a server holding a write credential of any service harness.services lists, enabled or not (P11: a disabled service's
        write bearer must not reach a run either), and a server naming __FINANCE_HOST__ while finance is disabled. The rest of
        the core's service-use check (seeds, other servers, path grants of a disabled service) and unknown service ids are
@@ -31,7 +31,7 @@
 {{- $vaultRoot := ternary (printf "/vault/%s" (toString $h.profile.paths.testFolder)) "/vault" $test }}   {{- /* the body checked testFolder */}}
 {{- $paths := .paths }}
 {{- /* vault-mcp layout.ts DEFAULT_VAULT_PATHS, verbatim (tests/render-modes.sh checks it against naila's built layout.js) */ -}}
-{{- $defaultPaths := dict "system" "Naila" "finance" "Finance" "inbox" "Inbox" "daily" "Daily" "testFolder" "Harness-test" "views" (dict "decisions" "Decisions.md" "usage" "Usage.md" "selfChanges" "Self-changes.md" "vaultChanges" "Vault changes.md" "changelog" "Engine changelog.md") }}
+{{- $defaultPaths := dict "system" "Naila" "finance" "Finance" "inbox" "Inbox" "daily" "Daily" "testFolder" "Harness-test" "views" (dict "decisions" "Decisions.md" "usage" "Usage.md" "selfChanges" "Self-changes.md" "vaultChanges" "Vault changes.md" "changelog" "Engine changelog.md" "places" "Places.md") }}
 {{- $vaultPaths := ternary "" (toJson $paths) (eq (toJson $paths) (toJson $defaultPaths)) }}
 {{- $creds := list }}
 {{- range $id, $e := $h.services | default dict }}{{ if and (kindIs "map" $e) (kindIs "slice" $e.writeCredentials) }}{{ range $e.writeCredentials }}{{ $creds = append $creds (toString .) }}{{ end }}{{ end }}{{ end }}
@@ -63,13 +63,9 @@
 {{- if has .name $temporary }}{{ fail (printf "harness.roleSpec.roles.%s is temporary: workers[] gives it an RC line" .name) }}{{ end }}
 {{- $_ := set $models .name (toString .model) }}
 {{- end }}
-{{- range $_, $c := $h.channels | default dict }}
-{{- if and (kindIs "map" $c) (kindIs "map" $c.gateway) }}{{ if kindIs "map" $c.gateway.env }}
-{{- range splitList "," (toString ($c.gateway.env.DISCORD_CHANNELS | default "")) }}
-{{- if has (first (splitList ":" .)) $temporary }}{{ fail (printf "harness.roleSpec.roles.%s is temporary: DISCORD_CHANNELS gives it a channel" (first (splitList ":" .))) }}{{ end }}
-{{- end }}
+{{- range $h.places | default list }}{{ if kindIs "map" . }}
+{{- if has (toString .conversation) $temporary }}{{ fail (printf "harness.roleSpec.roles.%s is temporary: harness.places gives it a place" (toString .conversation)) }}{{ end }}
 {{- end }}{{ end }}
-{{- end }}
 {{- $roles := list }}
 {{- range $s := $h.roleSpec.roles }}
 {{- $w := toString $s.id }}
@@ -183,6 +179,8 @@
 {{- if has $uid $uids }}{{ fail (printf "%s.gateway.uid %d is taken (root, the core, docs or another gateway)" $at $uid) }}{{ end }}
 {{- $uids = append $uids $uid }}
 {{- if hasKey . "uploads" }}{{ fail (printf "%s.gateway.uploads is gone: the core owns uploads (Task 13), so no gateway mounts anything; drop the key" $at) }}{{ end }}
+{{- /* Pure-core phase 6: a channel's places are harness.places, so DISCORD_CHANNELS, its old name:id list, may not come back */}}
+{{- if hasKey (.env | default dict) "DISCORD_CHANNELS" }}{{ fail (printf "%s.gateway.env.DISCORD_CHANNELS is gone: the places are harness.places" $at) }}{{ end }}
 {{- /* HARNESS_UPLOADS stays reserved although the chart no longer sets it: a gateway env may not bring back the retired variable */}}
 {{- $names := list "CORE_URL" "GATEWAY_SECRET" "HARNESS_UPLOADS" }}
 {{- range $k, $_ := .env }}{{ if has $k $names }}{{ fail (printf "%s.gateway.env.%s is set by the chart or twice" $at $k) }}{{ end }}{{ $names = append $names $k }}{{ end }}
@@ -216,8 +214,9 @@
 {{- range $ch := $chs }}{{ with $ch.gateway }}
 {{- $gws = append $gws $ch.name }}
 {{- end }}{{ end }}
-{{- /* The owner's profile and the schedules (pure-core phase 4; naila packages/harness/src/setup.ts and schedules-file.ts) as
-       harness-setup.json: {"version":1,"profile":{"timeZone":<tz>,…},"schedules":{"jobs":[…]}}, the profile's time zone the
+{{- /* The owner's profile and the schedules (pure-core phase 4; naila packages/harness/src/setup.ts and schedules-file.ts),
+       and the Git base of places (setup spec 2, pure-core phase 6; places-config.ts) as harness-setup.json:
+       {"version":2,"profile":{"timeZone":<tz>,…},"schedules":{"jobs":[…]},"places":[…]}, the profile's time zone the
        top-level tz (one source with TZ), the jobs in values order, each without its chart-only `uses`, and a job's request
        text (files/schedules/<id>.txt) the key harness-job-<id>.txt beside it. The chart checks only what it uses itself or
        alone knows: the vault folders' shape (testFolder is the test phase's mount and VAULT_EXCLUDE), a job's id, enabled and
@@ -268,7 +267,41 @@
 {{- end }}
 {{- $jobs = append $jobs $x }}
 {{- end }}
-{{- $setupJson := printf "{\"version\":1,\"profile\":%s,\"schedules\":{\"jobs\":%s}}" (toJson $prof) (toJson $jobs) }}
+{{- /* The Git base of places (harness.places, pure-core phase 6): each {conversation, channel, ref} in values order. The core
+       refuses at start what parsePlaces and checkPlaces refuse, so the render fails on it first: an entry with other keys or a
+       conversation or channel that is no string (YAML 1.1 reads an unquoted yes or no as a boolean), a channel that is not
+       enabled, a conversation that is no role of harness.roleSpec nor pool (the decision pool), a ref that is no string
+       matching the channel API's PLACE_REF (a Discord id unquoted is a YAML number: quote it), and a conversation or a ref
+       listed twice on one channel; a temporary role's place fails in assistant.workerSpec. Chart-only: an enabled discord
+       channel needs a pool place (its gateway may approve, so it refuses a directory without the pool). */ -}}
+{{- $places := $h.places | default list }}
+{{- if not (kindIs "slice" $places) }}{{ fail "harness.places must be a list of {conversation, channel, ref}" }}{{ end }}
+{{- $roleIds := list }}
+{{- range $h.roleSpec.roles }}{{ $roleIds = append $roleIds (toString .id) }}{{ end }}
+{{- $chNames := list }}
+{{- range $specs }}{{ $chNames = append $chNames .name }}{{ end }}
+{{- $placeList := list }}
+{{- $named := list }}
+{{- $refs := list }}
+{{- range $i, $p := $places }}
+{{- $at := printf "harness.places[%d]" $i }}
+{{- $ok := kindIs "map" $p }}
+{{- if $ok }}{{ $ok = and (eq (len $p) 3) (hasKey $p "conversation") (hasKey $p "channel") (hasKey $p "ref") }}{{ end }}
+{{- if $ok }}{{ $ok = and (kindIs "string" $p.conversation) (kindIs "string" $p.channel) }}{{ end }}
+{{- if not $ok }}{{ fail (printf "%s must be {conversation, channel, ref}" $at) }}{{ end }}
+{{- if not (has $p.channel $chNames) }}{{ fail (printf "%s.channel %s is no enabled channel" $at $p.channel) }}{{ end }}
+{{- if not (or (eq $p.conversation "pool") (has $p.conversation $roleIds)) }}{{ fail (printf "%s.conversation %s is no role of harness.roleSpec (or pool)" $at $p.conversation) }}{{ end }}
+{{- if not (and (kindIs "string" $p.ref) (regexMatch "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$" (toString $p.ref))) }}{{ fail (printf "%s.ref must match ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$" $at) }}{{ end }}
+{{- $n := printf "%s on %s" $p.conversation $p.channel }}
+{{- if has $n $named }}{{ fail (printf "harness.places names %s twice" $n) }}{{ end }}
+{{- $named = append $named $n }}
+{{- $r := printf "%s on %s" $p.ref $p.channel }}
+{{- if has $r $refs }}{{ fail (printf "harness.places uses ref %s twice" $r) }}{{ end }}
+{{- $refs = append $refs $r }}
+{{- $placeList = append $placeList (dict "conversation" $p.conversation "channel" $p.channel "ref" $p.ref) }}
+{{- end }}
+{{- if and (has "discord" $chNames) (not (has "pool on discord" $named)) }}{{ fail "harness.channels.discord is enabled without a pool place in harness.places" }}{{ end }}
+{{- $setupJson := printf "{\"version\":2,\"profile\":%s,\"schedules\":{\"jobs\":%s},\"places\":%s}" (toJson $prof) (toJson $jobs) (toJson $placeList) }}
 {{- $vaultRoot := ternary (printf "/vault/%s" $testFolder) "/vault" $test }}
 {{- $vaultSub := "" }}
 {{- if eq .Values.vault.mode "smb" }}{{ $vaultSub = ternary (printf "%s/%s" .Values.vault.subPath $testFolder) .Values.vault.subPath $test }}
@@ -292,8 +325,8 @@ data:
   # harness-* keys, beside it in /config.
   harness-workers.json: |
     {{ $workerSpec }}
-  # The owner's profile and the schedules (pure-core phase 4): the core reads it at start (HARNESS_SETUP's default,
-  # /config/harness-setup.json), and each job's request text beside it.
+  # The owner's profile, the schedules (pure-core phase 4) and the Git base of places (phase 6): the core reads it at start
+  # (HARNESS_SETUP's default, /config/harness-setup.json), and each job's request text beside it.
   harness-setup.json: |
     {{ $setupJson }}
 {{- range $k, $t := $requests }}

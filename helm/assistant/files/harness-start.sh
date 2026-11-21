@@ -62,23 +62,24 @@ for (const [id, s] of Object.entries(cfg.services)) {
 }
 })().catch((e) => fail(`${e?.message ?? e}: ${differ}`))' "$SERVICES_JS"
 # PAIRING: the image's setup
-# Pure-core phase 4 (schedules and profile): the owner's profile and the schedules (/config/harness-setup.json, the chart's)
-# and the image that reads them (dist/setup.js) come together. An image without setup.js, or whose SETUP_SPEC_VERSION is not
-# 1, predates the chart (the import error printed first); a setup file the image's parseSetup refuses (the jobs' requests
-# read beside it) means the two were not shipped together. Either fails the start. The profile's paths then place what this
-# script makes and checks, one per line: the test folder (VAULT_EXCLUDE, the test phase's rules), the finance folder, the
-# workspace root (vault-mcp's layout: the write guard's root) and the vault server's VAULT_PATHS (empty for production's
-# paths: vaultPathsEnv gives none).
+# Pure-core phase 4 (schedules and profile) and phase 6 (places): the owner's profile, the schedules and the Git base of
+# channel places (/config/harness-setup.json, the chart's: setup spec 2, its `places` and the places view) and the image that
+# reads them (dist/setup.js) come together. An image without setup.js, or whose SETUP_SPEC_VERSION is not 2, predates the
+# chart (the import error printed first): a phase 4 image would refuse the places, or misread them. A setup file the
+# image's parseSetup refuses (the jobs' requests read beside it) means the two were not shipped together. Either fails the
+# start. The profile's paths then place what this script makes and checks, one per line: the test folder (VAULT_EXCLUDE, the
+# test phase's rules), the finance folder, the workspace root (vault-mcp's layout: the write guard's root) and the vault
+# server's VAULT_PATHS (empty for production's paths: vaultPathsEnv gives none).
 SETUP_JS=/naila/packages/harness/dist/setup.js
 LAYOUT_JS=/naila/packages/vault-mcp/dist/layout.js
 setup=$(node -e '
 const fs = require("fs"), path = require("path"), [file, layoutFile, setupFile] = process.argv.slice(1)
 const fail = (m) => { console.error(`harness-start: ${m}`); process.exit(2) }
-const old = "this naila image predates pure-core phase 4 (schedules and profile): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+const old = "this naila image predates pure-core phase 6 (places): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
 ;(async () => {
 let img, layout
 try { img = await import(file) } catch (e) { fail(`cannot load ${file}: ${e?.message ?? e}: ${old}`) }
-if (img.SETUP_SPEC_VERSION !== 1) fail(old)
+if (img.SETUP_SPEC_VERSION !== 2) fail(old)
 try { layout = await import(layoutFile) } catch (e) { fail(`cannot load ${layoutFile}: ${e?.message ?? e}: ${old}`) }
 let s
 try { s = img.parseSetup(fs.readFileSync(setupFile, "utf8"), setupFile, (name) => fs.readFileSync(path.join(path.dirname(setupFile), name), "utf8")) }

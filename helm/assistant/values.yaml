@@ -94,8 +94,9 @@ harness:
     cluster: { enabled: true, writeCredentials: [] }
     web: { enabled: true, writeCredentials: [] }
   # The owner's profile (pure-core phase 4; naila packages/harness/src/setup.ts): templates/harness.yaml renders it, with the
-  # schedules below and the places above, as harness-setup.json ({"version":2,"profile":…,"schedules":{"jobs":[…]},"places":[…]})
-  # in ConfigMap assistant-harness;
+  # schedules, the budgets and the provider settings below and the places above, as harness-setup.json (setup spec 3:
+  # {"version":3,"profile":…,"schedules":{"jobs":[…]},"places":[…],"budgets":{…},"providerSettings":{…}}) in ConfigMap
+  # assistant-harness;
   # the core refuses a setup it can't parse. timeZone is the top-level tz (one source: TZ is rendered from it too). paths: the
   # vault folders (the core's own `system` folder with its views, trash and workspaces; the finance notes; the inbox and daily
   # notes; the test phase's folder), each a plain relative path, system and testFolder one folder name of letters, digits and
@@ -155,6 +156,35 @@ harness:
       needs: [budget.read]
       phase: any
       uses: [finance]
+  # The token economy's numbers (plan 7a, setup spec 3; naila packages/harness/src/economy-config.ts), rendered into
+  # harness-setup.json as they stand here; the core logs them at start (economy: …) and Usage.md shows them, and a raise is
+  # recorded by its Git merge. Every number is dollars (USD) and cents.
+  #  - providers.<provider id>: monthlyUsd, a per-token provider's monthly budget (one without it never runs), and runCapUsd,
+  #    the most one run may cost before it stops (only where the provider's adapter can cap a run). The API's numbers moved
+  #    here from naila's PROVIDERS (providers/roster.ts) unchanged; the subscription spends plan limits, so it has no monthly
+  #    budget, and its per-run cap stays unset until plan 7a's verdict (Task 19).
+  #  - roles.<permanent role>.dailyAlertUsd and liveChecks.dailyAlertUsd: a daily spend alert. The core tells the owner once a
+  #    local day (it never stops a run), and each one renders a Prometheus rule in the group naila-harness-spend
+  #    (NailaRoleSpend, NailaLiveCheckSpend: a rolling 24h sum of naila_harness_cost_usd_total). None until Task 19.
+  # The render fails on a role here that is no permanent role of roleSpec below, and on a value that is no number (it goes into
+  # a PromQL expr). The core checks the rest at start (ranges, cents, providers it knows, what each adapter supports).
+  budgets:
+    providers:
+      anthropic-api: { monthlyUsd: 100, runCapUsd: 5 }   # moved from naila providers/roster.ts (plan 7a), unchanged
+    roles: {}          # <permanent role>: { dailyAlertUsd: <usd> } — none until plan 7a Task 19
+    liveChecks: {}     # { dailyAlertUsd: <usd> }
+  # Per provider id (plan 7a, setup spec 3): cacheTtl (5m or 1h), the prompt-cache TTL its runs ask for, left out so Claude
+  # Code's subscription default (1h) stays; and resume, the permanent roles whose owner runs continue their last session
+  # (only the lines added since are sent) while it holds at most maxInputTokens input tokens and has been idle at most
+  # maxIdleMinutes. Why 100000: the roles run 200k-context models (default, opus, sonnet, haiku; none [1m]), a fresh owner
+  # run's first call is about 30k tokens, and session runs turn Claude Code's auto compaction off (the probe found the
+  # switch), so the cap only bounds a session's growth. Why 55: under the 1h cache TTL, so a session whose cache has expired
+  # (where idle compaction can happen) is never resumed. A tainted, forwarded, test, trial or hire run never continues one.
+  # The render fails on a resume role that is no permanent role of roleSpec below; the core checks the rest at start (the
+  # provider, what its adapter supports, the limits against the probed Claude Code). Turning resume off: drop resume.
+  providerSettings:
+    claude-subscription:
+      resume: { roles: [naila, finance-bookkeeper, finance-advisor, ops-oncall], maxInputTokens: 100000, maxIdleMinutes: 55 }
   # The roles config (naila packages/harness/src/workers-spec.ts, ROLES_SPEC_VERSION 4): templates/harness.yaml renders it as
   # harness-workers.json beside each role's instructions (/config), the core installs its roles from it at start (in this
   # order, the lead first), and the claude-code adapter's prepare.js writes the agent files from it. `roles` is an ordered
@@ -163,7 +193,8 @@ harness:
   # no RC line in workers[] and no place in harness.places; the lead is permanent, a quarantined role temporary),
   # `hireable` (a temporary role's only, true or false: whether the lead may hire it), `display`
   # (how every channel shows it: name, avatar key), `seed` (its switches on first sight; each must apply to it, as the core
-  # checks at start: tests/render-modes.sh runs naila's checkSeeds on the render), `instructions`, `brain`, `ceiling`,
+  # checks at start: tests/render-modes.sh runs naila's checkSeeds on the render), `instructions` (its instructions file; the
+  # lead's reach its runs as an appended system prompt, so no work dir holds a CLAUDE.md since plan 7a), `brain`, `ceiling`,
   # `servers` and `paths` (spec 3: its path grants, e.g. finance-documents, the vault's Finance/ folder through files.read;
   # absent is none). A role that holds the web (web.search or web.open in its seed, WebSearch or WebFetch in its ceiling) is
   # quarantined, which the core derives (never a key here): it holds the web and nothing else. The roles are naila,

@@ -3736,12 +3736,17 @@ process.stdout.write(placesBlock(s.places, [], channels))
             if (q := render("-f", f)).returncode == 0 or "harness.places[0].ref must match" not in q.stderr: bad.append(f"{tag}: unquoted refs: exit {q.returncode} {q.stderr.strip()[-300:]!r}")
     finally: shutil.rmtree(d)
 
-# DISCORD_PLACES_CATEGORY: the owner's runtime category; "" (prod's until it exists) leaves it out
+# DISCORD_PLACES_CATEGORY: the owner's runtime category "naila workers" (phase 6 Task 14, set once the live place check passed
+# on 2026-11-21); "" leaves it out
 tag = 'a category id renders DISCORD_PLACES_CATEGORY on the gateway, "" leaves it out, and a bad id fails the render'
+PROD_CATEGORY = "1573597777030549554"
 for label, r in (("prod", prod), ("test phase", test)):
-    for c in pod(r)["containers"] + pod(r).get("initContainers", []):
-        if CATEGORY in envmap(c): bad.append(f"{tag}: the {label} render's {c['name']} sets {CATEGORY} (prod's is \"\")")
-if yaml.safe_load(open("helm/assistant/values.prod.yaml"))["harness"]["channels"]["discord"]["gateway"]["env"].get(CATEGORY) != "": bad.append(f"{tag}: values.prod.yaml's {CATEGORY} is not \"\" (Task 14 sets it once the category exists)")
+    got = [c["name"] for c in pod(r)["containers"] + pod(r).get("initContainers", []) if CATEGORY in envmap(c)]
+    if got != ["discord"] or envmap(ctr(r, "discord")).get(CATEGORY) != {"name": CATEGORY, "value": PROD_CATEGORY}:
+        bad.append(f"{tag}: the {label} render sets {CATEGORY} on {got} as {envmap(ctr(r, 'discord')).get(CATEGORY)!r} (prod's is {PROD_CATEGORY}, on discord alone)")
+if yaml.safe_load(open("helm/assistant/values.prod.yaml"))["harness"]["channels"]["discord"]["gateway"]["env"].get(CATEGORY) != PROD_CATEGORY: bad.append(f"{tag}: values.prod.yaml's {CATEGORY} is not {PROD_CATEGORY} (\"naila workers\")")
+p = render("--set", f"harness.channels.discord.gateway.env.{CATEGORY}=")
+if p.returncode != 0 or CATEGORY in envmap(ctr(loads(p.stdout), "discord")): bad.append(f"{tag}: \"\" renders {CATEGORY} on the gateway or fails: exit {p.returncode}")
 SET = f"harness.channels.discord.gateway.env.{CATEGORY}"
 for cid in ("1181630542819643999", "11816305428196439991"):
     p = render("--set", f"{SET}={cid}")

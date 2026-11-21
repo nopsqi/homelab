@@ -33,7 +33,7 @@ harness:
         env:
           DISCORD_OWNER_ID: "702801867805294602"
           DISCORD_GUILD_ID: "1181630542819643482"
-          DISCORD_PLACES_CATEGORY: ""   # the owner's runtime category, once it exists (pure-core phase 6); "": no create or delete
+          DISCORD_PLACES_CATEGORY: "1573597777030549554"   # "naila workers": the engine makes, adopts and deletes worker channels only here (pure-core phase 6; place check passed 2026-11-21)
   # The Git base of places (pure-core phase 6): the five channels DISCORD_CHANNELS named until then, decisions as pool (the
   # decision pool). Naila/Places.md prints this block, with any runtime places, to paste over it.
   places:

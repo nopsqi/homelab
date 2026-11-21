@@ -34,14 +34,13 @@ harness:
           DISCORD_OWNER_ID: "702801867805294602"
           DISCORD_GUILD_ID: "1181630542819643482"
           DISCORD_PLACES_CATEGORY: "1573597777030549554"   # "naila workers": the engine makes, adopts and deletes worker channels only here (pure-core phase 6; place check passed 2026-11-21)
-  # The Git base of places (pure-core phase 6): the five channels DISCORD_CHANNELS named until then, decisions as pool (the
-  # decision pool). Naila/Places.md prints this block, with any runtime places, to paste over it.
+  # The Git base of places (pure-core phase 6): two of the five channels DISCORD_CHANNELS named until then, naila (the lead)
+  # and decisions as pool (the decision pool); both stay Git's, never adopted. finance-bookkeeper, finance-advisor and
+  # ops-oncall left Git in phase 6 Task 16: the engine manages their channels in DISCORD_PLACES_CATEGORY, as any new
+  # worker's, and Naila/Places.md lists them. Places.md prints this block, with any runtime places, to paste over it.
   places:
-    - { conversation: naila,              channel: discord, ref: "1566334318752567368" }
-    - { conversation: finance-bookkeeper, channel: discord, ref: "1566334383831654520" }
-    - { conversation: finance-advisor,    channel: discord, ref: "1566334353871605820" }
-    - { conversation: ops-oncall,         channel: discord, ref: "1566334447111110759" }
-    - { conversation: pool,               channel: discord, ref: "1566334486054961293" }
+    - { conversation: naila, channel: discord, ref: "1566334318752567368" }
+    - { conversation: pool,  channel: discord, ref: "1566334486054961293" }
 apiServer:
   cidr: 91.98.86.223/32
 sealedSecret:

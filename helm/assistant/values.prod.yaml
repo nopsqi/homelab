@@ -41,6 +41,10 @@ harness:
   places:
     - { conversation: naila, channel: discord, ref: "1566334318752567368" }
     - { conversation: pool,  channel: discord, ref: "1566334486054961293" }
+  # The summaries' re-make (plan 7b): production's alone, once per role at start, at most 8 runs each (Task 3: the most
+  # chunks a role's history needs, finance-advisor's 6, plus 2). values.yaml holds the rest of harness.memory.
+  memory:
+    remake: { maxRunsPerRole: 8 }
 apiServer:
   cidr: 91.98.86.223/32
 sealedSecret:

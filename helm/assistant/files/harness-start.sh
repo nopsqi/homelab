@@ -73,12 +73,13 @@ for (const [id, s] of Object.entries(cfg.services)) {
 }
 })().catch((e) => fail(`${e?.message ?? e}: ${differ}`))' "$SERVICES_JS"
 # PAIRING: the image's setup
-# Pure-core phase 4 (schedules and profile), phase 6 (places), plan 7a (budgets and provider settings) and file actions (the
-# files settings): the owner's profile, the schedules, the Git base of channel places, the budgets, the provider settings and
-# the files settings (/config/harness-setup.json, the chart's: setup spec 4) and the image that reads them (dist/setup.js)
-# come together. An image without setup.js, or whose SETUP_SPEC_VERSION is below 4 or no number, predates the chart (the
-# import error printed first): a plan 7a image would refuse the files settings, or run without them. One whose
-# SETUP_SPEC_VERSION is above 4 is newer than the chart, and says so (the
+# Pure-core phase 4 (schedules and profile), phase 6 (places), plan 7a (budgets and provider settings), file actions (the
+# files settings) and plan 7b (the memory's limits and the memory view): the owner's profile, the schedules, the Git base of
+# channel places, the budgets, the provider settings, the files settings and the memory (/config/harness-setup.json, the
+# chart's: setup spec 5) and the image that reads them (dist/setup.js) come together. An image without setup.js, or whose
+# SETUP_SPEC_VERSION is below 5 or no number, predates the chart (the import error printed first): a file actions image would
+# refuse the memory, or run without its limits and without protecting Memory.md, and a plan 7a image would refuse the files
+# settings too. One whose SETUP_SPEC_VERSION is above 5 is newer than the chart, and says so (the
 # image refuses an older chart's setup in turn, naming the chart). A setup file the image's parseSetup refuses (the jobs'
 # requests read beside it) means the two were not shipped together. Each fails the start. The profile's paths then place
 # what this script makes and checks, one per line: the test folder (VAULT_EXCLUDE, the test phase's rules), the finance
@@ -89,8 +90,8 @@ LAYOUT_JS=/naila/packages/vault-mcp/dist/layout.js
 setup=$(node -e '
 const fs = require("fs"), path = require("path"), [file, layoutFile, setupFile] = process.argv.slice(1)
 const fail = (m) => { console.error(`harness-start: ${m}`); process.exit(2) }
-const old = "this naila image predates file actions (the files settings): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
-const SPEC = 4
+const old = "this naila image predates plan 7b (memory limits and the memory view): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+const SPEC = 5
 ;(async () => {
 let img, layout
 try { img = await import(file) } catch (e) { fail(`cannot load ${file}: ${e?.message ?? e}: ${old}`) }

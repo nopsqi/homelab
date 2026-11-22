@@ -93,10 +93,15 @@ harness:
     docs: { enabled: true, writeCredentials: [] }
     cluster: { enabled: true, writeCredentials: [] }
     web: { enabled: true, writeCredentials: [] }
+    # File actions (naila setup spec 4): the files sidecar's actions (file_unzip, file_zip, image_convert, csv_query, through
+    # the files container below, harness.files) and the money calculator (calculate, in the core). Neither holds a write
+    # credential; an image older than file actions declares neither, so harness-start refuses the pairing.
+    files: { enabled: true, writeCredentials: [] }
+    calc: { enabled: true, writeCredentials: [] }
   # The owner's profile (pure-core phase 4; naila packages/harness/src/setup.ts): templates/harness.yaml renders it, with the
-  # schedules, the budgets and the provider settings below and the places above, as harness-setup.json (setup spec 3:
-  # {"version":3,"profile":…,"schedules":{"jobs":[…]},"places":[…],"budgets":{…},"providerSettings":{…}}) in ConfigMap
-  # assistant-harness;
+  # schedules, the budgets, the provider settings and the files settings below and the places above, as harness-setup.json
+  # (setup spec 4: {"version":4,"profile":…,"schedules":{"jobs":[…]},"places":[…],"budgets":{…},"providerSettings":{…},
+  # "files":{…}}) in ConfigMap assistant-harness;
   # the core refuses a setup it can't parse. timeZone is the top-level tz (one source: TZ is rendered from it too). paths: the
   # vault folders (the core's own `system` folder with its views, trash and workspaces; the finance notes; the inbox and daily
   # notes; the test phase's folder), each a plain relative path, system and testFolder one folder name of letters, digits and
@@ -185,6 +190,58 @@ harness:
   providerSettings:
     claude-subscription:
       resume: { roles: [naila, finance-bookkeeper, finance-advisor, ops-oncall], maxInputTokens: 100000, maxIdleMinutes: 55 }
+  # The files settings (file actions, setup spec 4; naila packages/harness/src/files/config.ts), rendered into
+  # harness-setup.json as they stand here. Every key is required (the core holds no default), each a whole number from 1 to
+  # its ceiling in the image's compiled files rules (packages/files-sidecar/rules.json: the ceiling named on each line), but
+  # image.keepExif (true or false) and types.remove (allowlisted types turned off). The render fails on a key that is
+  # missing, or no number (no boolean for keepExif); the core refuses a value above its ceiling at start (tests/render-modes.sh
+  # runs its parseSetup on the render). The files container's memory limit is jobs.memoryMiB + 128 MiB, and the desk's
+  # emptyDir (2Gi) holds desk.totalQuotaMiB plus the largest job's output (the render checks both).
+  files:
+    desk:
+      ttlHours: 24          # ceiling 72: how long a result stays on the desk before the hourly sweep removes it
+      workerQuotaMiB: 512   # ceiling 1024: one worker's desk
+      totalQuotaMiB: 1024   # ceiling 1536: the whole desk, every worker's together
+    jobs:
+      memoryMiB: 900        # ceiling 900: one job's address space (the files container's limit is this + 128 MiB)
+      cpuSeconds: 60        # ceiling 60: one job's CPU time
+      wallSeconds: 60       # ceiling 120: one job's wall-clock time
+      queueSeconds: 60      # ceiling 60: how long a job may wait for its turn
+    unzip:
+      maxZipMiB: 25         # ceiling 25: the archive itself
+      maxEntries: 1000      # ceiling 1000: entries in one archive
+      maxUnpackedMiB: 200   # ceiling 200: everything it unpacks (also the job's output cap)
+      maxEntryMiB: 100      # ceiling 100: one unpacked entry
+      maxRatio: 200         # ceiling 200: unpacked size over packed size, per entry (zip bombs)
+      maxDepth: 3           # ceiling 3: an archive unpacked from an archive, levels deep
+      maxLevels: 8          # ceiling 8: folder levels inside one archive
+    zip:
+      maxEntries: 200       # ceiling 200: files put into one archive
+      maxInMiB: 100         # ceiling 100: their total size (the job's output cap is this + 1)
+    image:
+      maxPixels: 50000000   # ceiling 64000000: a photo's pixels (width x height) to decode
+      previewSide: 1568     # ceiling 1568: the longest side of the preview the model sees
+      maxOutMiB: 100        # ceiling 100: one converted image (the job's output cap)
+      keepExif: false       # true or false: keep the camera data (never the location) in a converted photo
+    csv:
+      maxMiB: 25            # ceiling 25: one CSV file (the job's output cap is 3 times this)
+      maxRows: 200000       # ceiling 200000: its rows
+      maxColumns: 200       # ceiling 200: its columns
+      maxCellKiB: 32        # ceiling 32: one cell
+      rowsShown: 50         # ceiling 50: rows shown to the model in one answer
+      maxShownCellChars: 200   # ceiling 200: characters of one shown cell
+      maxGroups: 200        # ceiling 200: groups of one grouped total
+    workspace:
+      quotaMiB: 1024        # ceiling 2048: one worker's workspace, for copies and moves into it
+      maxFileMiB: 25        # ceiling 25: one file copied into a workspace (a desk copy's output cap)
+      maxCopyFiles: 200     # ceiling 200: files in one folder copy
+      maxCopyMiB: 100       # ceiling 100: one copy's total size
+    outfiles:
+      totalQuotaMiB: 300    # ceiling 500: files waiting for a channel to fetch them
+      maxPerAnswer: 5       # ceiling 5: files one answer may carry
+      keepDays: 7           # ceiling 7: how long an unfetched file is kept
+    types:
+      remove: []            # allowlisted types turned off (rules.json types), e.g. [heic, heif]
   # The roles config (naila packages/harness/src/workers-spec.ts, ROLES_SPEC_VERSION 5): templates/harness.yaml renders it as
   # harness-workers.json beside each role's instructions (/config), the core installs its roles from it at start (in this
   # order, the lead first), and the claude-code adapter's prepare.js writes the agent files from it. `roles` is an ordered
@@ -193,7 +250,9 @@ harness:
   # no RC line in workers[] and no place in harness.places; the lead is permanent, a quarantined role temporary),
   # `hireable` (a temporary role's only, true or false: whether the lead may hire it), `display`
   # (how every channel shows it: name, avatar key), `seed` (its switches on first sight; each must apply to it, as the core
-  # checks at start: tests/render-modes.sh runs naila's checkSeeds on the render), `instructions` (its instructions file; the
+  # checks at start: tests/render-modes.sh runs naila's checkSeeds on the render; file actions added files.process,
+  # files.send and calc.use to naila's and the finance workers' seeds and calc.use to ops-oncall's, applied insert-or-ignore,
+  # so a switch the owner turned off stays off), `instructions` (its instructions file; the
   # lead's reach its runs as an appended system prompt, so no work dir holds a CLAUDE.md since plan 7a), `brain`, `ceiling`,
   # `servers` and `paths` (spec 3: its path grants, e.g. finance-documents, the vault's Finance/ folder through files.read;
   # absent is none). A role that holds the web (web.search or web.open in its seed, WebSearch or WebFetch in its ceiling) is
@@ -216,14 +275,14 @@ harness:
         lead: true
         lifecycle: permanent
         display: { name: Naila, avatar: naila }
-        seed: [files.read, messaging.ask, vault.read, vault.write, docs.convert, vault.organize]
+        seed: [files.read, messaging.ask, vault.read, vault.write, docs.convert, vault.organize, files.process, files.send, calc.use]
         instructions: harness-CLAUDE.md
         brain: { provider: claude-subscription, model: default }
         servers: []
       - id: finance-bookkeeper
         lifecycle: permanent
         display: { name: Finance Bookkeeper, avatar: finance-bookkeeper }
-        seed: [files.read, messaging.ask, budget.read, budget.write-plans, docs.convert]
+        seed: [files.read, messaging.ask, budget.read, budget.write-plans, docs.convert, files.process, files.send, calc.use]
         paths: [finance-documents]
         instructions: harness-agent-finance-bookkeeper.md
         brain: { provider: claude-subscription }
@@ -233,7 +292,7 @@ harness:
       - id: finance-advisor
         lifecycle: permanent
         display: { name: Finance Advisor, avatar: finance-advisor }
-        seed: [files.read, messaging.ask, budget.read, budget.write-plans, docs.convert]
+        seed: [files.read, messaging.ask, budget.read, budget.write-plans, docs.convert, files.process, files.send, calc.use]
         paths: [finance-documents]
         instructions: harness-agent-finance-advisor.md
         brain: { provider: claude-subscription }
@@ -246,7 +305,7 @@ harness:
       - id: ops-oncall
         lifecycle: permanent
         display: { name: Ops Oncall, avatar: ops-oncall }
-        seed: [messaging.ask, cluster.read]
+        seed: [messaging.ask, cluster.read, calc.use]
         instructions: harness-agent-ops-oncall.md
         brain: { provider: claude-subscription }
         ceiling: tools

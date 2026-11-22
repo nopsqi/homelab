@@ -16,7 +16,11 @@
 #  - a file with a second hard link, a directory, a symlink out of an allowed root, a path with `..`, a backslash or a control
 #    character, and a root (workspace, Finance or any entry) that is itself a link are denied;
 #  - with --exclude DIR[,DIR…] (the real phase: the test folder), a file under an excluded dir, or a symlink into one, is
-#    denied, a file beside it is not, and a malformed --exclude denies everything.
+#    denied, a file beside it is not, and a malformed --exclude denies everything;
+#  - file actions Task 17: a desk entry (a HARNESS_DOCS_ROOTS folder strictly under the desk) is usable only with --desk DIR:
+#    without it the entry is outside --root and denies everything; with it a file of that folder converts, another worker's
+#    desk folder (not in the entry) does not, nor the desk root as an entry, nor a desk folder that is a link; --desk with a
+#    relative or dotted DIR, an empty one or none denies everything, uploads included; --desk with --exclude still excludes.
 # Then the RC lines' mode (no flags): it never denies, as before the switches.
 set -euo pipefail
 root="$(git rev-parse --show-toplevel)"
@@ -49,6 +53,13 @@ mkdir -p "$v2/Naila/Workspace"
 ln -s "$v/Daily" "$v2/Naila/Workspace/naila"
 ln -s "$v/Daily" "$v2/Finance"
 
+# file actions: the desk (HARNESS_DESK_ROOT), one folder per worker
+dk="$tmp/desk"
+mkdir -p "$dk/naila/20261122-0901-1a2b-unzip" "$dk/finance-bookkeeper/20261122-0902-2b3c-unzip" "$tmp/elsewhere"
+echo d > "$dk/naila/20261122-0901-1a2b-unzip/a.pdf"
+echo d > "$dk/finance-bookkeeper/20261122-0902-2b3c-unzip/b.pdf"
+ln -s "$tmp/elsewhere" "$dk/linked"                                       # a desk folder that is a link
+echo d > "$tmp/elsewhere/c.pdf"
 fail=0
 BK="docs.convert,files.read,messaging.ask,budget.read,budget.write-plans"   # the bookkeeper's seed: vault.read off
 NA="docs.convert,files.read,messaging.ask,vault.read,vault.write"           # naila's seed
@@ -198,6 +209,33 @@ expect allow "$NA" naila "$v/Harness-test/Naila/test.pdf"                  # wit
 expect deny  "$NA" naila "$v/Harness-test/Naila/test.pdf" --by-caps --uploads "$up" --root "$v" --exclude "/nonexistent,$v/Harness-test"
 expect deny  "$NA" naila "$v/Daily/x.md" --by-caps --uploads "$up" --root "$v" --exclude "relative/dir"
 expect deny  "$NA" naila "$v/Daily/x.md" --by-caps --uploads "$up" --root "$v" --exclude ""
+# file actions Task 17: --desk DIR (the pod's desk): a desk entry is usable only with --desk
+dx=(--by-caps --uploads "$up" --root "$v" --desk "$dk")
+R="$v,$dk/naila" expect allow "$NA" naila "$dk/naila/20261122-0901-1a2b-unzip/a.pdf" "${dx[@]}"      # its own desk, with --desk
+R="$v,$dk/naila" expect allow "$NA" naila "$v/Daily/x.md" "${dx[@]}"                                  # the other roots as before
+R="$v,$dk/naila" expect allow "$NA" naila "$up/discord/sent.pdf" "${dx[@]}"
+R="$v,$dk/naila" expect deny  "$NA" naila "$dk/finance-bookkeeper/20261122-0902-2b3c-unzip/b.pdf" "${dx[@]}"   # another worker's desk
+R="$v,$dk/naila" expect deny  "$NA" naila "$dk/naila/20261122-0901-1a2b-unzip/a.pdf"                  # a desk entry is usable only with --desk:
+R="$v,$dk/naila" expect deny  "$NA" naila "$v/Daily/x.md"                                             # without it everything is denied
+R="$v,$dk/naila" expect deny  "$NA" naila "$up/discord/sent.pdf"
+R="$dk" expect deny "$NA" naila "$dk/naila/20261122-0901-1a2b-unzip/a.pdf" "${dx[@]}"                 # the desk root itself is no entry
+R="$dk" expect deny "$NA" naila "$up/discord/sent.pdf" "${dx[@]}"
+R="$dk/linked" expect deny  "$NA" naila "$dk/linked/c.pdf" "${dx[@]}"                                 # a desk folder that is a link opens nothing
+R="$dk/linked" expect allow "$NA" naila "$up/discord/sent.pdf" "${dx[@]}"                             # ... but the value is usable
+R="$v,$tmp/elsewhere" expect deny "$NA" naila "$v/Daily/x.md" "${dx[@]}"                              # an entry outside --root and the desk
+expect allow "$NA" naila "$v/Daily/x.md" "${dx[@]}"                                                   # --desk without a desk entry changes nothing
+expect deny  "$NA" naila "$dk/naila/20261122-0901-1a2b-unzip/a.pdf" "${dx[@]}"
+O=test R="$v,$dk/_test/naila" expect deny "$NA" naila "$dk/naila/20261122-0901-1a2b-unzip/a.pdf" "${dx[@]}"   # a test run's own _test desk is not the owner's
+# --desk with a relative or dotted DIR denies everything, uploads included (and none, or an empty one)
+for d in "desk" "$dk/../desk" "$dk/./naila" "$tmp/desk\\x" "" "/"; do
+  R="$v,$dk/naila" expect deny "$NA" naila "$dk/naila/20261122-0901-1a2b-unzip/a.pdf" --by-caps --uploads "$up" --root "$v" --desk "$d"
+  R="$v,$dk/naila" expect deny "$NA" naila "$up/discord/sent.pdf" --by-caps --uploads "$up" --root "$v" --desk "$d"
+  R="" expect deny "$NA" naila "$up/discord/sent.pdf" --by-caps --uploads "$up" --root "$v" --desk "$d"
+done
+R="" expect deny "$NA" naila "$up/discord/sent.pdf" --by-caps --uploads "$up" --root "$v" --desk     # --desk with no value
+R="$v,$dk/naila" expect allow "$NA" naila "$dk/naila/20261122-0901-1a2b-unzip/a.pdf" --by-caps --uploads "$up" --root "$v" --desk "$dk/"   # a trailing / is the same desk
+R="$v,$dk/naila" expect deny  "$NA" naila "$v/Harness-test/Naila/test.pdf" "${dx[@]}" --exclude "$v/Harness-test"   # --exclude still holds
+R="$v,$dk/naila" expect allow "$NA" naila "$dk/naila/20261122-0901-1a2b-unzip/a.pdf" "${dx[@]}" --exclude "$v/Harness-test"
 # the RC lines' mode (no flags): nothing denied, whatever the env
 for p in "$v/Daily/x.md" "$tmp/outside/secret.pdf" "$up/discord/linked.pdf" "$up/test/fixture.pdf"; do
   O=- expect allow - - "$p" rc

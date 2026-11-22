@@ -21,6 +21,10 @@
 // missing or relative --uploads or --root, a path with `..` or `.` segments, a backslash or a control character, a root that
 // is itself a link, or anything unreadable or unexpected is a deny (and the hook command adds `|| exit 2`, so a crash
 // blocks too).
+// --desk DIR (file actions: the pod's desk, HARNESS_DESK_ROOT, a plain absolute path): an HARNESS_DOCS_ROOTS entry is also
+// usable when it lies strictly under DIR (the core gives a run only its own desk folder there, <DIR>/<worker> or
+// <DIR>/_test/<worker>, with files.read); without the flag a desk entry is outside --root, so it denies everything, as
+// before. A --desk with no value, or a relative or dotted DIR, denies everything.
 // --exclude DIR[,DIR…] (the real phase: /vault/Harness-test) denies every path that is, after resolving symlinks and `..`,
 // under one of those dirs, compared case-insensitively (the vault may be a case-insensitive share). It fails closed too: an
 // empty or relative entry, or a path that can't be resolved, is a deny.
@@ -55,15 +59,19 @@ if (process.argv.includes('--by-caps')) {
   try {
     const caps = process.env.HARNESS_CAPS, w = process.env.HARNESS_WORKER ?? '', o = process.env.HARNESS_ORIGIN, dr = process.env.HARNESS_DOCS_ROOTS
     const origin = typeof o === 'string' && /^[a-z][a-z0-9-]{0,31}$/.test(o) ? o : undefined   // as the core's CHANNEL_NAME
-    const upArg = argOf('--uploads'), rootArg = argOf('--root')
+    const upArg = argOf('--uploads'), rootArg = argOf('--root'), withDesk = process.argv.includes('--desk'), deskArg = argOf('--desk')
     // exactly what the core writes: on capabilities joined by commas, no spaces, no empty entries (an empty string is none on)
     const usable = typeof caps === 'string' && /^(?:[a-z][a-z-]*\.[a-z][a-z-]*(?:,[a-z][a-z-]*\.[a-z][a-z-]*)*)?$/.test(caps)
     // the core's docs roots: '' is none; else each entry plain and at --root or under it (as named), none empty (the core
     // refuses a root holding a comma, so a comma only ever separates two)
     const v = typeof rootArg === 'string' ? rootArg.replace(/\/+$/, '') : ''   // as named, without a trailing / (no `//` below)
     const inRoot = (e) => plain(e) && (e === (v || '/') || e.startsWith(`${v}/`))
+    // --desk: strictly under the desk (never the desk root itself), as named without a trailing /
+    const desk = withDesk && plain(deskArg) ? deskArg.replace(/\/+$/, '') : ''
+    const inDesk = (e) => desk !== '' && plain(e) && e.startsWith(`${desk}/`) && e.length > desk.length + 1
+    const deskOk = !withDesk || desk !== ''
     const given = typeof dr !== 'string' ? undefined : dr === '' ? [] : dr.split(',')
-    if (usable && given?.every(inRoot) && /^[a-z][a-z0-9-]*$/.test(w) && plain(upArg) && plain(rootArg)) {
+    if (usable && deskOk && given?.every((e) => inRoot(e) || inDesk(e)) && /^[a-z][a-z0-9-]*$/.test(w) && plain(upArg) && plain(rootArg)) {
       const on = new Set(caps.split(',').filter(Boolean))
       const p = JSON.parse(input).tool_input?.path
       if (on.has('docs.convert') && plain(p)) {

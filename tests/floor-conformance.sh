@@ -38,6 +38,10 @@
 #    write tool (and the vault and finance-notes servers' write tools) in a run marked researched or with no slots folder, and
 #    has the same 15 s deadline on its input; its refusal text is naila's RESEARCHED_WRITE_REFUSED, read from naila's built
 #    dist (packages/harness/dist/research.js: build naila first), word for word;
+#  - file actions Task 17: every docs-grant case runs again with --desk (production's hook carries HARNESS_DESK_ROOT) and
+#    gives the same verdict; naila's cases-desk.json (beside cases.json) runs through docs-grant.mjs --desk <T's desk> in
+#    cases.json's tree plus its own desk part, with the core's env for a policy context holding deskRoot, each case agreeing
+#    with its expectation and with the core's port (grantDocs on the same policy, from the built dist);
 #  - it checks that harness-start.sh and claude.yaml still render those hook commands (the web and write hooks with their
 #    30 s timeout and onFailure block), and that web-guard.mjs carries naila's
 #    web-rules block byte for byte (the text between the web-rules:begin and web-rules:end lines, each once in both files, read
@@ -56,8 +60,14 @@ export TMPDIR="$priv"
 mkdir -p "$priv/config"
 helm template "$repo/helm/assistant" -f "$repo/helm/assistant/values.yaml" -f "$repo/helm/assistant/values.prod.yaml" | python3 -c '
 import sys, os, yaml
-cm = [d for d in yaml.safe_load_all(sys.stdin) if d and d["kind"] == "ConfigMap" and d["metadata"]["name"] == "assistant-harness"]
+docs = [d for d in yaml.safe_load_all(sys.stdin) if d]
+cm = [d for d in docs if d["kind"] == "ConfigMap" and d["metadata"]["name"] == "assistant-harness"]
 data = cm[0]["data"] if len(cm) == 1 else {}
+# the channels the core reads (HARNESS_CHANNELS): it installs the test channels from them (a test-origin run has the _test desk)
+dep = [d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "assistant-harness"]
+chans = [e.get("value") for c in (dep[0]["spec"]["template"]["spec"]["containers"] if dep else []) if c["name"] == "harness" for e in c.get("env", []) if e["name"] == "HARNESS_CHANNELS"]
+if len(chans) != 1: sys.exit("FAIL: the prod render has no HARNESS_CHANNELS on the harness container")
+open(os.path.join(sys.argv[1], "harness-channels.json"), "w").write(chans[0])
 if "harness-setup.json" not in data: sys.exit("FAIL: the prod render has no harness-setup.json in ConfigMap assistant-harness")
 for k, v in data.items():
     if k == "harness-setup.json" or k.startswith("harness-job-"): open(os.path.join(sys.argv[1], k), "w").write(v)
@@ -150,8 +160,9 @@ const start = readFileSync(join(FILES, 'harness-start.sh'), 'utf8'), claudeYaml 
 const WRITE_MATCHER = '^(Write|Edit|MultiEdit|NotebookEdit|mcp__vault__write_inbox|mcp__vault__append_daily|mcp__vault__workers_write|mcp__finance-notes__.*)$'
 for (const [file, text, s] of [
   ['harness-start.sh', start, 'command: "node /config/read-guard.mjs --by-origin || exit 2"'],
-  ['harness-start.sh', start, 'command: `node ${grant} --by-caps --uploads ${uploads} --root ${root}${docsExclude} || exit 2`'],
+  ['harness-start.sh', start, 'command: `node ${grant} --by-caps --uploads ${uploads} --root ${root}${docsDesk}${docsExclude} || exit 2`'],
   ['harness-start.sh', start, 'const docsExclude = excluded.length ? ` --exclude ${excluded.map((x) => `${root}/${x}`).join(",")}` : ""'],
+  ['harness-start.sh', start, 'const docsDesk = desk ? ` --desk ${desk}` : ""'],
   ['harness-start.sh', start, `matcher: "${WRITE_MATCHER}", hooks: [{ type: "command", command: \`node /config/harness-write-guard.mjs --root \${root}/\${workspaces} || exit 2\`, timeout: 30, onFailure: "block" }]`],
   ['harness-start.sh', start, 'matcher: "WebFetch|WebSearch", hooks: [{ type: "command", command: "node /config/web-guard.mjs --by-worker || exit 2", timeout: 30, onFailure: "block" }]'],
   ['claude.yaml', claudeYaml, '"matcher": "WebFetch|WebSearch", "hooks": [{ "type": "command", "command": "node /config/web-guard.mjs" }]'],
@@ -167,15 +178,16 @@ for (const [f, target] of Object.entries(tree.hardlinks)) linkSync(join(t, targe
 for (const [f, target] of Object.entries(tree.symlinks)) { mkdirSync(dirname(join(t, f)), { recursive: true }); symlinkSync(join(t, target), join(t, f)) }
 const mount = join(t, tree.mount), uploads = join(t, tree.uploads)
 
-const hookArgs = (c, root, exclude) => {
+const hookArgs = (c, root, exclude, desk) => {
   switch (c.claude) {
     case 'hook:read-guard': return ['read-guard.mjs', '--by-origin']
     case 'hook:write-guard': return ['harness-write-guard.mjs', '--root', `${root}/${WS}`]
-    case 'hook:docs-grant': return ['docs-grant.mjs', '--by-caps', '--uploads', uploads, '--root', root, ...(exclude.length ? ['--exclude', exclude.map((x) => `${root}/${x}`).join(',')] : [])]
+    // file actions: the desk (HARNESS_DESK_ROOT) after --root and before --exclude, as harness-start.sh renders it
+    case 'hook:docs-grant': return ['docs-grant.mjs', '--by-caps', '--uploads', uploads, '--root', root, ...(desk ? ['--desk', desk] : []), ...(exclude.length ? ['--exclude', exclude.map((x) => `${root}/${x}`).join(',')] : [])]
     case 'hook:web-guard': return ['web-guard.mjs', '--by-worker']
   }
 }
-const subst = (v, tok) => typeof v === 'string' ? v.replace(/\$[VUWHS]/g, (m) => tok[m])
+const subst = (v, tok) => typeof v === 'string' ? v.replace(/\$[VUWHSD]/g, (m) => tok[m] ?? m)
   : Array.isArray(v) ? v.map((x) => subst(x, tok)) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, subst(x, tok)])) : v
 // a fresh slots folder holding `used` slots ({search?, open?}), plus the researched marker when asked
 const slotsWith = (used = {}, researched = false) => {
@@ -243,6 +255,76 @@ for (const c of cases.filter((x) => x.claude.startsWith('hook:'))) {
   if (c.hook !== undefined) console.log(`OK: ${c.id} ${c.what}: ${hook} ${want}s it, the core denies it (${c.ruling})`)
 }
 console.log(`${agree}/${n} hook cases agree`)
+
+// File actions Task 17: production's docs hook carries --desk (HARNESS_DESK_ROOT). Every docs-grant case of cases.json gives
+// the same verdict with it (a desk the case's run has no root under changes nothing), and cases-desk.json's cases (naila
+// Task 10: a run's own desk, another worker's, a link, a hard link, a test-origin run's _test desk, files.read off) run
+// through the hook with --desk, in cases.json's tree plus their own desk part, each agreeing with its expectation and with the
+// core's port (grantDocs on the case's policy, deskRoot set).
+const deskFile = join(dirname(casesFile), 'cases-desk.json')
+let dn = 0, dagree = 0
+if (!existsSync(deskFile)) bad(`no desk cases at ${deskFile}: naila predates file actions (Task 10)`)
+else {
+  const { policyFor } = await import(join(dist, 'floor/policy.js'))
+  const { grantDocs } = await import(join(dist, 'floor/docs-grant.js'))
+  const { NOT_AVAILABLE } = await import(join(dist, 'capabilities.js'))
+  // the test channels, as the core installs them from the rendered HARNESS_CHANNELS at start (main.ts)
+  const { installTestChannels } = await import(join(dist, 'channel-kinds.js'))
+  installTestChannels(JSON.parse(readFileSync(join(configDir, 'harness-channels.json'), 'utf8')).filter((x) => x.kind === 'test').map((x) => x.name))
+  const D = JSON.parse(readFileSync(deskFile, 'utf8'))
+  // the docs cases of cases.json, with --desk at a desk no run's roots reach: the same verdicts
+  for (const c of cases.filter((x) => x.claude === 'hook:docs-grant')) {
+    dn++
+    const ph = tree.phases[c.run.phase], root = join(t, ph.root), exclude = c.run.phase === 'real' ? ph.exclude : []
+    const cwd = join(t, tree.work, c.run.role)
+    const tok = { $V: mount, $U: uploads, $W: posix.join(root, 'Naila', 'Workspace', c.run.role), $H: tree.home, $S: cwd.replace(/[^a-zA-Z0-9]/g, '-') }
+    const ctx = { phase: c.run.phase, vaultRoot: root, vaultMount: mount, vaultExclude: ph.exclude, uploadsRoot: uploads, workRoot: join(t, tree.work), claudeHome: tree.home }
+    const core = hookEnv({ worker: c.run.role, on: c.run.on, ...(c.run.origin === undefined ? {} : { origin: c.run.origin }), asked: c.run.asked }, ctx)
+    const [hook, ...args] = hookArgs(c, root, exclude, join(t, 'desk'))
+    const r = spawnSync(process.execPath, [join(FILES, hook), ...args], { cwd, input: JSON.stringify({ tool_name: c.tool, tool_input: subst(c.input, tok), cwd }), env: { PATH: process.env.PATH, ...core }, encoding: 'utf8', timeout: 20000 })
+    const denied = /"permissionDecision":"deny"/.test(r.stdout)
+    if (r.status !== 0 || denied !== ((c.hook ?? c.expect) === 'deny')) { bad(`${c.id} ${c.what}: with --desk, docs-grant.mjs ${denied ? 'denies' : 'does not deny'} (exit ${r.status}), want ${c.hook ?? c.expect} as without it`); continue }
+    dagree++
+  }
+  // the desk cases' tree: cases.json's, then their own desk part (their links point into both)
+  const td = realpathSync(mkdtempSync(join(tmpdir(), 'floor-desk-')))
+  for (const part of [tree, D.tree]) {
+    for (const d of part.dirs ?? []) mkdirSync(join(td, d), { recursive: true })
+    for (const [f, text] of Object.entries(part.files ?? {})) { mkdirSync(dirname(join(td, f)), { recursive: true }); writeFileSync(join(td, f), text) }
+    for (const [f, target] of Object.entries(part.hardlinks ?? {})) linkSync(join(td, target), join(td, f))
+    for (const [f, target] of Object.entries(part.symlinks ?? {})) { mkdirSync(dirname(join(td, f)), { recursive: true }); symlinkSync(join(td, target), join(td, f)) }
+  }
+  const dmount = join(td, tree.mount), duploads = join(td, tree.uploads), desk = join(td, D.tree.desk)
+  for (const c of D.cases) {
+    dn++
+    if (c.claude !== 'hook:docs-grant' || c.tool !== 'mcp__docs__convert' || !['allow', 'deny'].includes(c.expect)) { bad(`${c.id}: a desk case must be a docs-grant case with an expectation`); continue }
+    const ph = tree.phases[c.run.phase], root = join(td, ph.root), exclude = c.run.phase === 'real' ? ph.exclude : []
+    const cwd = join(td, tree.work, c.run.role)
+    const tok = { $V: dmount, $U: duploads, $W: posix.join(root, 'Naila', 'Workspace', c.run.role), $H: tree.home, $S: cwd.replace(/[^a-zA-Z0-9]/g, '-'), $D: desk }
+    const input = subst(c.input, tok)
+    if (/\$[A-Za-z]/.test(JSON.stringify(input))) { bad(`${c.id} ${c.what}: a path token is left in ${JSON.stringify(input)}`); continue }
+    const ctx = { phase: c.run.phase, vaultRoot: root, vaultMount: dmount, vaultExclude: ph.exclude, uploadsRoot: duploads, workRoot: join(td, tree.work), claudeHome: tree.home, deskRoot: desk }
+    const run = { worker: c.run.role, on: c.run.on, ...(c.run.origin === undefined ? {} : { origin: c.run.origin }), asked: c.run.asked }
+    let core, policy
+    try {
+      core = hookEnv(run, ctx)
+      const on = new Set(run.on)
+      const stub = { state: () => Object.fromEntries([...CAPABILITY_IDS.map((x) => [x, on.has(x) ? 'on' : 'off']), ...NOT_AVAILABLE.map((x) => [x, 'unavailable'])]), servers: () => [] }
+      policy = policyFor(run.worker, stub, ctx, { ...(run.origin === undefined ? {} : { origin: run.origin }), asked: run.asked })
+    } catch (e) { bad(`${c.id} ${c.what}: the core's policy throws: ${e.message}`); continue }
+    const port = await grantDocs(policy, input.path)
+    const args = ['--by-caps', '--uploads', duploads, '--root', root, '--desk', desk, ...(exclude.length ? ['--exclude', exclude.map((x) => `${root}/${x}`).join(',')] : [])]
+    const r = spawnSync(process.execPath, [join(FILES, 'docs-grant.mjs'), ...args], { cwd, input: JSON.stringify({ tool_name: c.tool, tool_input: input, cwd }), env: { PATH: process.env.PATH, ...core }, encoding: 'utf8', timeout: 20000 })
+    if (r.status !== 0) { bad(`${c.id} ${c.what}: docs-grant.mjs exited ${r.status}`); continue }
+    const hook = /"permissionDecision":"deny"/.test(r.stdout) ? 'deny' : 'allow', theirs = port.ok ? 'allow' : 'deny'
+    if (hook !== c.expect || theirs !== c.expect) { bad(`${c.id} ${c.what}: docs-grant.mjs --desk ${hook}s, the port ${theirs}s, want ${c.expect} ${r.stdout.trim()} ${port.reason ?? ''}`); continue }
+    // without --desk a desk root is outside --root: the hook denies the case (it fails closed, as it did before the desk)
+    const r0 = spawnSync(process.execPath, [join(FILES, 'docs-grant.mjs'), ...args.filter((a, i) => a !== '--desk' && args[i - 1] !== '--desk')], { cwd, input: JSON.stringify({ tool_name: c.tool, tool_input: input, cwd }), env: { PATH: process.env.PATH, ...core }, encoding: 'utf8', timeout: 20000 })
+    if (!/"permissionDecision":"deny"/.test(r0.stdout) && (core.HARNESS_DOCS_ROOTS ?? '').split(',').some((e) => e.startsWith(`${desk}/`))) { bad(`${c.id} ${c.what}: without --desk docs-grant.mjs lets a desk root through`); continue }
+    dagree++
+  }
+}
+console.log(`${dagree}/${dn} desk checks agree (cases.json's docs cases with --desk, and cases-desk.json through the hook and the port)`)
 
 // Homelab-only checks of the web guard (what the shared cases can't state: its flag, its env, its slots folder, its deadline)
 const R = { HARNESS_CAPS: 'web.search,web.open' }
@@ -368,6 +450,6 @@ for (const tool of ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'mcp__vault__w
 for (const tool of ['TodoWrite', 'Read', 'mcp__vault__read_note', 'mcp__vault__search', 'mcp__finance__add_transaction', 'mcp__core__ask_worker', 'WebFetch'])
   if (m.test(tool)) bad(`the write guard's matcher also hooks ${tool}`)
 console.log(`${extra} homelab-only web-guard and write-guard checks run`)
-process.exit(fail || agree !== n ? 1 : 0)
+process.exit(fail || agree !== n || dagree !== dn ? 1 : 0)
 EOF
 node "$priv/run.mjs" "$repo" "$naila" "$cases" "$priv/dns-stub.mjs" "$priv/config"

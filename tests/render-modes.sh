@@ -120,9 +120,10 @@
 #  the render; the render is <git-ref>'s but for those
 #  (skipped with a notice once <git-ref> renders harness-setup.json itself).
 # Then the setup pairing (pure core phase 4 Task 13): harness-start dies on an image without setup.js or whose
-#  SETUP_SPEC_VERSION is not 3 (2 until plan 7a Task 17, 1 until phase 6 Task 13; printing the import error; one above 3 says
-#  the image is the newer side), without vault-mcp's layout.js, and when the image's parseSetup refuses the chart's setup
-#  (the built image refuses a setup 1 and a setup 2, naming the chart, and one without budgets or providerSettings); the
+#  SETUP_SPEC_VERSION is not 4 (3 until file actions Task 17, 2 until plan 7a Task 17, 1 until phase 6 Task 13; printing the
+#  import error; one above 4 says the image is the newer side), without vault-mcp's layout.js, and when the image's parseSetup
+#  refuses the chart's setup (the built image refuses a setup 1, 2 and 3, naming the chart, and one without budgets,
+#  providerSettings or files); the
 #  real phase needs VAULT_EXCLUDE to name the profile's test folder; the prod render pairs with the built image (Harness-test,
 #  Finance, Naila/Workspace, no VAULT_PATHS); the web-rules check judges both copies with the profile's figure words (and the
 #  same FIGURE_WORDS); a non-default profile reaches the user-scope vault server and the advisor's finance-notes server as
@@ -160,6 +161,8 @@
 #  <git-ref>'s but for harness-workers.json (version, maxChars), harness-start.sh's roles guard (and comments) and the
 #  harness checksum, and the built core refuses <git-ref>'s spec 4 naming the chart (skipped with a notice once <git-ref>
 #  renders version 5).
+# Then file actions (Task 17, setup spec 4): the files sidecar, its venv, tokens and desk, the files settings, and the roles'
+#  file actions and instruction lines (the block's own comment lists each check); the render is <git-ref>'s but for those.
 set -euo pipefail
 ref="${1:-origin/master}"
 root="$(git rev-parse --show-toplevel)"
@@ -171,11 +174,11 @@ export TMPDIR="$tmp"   # the checks' own temp dirs (Python tempfile) go with it
 # the static settings deny all of it, whatever the switches. A change there changes this list.
 export FLOOR_DENY='["Bash","NotebookEdit","Agent","Task","Workflow","TaskStop","Monitor","CronCreate","CronDelete","CronList","ScheduleWakeup","RemoteTrigger","EnterWorktree","ExitWorktree","SendMessage","ListAgents","mcp__vault__workers_*","mcp__claude_ai_*","mcp__finance__add_transaction","mcp__finance__transfer","mcp__finance__update_transaction","mcp__finance__actual_write","mcp__finance-notes__write_note","mcp__finance-notes__edit_note","Read(//home/claude/.claude/.credentials.json)","Read(//home/claude/.claude/harness/**)","Read(//home/claude/.claude/agents/**)","Read(//home/claude/.claude/settings.json)","Read(//home/claude/.claude/.claude.json)","Read(//home/claude/.claude.json)","Read(//home/claude/.claude/projects/**/*.jsonl)","Read(//proc/**)","Read(//config/**)","Read(//naila/**)","Edit(//home/claude/.claude/.credentials.json)","Edit(//home/claude/.claude/harness/**)","Edit(//home/claude/.claude/agents/**)","Edit(//home/claude/.claude/settings.json)","Edit(//home/claude/.claude/.claude.json)","Edit(//home/claude/.claude.json)","Edit(//home/claude/.claude/projects/**/*.jsonl)","Edit(//proc/**)","Edit(//config/**)","Edit(//naila/**)","Write(//home/claude/.claude/.credentials.json)","Write(//home/claude/.claude/harness/**)","Write(//home/claude/.claude/agents/**)","Write(//home/claude/.claude/settings.json)","Write(//home/claude/.claude/.claude.json)","Write(//home/claude/.claude.json)","Write(//home/claude/.claude/projects/**/*.jsonl)","Write(//proc/**)","Write(//config/**)","Write(//naila/**)","Edit(//home/claude/.claude/**)","Write(//home/claude/.claude/**)"]'
 # The claude-code adapter's static layer, verbatim from naila packages/harness/src/providers/claude-code/compile.ts
-# CLAUDE_STATIC_LAYER (up to naila 8346393; /run/provider-keys since cbbede6; the researcher's web and write hooks, their 30 s
+# CLAUDE_STATIC_LAYER (up to naila 8346393; /run/provider-keys since cbbede6; /run/files-token and /run/files-sock since file actions; the researcher's web and write hooks, their 30 s
 # timeout and onFailure block, since the researcher branch; the write guard's root pinned only to end in /Workspace since pure-core
 # phase 4, call 15: the profile names the system folder): the denies and the guard hooks (matcher, command regex source, pins) harness-start's
 # settings check takes from the image. With NAILA_WORKTREE the built dist export must equal it. A change there changes this.
-export CLAUDE_STATIC_LAYER='{"deny":["Read(//run/docs-token/**)","Edit(//run/docs-token/**)","Write(//run/docs-token/**)","Read(//run/docs-sock/**)","Edit(//run/docs-sock/**)","Write(//run/docs-sock/**)","Read(//run/provider-keys/**)","Edit(//run/provider-keys/**)","Write(//run/provider-keys/**)"],"hooks":[{"matcher":"Read|Glob|Grep","command":"^node \\/config\\/read-guard\\.mjs --by-origin \\|\\| exit 2$"},{"matcher":"Write|Edit|MultiEdit|NotebookEdit|mcp__vault__write_inbox|mcp__vault__append_daily|mcp__vault__workers_write|mcp__finance-notes__write_note|mcp__finance-notes__edit_note","command":"harness-write-guard\\.mjs --root \\S+\\/Workspace \\|\\| exit 2$","timeout":30,"onFailure":"block"},{"matcher":"mcp__docs__convert","command":"docs-grant\\.mjs --by-caps "},{"matcher":"WebFetch|WebSearch","command":"^node \\/config\\/web-guard\\.mjs --by-worker \\|\\| exit 2$","timeout":30,"onFailure":"block"}]}'
+export CLAUDE_STATIC_LAYER='{"deny":["Read(//run/docs-token/**)","Edit(//run/docs-token/**)","Write(//run/docs-token/**)","Read(//run/docs-sock/**)","Edit(//run/docs-sock/**)","Write(//run/docs-sock/**)","Read(//run/files-token/**)","Edit(//run/files-token/**)","Write(//run/files-token/**)","Read(//run/files-sock/**)","Edit(//run/files-sock/**)","Write(//run/files-sock/**)","Read(//run/provider-keys/**)","Edit(//run/provider-keys/**)","Write(//run/provider-keys/**)"],"hooks":[{"matcher":"Read|Glob|Grep","command":"^node \\/config\\/read-guard\\.mjs --by-origin \\|\\| exit 2$"},{"matcher":"Write|Edit|MultiEdit|NotebookEdit|mcp__vault__write_inbox|mcp__vault__append_daily|mcp__vault__workers_write|mcp__finance-notes__write_note|mcp__finance-notes__edit_note","command":"harness-write-guard\\.mjs --root \\S+\\/Workspace \\|\\| exit 2$","timeout":30,"onFailure":"block"},{"matcher":"mcp__docs__convert","command":"docs-grant\\.mjs --by-caps "},{"matcher":"WebFetch|WebSearch","command":"^node \\/config\\/web-guard\\.mjs --by-worker \\|\\| exit 2$","timeout":30,"onFailure":"block"}]}'
 # The core tools every run has, verbatim from naila packages/harness/src/capabilities.ts CORE_ALWAYS_TOOLS (up to 8346393):
 # harness-start's settings check requires harness-settings.json's allow to be exactly these plus propose_plan and ask_worker
 # when the image exports them. With NAILA_WORKTREE the built dist export must equal it. A change there changes this.
@@ -216,7 +219,7 @@ done
 # The second channel, `example`, is synthetic: no naila package is named so (packages/channels/example does not exist); the
 # checks hold only the template's rule for its container (its command, env and secrets), never that its gateway exists.
 helm template "$tmp/helm/assistant" -f "$tmp/helm/assistant/values.yaml" -f "$tmp/helm/assistant/values.prod.yaml" --set harness.phase=test --set claude.rcLines=true > "$tmp/old-harness.yaml"
-helm template helm/assistant "${P[@]}" --set-json 'harness.channels.example={"enabled":true,"kind":"owner","label":"Example","settle":"reject","secretKey":"GATEWAY_EXAMPLE_SECRET","gateway":{"uid":1003,"env":{"EXAMPLE_CHAT":"-100123"},"secretEnv":{"EXAMPLE_TOKEN":"EXAMPLE_TOKEN"}}}' > "$tmp/two.yaml"
+helm template helm/assistant "${P[@]}" --set-json 'harness.channels.example={"enabled":true,"kind":"owner","label":"Example","settle":"reject","secretKey":"GATEWAY_EXAMPLE_SECRET","gateway":{"uid":1004,"env":{"EXAMPLE_CHAT":"-100123"},"secretEnv":{"EXAMPLE_TOKEN":"EXAMPLE_TOKEN"}}}' > "$tmp/two.yaml"
 # The harness checksum follows what harness-start.sh takes from the RC ConfigMap (settings.json, finance-test-note), not a
 # direct-lines-only edit (phase 2: the worker spec replaced it at the harness pod's start).
 cp -a helm/assistant "$tmp/s" && sed -i 's/"mcp__claude_ai_Gmail"/"mcp__claude_ai_GmailX"/' "$tmp/s/templates/claude.yaml"
@@ -946,10 +949,16 @@ for ph, x in phases.items():
         bad.append(f"HARNESS_VERSION equals the image tag: it is {val(h, 'HARNESS_VERSION')!r}, the naila image is {img!r} ({ph})")
     if key(h, "MCP_FINANCE_TOKEN") != x["write"]: bad.append(f"{tag}: core MCP_FINANCE_TOKEN comes from {key(h, 'MCP_FINANCE_TOKEN')!r}, want {x['write']!r}")
     if key(h, "MCP_FINANCE_READ_TOKEN") != x["read"]: bad.append(f"{tag}: MCP_FINANCE_READ_TOKEN comes from {key(h, 'MCP_FINANCE_READ_TOKEN')!r}, want {x['read']!r}")
-    if val(ctr(r, "docs"), "DOCS_ROOTS") != f"/home/claude/.claude/uploads:{x['root']}": bad.append(f"{tag}: docs DOCS_ROOTS is {val(ctr(r, 'docs'), 'DOCS_ROOTS')!r}")
+    # file actions: docs also reads the desk (the results of file actions)
+    if val(ctr(r, "docs"), "DOCS_ROOTS") != f"/home/claude/.claude/uploads:{x['root']}:/desk": bad.append(f"{tag}: docs DOCS_ROOTS is {val(ctr(r, 'docs'), 'DOCS_ROOTS')!r}")
+    # every container but files mounts this phase's vault whole; files (file actions, call 26) only its workspaces and finance
+    # folders, as subPaths under this phase's (the test phase's: under Harness-test), checked in the files sidecar's checks below
     for c in pod(r)["containers"]:
         for m in c.get("volumeMounts", []):
-            if m["name"] == "vault" and (m["mountPath"] != x["root"] or (ph == "test" and not m.get("subPath", "").endswith("Harness-test"))):
+            if c["name"] == "files" and m["name"] == "vault":
+                if not m["mountPath"].startswith(x["root"].rstrip("/") + "/") or (ph == "test" and "/Harness-test/" not in "/" + m.get("subPath", "") + "/"):
+                    bad.append(f"{tag}: files mounts the vault at {m['mountPath']} (subPath {m.get('subPath')!r})")
+            elif m["name"] == "vault" and (m["mountPath"] != x["root"] or (ph == "test" and not m.get("subPath", "").endswith("Harness-test"))):
                 bad.append(f"{tag}: {c['name']} mounts the vault at {m['mountPath']} (subPath {m.get('subPath')!r})")
     other_keys = {"test": {"MCP_FINANCE_TOKEN", "MCP_FINANCE_READ_TOKEN"}, "real": {"MCP_FINANCE_TEST_TOKEN", "MCP_FINANCE_TEST_READ_TOKEN"}}[ph]
     for cn, e in allenv(r):
@@ -1032,7 +1041,8 @@ for ph, x in phases.items():
     req = 0
     for c in pod(r)["containers"]:
         m = c.get("resources", {}).get("requests", {}).get("memory", "0Mi"); req += int(m.rstrip("Mi"))
-    if not pod(r)["containers"] or req > 512: bad.append(f"harness pod memory requests {req}Mi (want <= 512Mi) ({ph})")
+    # file actions (call 3): the files sidecar adds its 128Mi request to the pod's 512Mi
+    if not pod(r)["containers"] or req > 640: bad.append(f"harness pod memory requests {req}Mi (want <= 640Mi) ({ph})")
     if h.get("resources", {}).get("limits", {}).get("memory") != "1536Mi": bad.append(f"harness container memory limit {h.get('resources', {}).get('limits', {}).get('memory')!r} ({ph})")
 start = (test.get(("ConfigMap", "assistant-harness")) or {}).get("data", {}).get("harness-start.sh", "")
 # The real phase's runs can't see the test folder (Ruling 29): harness-start.sh's settings patch, run as rendered for each
@@ -1076,9 +1086,10 @@ for ph, r in (("test", test), ("real", real)):
     if ph == "test" and denied: bad.append("test phase: the runs' settings deny Read(//vault/Harness-test/**), their own vault")
     hook = " ".join(h["command"] for e in s.get("hooks", {}).get("PreToolUse", []) if "docs" in e.get("matcher", "") for h in e["hooks"])
     if ph == "real" and "--exclude /vault/Harness-test" not in hook: bad.append(f"real phase: the docs hook does not exclude /vault/Harness-test: {hook}")
-    # I1: the docs hook follows each run's switches, rooted at this phase's vault
-    if not re.search(rf" --by-caps --uploads \S+/uploads --root {re.escape(val(ctr(r, 'harness'), 'VAULT_ROOT'))}( --exclude \S+)? \|\| exit 2$", hook) or "--only" in hook:
-        bad.append(f"{ph} phase: the docs hook does not follow the switches (--by-caps --root VAULT_ROOT): {hook}")
+    # I1: the docs hook follows each run's switches, rooted at this phase's vault; file actions: with the desk (HARNESS_DESK_ROOT)
+    # as --desk, after --root and before --exclude
+    if not re.search(rf" --by-caps --uploads \S+/uploads --root {re.escape(val(ctr(r, 'harness'), 'VAULT_ROOT'))} --desk {re.escape(val(ctr(r, 'harness'), 'HARNESS_DESK_ROOT') or '(unset)')}( --exclude \S+)? \|\| exit 2$", hook) or "--only" in hook:
+        bad.append(f"{ph} phase: the docs hook does not follow the switches (--by-caps --root VAULT_ROOT --desk HARNESS_DESK_ROOT): {hook}")
     if ph == "test" and "--exclude" in hook: bad.append(f"test phase: the docs hook excludes a folder: {hook}")
     want = "Harness-test" if ph == "real" else None
     if val(ctr(r, "harness"), "VAULT_EXCLUDE") != want: bad.append(f"{ph} phase: harness VAULT_EXCLUDE is {val(ctr(r, 'harness'), 'VAULT_EXCLUDE')!r}, want {want!r}")
@@ -1151,6 +1162,19 @@ for ph, r in (("test", test), ("real", real)):
         return subprocess.run(["node", "-e", ck[0].group(1), *args], capture_output=True, text=True)
     p = run_check(s)
     if p.returncode != 0: bad.append(f"{tag}: harness-start's check refuses the settings it wrote: {p.stderr.strip()}")
+    # file actions Task 17: harness-start accepts the hook command with --desk (above, as written); with HARNESS_DESK_ROOT
+    # unset (an older chart) it accepts the hook without --desk and refuses one with it
+    tag_d = f"harness-start accepts the hook command with --desk, and dies on --desk in another position ({ph} phase)"
+    dh = [h["command"] for e in s.get("hooks", {}).get("PreToolUse", []) for h in e["hooks"] if "docs-grant" in h["command"]]
+    if len(dh) != 1 or not re.search(rf" --root \S+ --desk {re.escape(vars_.get('HARNESS_DESK_ROOT') or '(none)')}( --exclude \S+)? \|\| exit 2$", dh[0]): bad.append(f"{tag_d}: the written docs hook is {dh}")
+    nodesk = json.loads(json.dumps(s))
+    for e in nodesk["hooks"]["PreToolUse"]:
+        for h in e["hooks"]:
+            if "docs-grant" in h["command"]: h["command"] = re.sub(r" --desk \S+", "", h["command"])
+    saved_ = vars_.pop("HARNESS_DESK_ROOT", None)
+    if (p := run_check(nodesk)).returncode != 0: bad.append(f"{tag_d}: without HARNESS_DESK_ROOT it refuses the hook without --desk: {p.stderr.strip()}")
+    if run_check(s).returncode == 0: bad.append(f"{tag_d}: without HARNESS_DESK_ROOT it accepts a hook with --desk")
+    if saved_ is not None: vars_["HARNESS_DESK_ROOT"] = saved_
     import copy
     def weaken(f):
         x = copy.deepcopy(s); f(x); return x
@@ -1168,6 +1192,13 @@ for ph, r in (("test", test), ("real", real)):
                      ("the docs hook without --by-caps", lambda x: [h.__setitem__("command", h["command"].replace(" --by-caps", "")) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
                      ("the docs hook rooted elsewhere", lambda x: [h.__setitem__("command", re.sub(r"--root (\S+)", r"--root \1/x", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
                      ("a second docs hook", lambda x: x["hooks"]["PreToolUse"].append({"matcher": "mcp__docs__convert", "hooks": [{"type": "command", "command": "true"}]})),
+                     # file actions Task 17: --desk only after --root and before --exclude, and only as HARNESS_DESK_ROOT
+                     ("the docs hook with --desk before --uploads", lambda x: [h.__setitem__("command", re.sub(r"--by-caps (.*) --desk (\S+)", r"--by-caps --desk \2 \1", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
+                     ("the docs hook with --desk before --root", lambda x: [h.__setitem__("command", re.sub(r"--root (\S+) --desk (\S+)", r"--desk \2 --root \1", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
+                     ("the docs hook with --desk after --exclude", lambda x: [h.__setitem__("command", re.sub(r" --desk (\S+)(.*) \|\| exit 2$", r"\2 --exclude /x --desk \1 || exit 2", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
+                     ("the docs hook without --desk (HARNESS_DESK_ROOT set)", lambda x: [h.__setitem__("command", re.sub(r" --desk \S+", "", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
+                     ("the docs hook with another desk", lambda x: [h.__setitem__("command", re.sub(r" --desk (\S+)", r" --desk \1/x", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
+                     ("the docs hook with a relative desk", lambda x: [h.__setitem__("command", re.sub(r" --desk /(\S+)", r" --desk \1", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
                      # Ruling 16: Read, Glob and Grep go through the read guard narrowed to the run's origin
                      ("no read guard", lambda x: x["hooks"].__setitem__("PreToolUse", [e for e in x["hooks"]["PreToolUse"] if "read-guard" not in json.dumps(e)])),
                      ("the read guard without --by-origin", lambda x: [h.__setitem__("command", h["command"].replace(" --by-origin", "")) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "read-guard" in h["command"]]),
@@ -1613,9 +1644,12 @@ def spec_roles(spec):
     return spec["workers"]
 # pure core Task 9: each role's display and seed in the roles config, literally (today's seeds and display names)
 DISPLAY = {"naila": "Naila", "finance-bookkeeper": "Finance Bookkeeper", "finance-advisor": "Finance Advisor", "ops-oncall": "Ops Oncall", "researcher": "Researcher"}
-FIN_SEED = ["files.read", "messaging.ask", "budget.read", "budget.write-plans", "docs.convert"]
-SEED = {"naila": ["files.read", "messaging.ask", "vault.read", "vault.write", "docs.convert", "vault.organize"], "finance-bookkeeper": FIN_SEED,
-        "finance-advisor": FIN_SEED, "ops-oncall": ["messaging.ask", "cluster.read"], "researcher": ["web.search", "web.open"]}
+# (file actions Task 17: naila and the finance roles gain files.process, files.send and calc.use, ops-oncall calc.use, the
+# researcher nothing)
+FILE_SEED = ["files.process", "files.send", "calc.use"]
+FIN_SEED = ["files.read", "messaging.ask", "budget.read", "budget.write-plans", "docs.convert", *FILE_SEED]
+SEED = {"naila": ["files.read", "messaging.ask", "vault.read", "vault.write", "docs.convert", "vault.organize", *FILE_SEED], "finance-bookkeeper": FIN_SEED,
+        "finance-advisor": FIN_SEED, "ops-oncall": ["messaging.ask", "cluster.read", "calc.use"], "researcher": ["web.search", "web.open"]}
 # phase 2 Task 11: the path grants (roles spec v3 `paths`): the vault's Finance/ folder through files.read, for the two finance
 # roles alone (absent on every other role)
 PATHS = {"finance-bookkeeper": ["finance-documents"], "finance-advisor": ["finance-documents"]}
@@ -1704,18 +1738,29 @@ def pod_files(cfg, ph, bodies=None):
 def first_diff(a, b):
     return " | ".join(list(difflib.unified_diff(a.splitlines(), b.splitlines(), "oracle", "now", n=0, lineterm=""))[2:6])
 NOTES_RO = '        NOTES_READONLY: "1"'
-def no_web(text):
-    """The file with its tools: line minus WebSearch and WebFetch (researcher Task 12), which the ref's line must hold."""
+# file actions Task 17: each of the three ceilings gains workspace_move and workspace_copy right after workspace_delete, and
+# its file actions at the end (the finance roles' six, ops-oncall's calculate): exactly these, nothing else on the line
+WS_DELETE, WS_NEW = "mcp__core__workspace_delete, ", "mcp__core__workspace_move, mcp__core__workspace_copy, "
+FILE_TOOLS = ["mcp__core__file_unzip", "mcp__core__file_zip", "mcp__core__image_convert", "mcp__core__csv_query", "mcp__core__attach_file", "mcp__core__calculate"]
+CEILING_ADDS = {"finance-bookkeeper": FILE_TOOLS, "finance-advisor": FILE_TOOLS, "ops-oncall": ["mcp__core__calculate"]}
+def file_actions(w, line):
+    """A tools: line (or ceiling) of the ref with file actions' additions for role w."""
+    end = "\n" if line.endswith("\n") else ""
+    if line.count(WS_DELETE) != 1: raise ValueError(f"the ref's {w} tools hold {line.count(WS_DELETE)} {WS_DELETE!r}")
+    return line.rstrip("\n").replace(WS_DELETE, WS_DELETE + WS_NEW) + "".join(f", {t}" for t in CEILING_ADDS[w]) + end
+def no_web(text, w):
+    """The file with its tools: line minus WebSearch and WebFetch (researcher Task 12), which the ref's line must hold, plus
+    file actions' additions."""
     lines = text.splitlines(keepends=True)
     at = [i for i, l in enumerate(lines) if l.startswith("tools: ")]
     if len(at) != 1 or lines[at[0]].count(WEB_IN_TOOLS) != 1: raise ValueError(f"the ref's file has no single tools: line holding {WEB_IN_TOOLS!r}")
-    lines[at[0]] = lines[at[0]].replace(WEB_IN_TOOLS, "")
+    lines[at[0]] = file_actions(w, lines[at[0]].replace(WEB_IN_TOOLS, ""))
     return "".join(lines)
 def phase2(files):
     """The ref's agent files as this chart must write them: each tools: line loses WebSearch and WebFetch (researcher Task
     12), and the advisor's finance-notes env gains exactly one line, NOTES_RO, right before its VAULT_ROOT (the spec's env
     keys in Helm's toJson order, sorted), when the ref's lacks it; every other file and line as at the ref."""
-    out = {w: no_web(t) for w, t in files.items()}
+    out = {w: no_web(t, w) for w, t in files.items()}
     lines = out["finance-advisor"].splitlines(keepends=True)
     if NOTES_RO + "\n" in lines: return out
     at = [i for i, l in enumerate(lines) if l.startswith("        VAULT_ROOT: ") and any(x == "  - finance-notes:\n" for x in lines[:i])]
@@ -1726,7 +1771,7 @@ def only_allowed(w, ref, now):
     """The file differs from the ref's in exactly its tools: line losing WebSearch and WebFetch, plus, in the advisor's, the
     extra NOTES_RO line (unless the ref has it already); nothing else."""
     old_t = next((l for l in ref.splitlines() if l.startswith("tools: ")), "")
-    want_ = ["- " + old_t, "+ " + old_t.replace(WEB_IN_TOOLS, "")]
+    want_ = ["- " + old_t, "+ " + file_actions(w, old_t.replace(WEB_IN_TOOLS, ""))]
     if w == "finance-advisor" and NOTES_RO not in ref.splitlines(): want_.append("+ " + NOTES_RO)
     return WEB_IN_TOOLS in old_t and [l for l in difflib.ndiff(ref.splitlines(), now.splitlines()) if l[:1] in "+-"] == want_
 # The researcher's agent file: its frontmatter (naila's golden, claude-agents/<phase>/researcher.frontmatter.txt: the web and
@@ -2075,6 +2120,10 @@ oe, ne = envmap(ctr(oldh, "harness")), envmap(ctr(test, "harness"))
 for k, e in oe.items():
     if k in ("GATEWAY_SECRETS", "HARNESS_CHANNELS"): continue   # HARNESS_CHANNELS: checked by containment below (R9)
     if k in ("VIEW_FILE", "FINANCE_NOTES_ROOT") and k not in ne: continue   # retired in pure core phase 4 (the setup file's checks)
+    if k == "HARNESS_SERVICES" and k in ne:   # file actions Task 17: the ref's services plus files and calc, nothing else
+        was_ = json.loads(e["value"]); was_["services"].update({"files": {"writeCredentials": []}, "calc": {"writeCredentials": []}})
+        if json.loads(ne[k].get("value") or "{}") != was_ or set(ne[k]) != set(e): bad.append(f"{tag}: HARNESS_SERVICES is {ne[k]!r}, want the ref's plus files and calc")
+        continue
     if ne.get(k) != e: bad.append(f"{tag}: {k} is {ne.get(k)!r}, was {e!r}")
 if "discord:$(GATEWAY_DISCORD_SECRET)" not in entries(ctr(test, "harness")): bad.append(f"{tag}: GATEWAY_SECRETS is {val(ctr(test, 'harness'), 'GATEWAY_SECRETS')!r}")
 for label, r in (("test", test), ("real", real), ("two channels", two)):   # $(VAR) expands only from a variable defined earlier
@@ -2115,7 +2164,7 @@ else:
     if [k for k in envmap(t) if "DISCORD" in k]: bad.append(f"{tag}: example env has {[k for k in envmap(t) if 'DISCORD' in k]}")
     if "HARNESS_UPLOADS" in envmap(t) or t.get("volumeMounts"): bad.append(f"{tag}: example (no uploads) gets HARNESS_UPLOADS or a mount")
     sc = t.get("securityContext", {})
-    if (sc.get("runAsUser"), sc.get("runAsGroup"), sc.get("readOnlyRootFilesystem"), sc.get("allowPrivilegeEscalation")) != (1003, 1000, True, False):
+    if (sc.get("runAsUser"), sc.get("runAsGroup"), sc.get("readOnlyRootFilesystem"), sc.get("allowPrivilegeEscalation")) != (1004, 1000, True, False):
         bad.append(f"{tag}: example securityContext is {sc!r}")
 if key(th, "GATEWAY_EXAMPLE_SECRET") != "GATEWAY_EXAMPLE_SECRET": bad.append(f"{tag}: the core's GATEWAY_EXAMPLE_SECRET comes from {key(th, 'GATEWAY_EXAMPLE_SECRET')!r}")
 for e in ("discord:$(GATEWAY_DISCORD_SECRET)", "example:$(GATEWAY_EXAMPLE_SECRET)"):
@@ -2374,6 +2423,11 @@ FILE, SOCK = f"{TDIR}/token", f"{SDIR}/docs.sock"
 WANT = {"harness": {"docs-token": (TDIR, True), "docs-sock": (SDIR, True)},   # reads the token, connects (a read-only mount allows it)
         "docs": {"docs-token": (TDIR, True), "docs-sock": (SDIR, False)}}      # reads the token, makes its socket
 VOLS = ("docs-token", "docs-sock")
+# file actions Task 17: the files sidecar's twins, by container: the core reads the token and connects, files reads the token
+# and makes its socket
+FTDIR, FSDIR = "/run/files-token", "/run/files-sock"
+FWANT = {"harness": {"files-token": (FTDIR, True), "files-sock": (FSDIR, True)}, "files": {"files-token": (FTDIR, True), "files-sock": (FSDIR, False)}}
+FVOLS = ("files-token", "files-sock")
 def pod(r): return r[H]["spec"]["template"]["spec"]
 def envmap(c): return {e["name"]: e for e in c.get("env", [])}
 for label, path in zip(("test", "real", "two channels", "real, RC off"), sys.argv[1:5]):
@@ -2381,9 +2435,10 @@ for label, path in zip(("test", "real", "two channels", "real, RC off"), sys.arg
     if H not in r: bad.append(f"no harness pod ({label})"); continue
     ps = pod(r)
     tag = f"Ruling 22: the token and the socket each have an emptyDir with medium Memory, and docs-auth is gone ({label})"
-    for v in VOLS:
+    for v in VOLS + FVOLS:
         vols = [x for x in ps.get("volumes", []) if x["name"] == v]
         if len(vols) != 1 or set(vols[0]) != {"name", "emptyDir"} or vols[0]["emptyDir"].get("medium") != "Memory": bad.append(f"{tag}: {v} is {vols!r}")
+        elif v in FVOLS and vols[0]["emptyDir"] != {"medium": "Memory", "sizeLimit": "1Mi"}: bad.append(f"{tag}: {v} is {vols!r}, want medium Memory, sizeLimit 1Mi")
     if "docs-auth" in json.dumps(r[H]): bad.append(f"{tag}: the pod still names docs-auth")
     tag = f"Ruling 22: the core mounts docs-token and docs-sock read-only, docs docs-token read-only and docs-sock writable, no other container either ({label})"
     mounts = {c["name"]: [m for m in c.get("volumeMounts", []) if m["name"] in VOLS] for c in ps["containers"]}
@@ -2391,6 +2446,21 @@ for label, path in zip(("test", "real", "two channels", "real, RC off"), sys.arg
     if got != WANT: bad.append(f"{tag}: the mounts are {got}, want {WANT}")
     for n, ms in mounts.items():
         if any(set(m) - {"name", "mountPath", "readOnly"} for m in ms): bad.append(f"{tag}: {n} mounts with more than a path and readOnly: {ms!r}")
+    tag = f"files-token and files-sock are mounted only by harness, files and sidecar-tokens: the core both read-only, files the token read-only and the socket writable ({label})"
+    fmounts = {c["name"]: [m for m in c.get("volumeMounts", []) if m["name"] in FVOLS] for c in ps["containers"] + ps.get("initContainers", [])}
+    fgot = {n: {m["name"]: (m["mountPath"], m.get("readOnly", False)) for m in ms} for n, ms in fmounts.items() if ms and n != "sidecar-tokens"}
+    if fgot != FWANT: bad.append(f"{tag}: the mounts are {fgot}, want {FWANT}")
+    if sorted(n for n, ms in fmounts.items() if ms) != ["files", "harness", "sidecar-tokens"]: bad.append(f"{tag}: they are mounted by {sorted(n for n, ms in fmounts.items() if ms)}")
+    for n, ms in fmounts.items():
+        if any(set(m) - {"name", "mountPath", "readOnly"} for m in ms): bad.append(f"{tag}: {n} mounts with more than a path and readOnly: {ms!r}")
+    for n in ("harness", "files"):
+        c = next((c for c in ps["containers"] if c["name"] == n), {})
+        for k, want in (("FILES_TOKEN_FILE", f"{FTDIR}/token"), ("FILES_SOCKET", f"{FSDIR}/files.sock")):
+            if (envmap(c).get(k) or {}).get("value") != want: bad.append(f"{tag}: {n} {k} is {envmap(c).get(k)!r}")
+    for c in ps["containers"] + ps.get("initContainers", []):
+        for k in ("FILES_TOKEN_FILE", "FILES_SOCKET"):
+            if k in envmap(c) and c["name"] not in ("harness", "files"): bad.append(f"{tag}: {c['name']} has {k}")
+    tag = f"Ruling 22: the core mounts docs-token and docs-sock read-only, docs docs-token read-only and docs-sock writable, no other container either ({label})"
     for n in ("harness", "docs"):
         c = next((c for c in ps["containers"] if c["name"] == n), {})
         for k, want in (("DOCS_TOKEN_FILE", FILE), ("DOCS_SOCKET", SOCK)):
@@ -2427,16 +2497,18 @@ for label, path in zip(("test", "real", "two channels", "real, RC off"), sys.arg
     want_gws = ["discord", "example"] if label == "two channels" else ["discord"]
     if sorted(gws) != want_gws: bad.append(f"{tag}: the gateways are {gws}, want {want_gws}")
     for n in gws + ["login"]:
-        if mounts.get(n): bad.append(f"{tag}: {n} mounts one")
+        if mounts.get(n) or fmounts.get(n): bad.append(f"{tag}: {n} mounts one")
     # no other workload of the chart mounts or names them (the RC pod's docs, given neither, can't listen)
     for k, d in r.items():
-        if k != H and k[0] in ("Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "Pod") and re.search(r"docs-token|docs-sock|/run/docs-", json.dumps(d)): bad.append(f"{tag}: {k[0]}/{k[1]} names one")
-    tag = f"Ruling 19: one init container (docs-token) writes the bearer, mounting docs-token alone, writable ({label})"
+        if k != H and k[0] in ("Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "Pod") and re.search(r"docs-token|docs-sock|/run/docs-|files-token|files-sock|/run/files-", json.dumps(d)): bad.append(f"{tag}: {k[0]}/{k[1]} names one")
+    # file actions Task 17: one init container (sidecar-tokens, docs-token's twin) writes both bearers, mounting the two token
+    # folders alone, writable
+    tag = f"Ruling 19: one init container (sidecar-tokens) writes the bearers, mounting docs-token and files-token alone, writable ({label})"
     inits = ps.get("initContainers", [])
-    tok = [c for c in inits if any(m["name"] in VOLS for m in c.get("volumeMounts", []))]
-    if [c["name"] for c in tok] != ["docs-token"]: bad.append(f"{tag}: the init containers mounting them are {[c['name'] for c in tok]}"); continue
+    tok = [c for c in inits if any(m["name"] in VOLS + FVOLS for m in c.get("volumeMounts", []))]
+    if [c["name"] for c in tok] != ["sidecar-tokens"]: bad.append(f"{tag}: the init containers mounting them are {[c['name'] for c in tok]}"); continue
     t = tok[0]
-    if t.get("volumeMounts") != [{"name": "docs-token", "mountPath": TDIR}]: bad.append(f"{tag}: it mounts {t.get('volumeMounts')!r}")
+    if t.get("volumeMounts") != [{"name": "docs-token", "mountPath": TDIR}, {"name": "files-token", "mountPath": FTDIR}]: bad.append(f"{tag}: it mounts {t.get('volumeMounts')!r}")
     if t.get("env") or t.get("envFrom"): bad.append(f"{tag}: it has env")
     sc, psc = t.get("securityContext", {}), ps.get("securityContext", {})
     if sc.get("allowPrivilegeEscalation") is not False or sc.get("capabilities") != {"drop": ["ALL"]} or sc.get("readOnlyRootFilesystem") is not True: bad.append(f"{tag}: securityContext {sc!r}")
@@ -2444,27 +2516,34 @@ for label, path in zip(("test", "real", "two channels", "real, RC off"), sys.arg
     cmd = t.get("command") or []
     if cmd[:2] != ["node", "-e"] or len(cmd) != 3 or "/dev/urandom" not in cmd[2]: bad.append(f"{tag}: command {cmd!r}"); continue
     toks = []
-    d = os.path.realpath(tempfile.mkdtemp())
-    for _ in range(2):   # run as rendered on a temp dir: 64 lowercase hex characters (32 random bytes), mode 0440; a rerun on
-        # the same dir (the pod's sandbox recreated, the emptyDir kept) replaces the read-only token with a fresh one
-        p = subprocess.run(["node", "-e", cmd[2].replace(TDIR, d)], capture_output=True, text=True)
-        f = os.path.join(d, "token")
-        got = open(f).read() if os.path.exists(f) else None
-        mode = stat.S_IMODE(os.stat(f).st_mode) if got is not None else None
-        if p.returncode != 0 or not re.fullmatch(r"[0-9a-f]{64}", got or "") or mode != 0o440 or os.listdir(d) != ["token"]:
-            bad.append(f"{tag}: run as rendered: exit {p.returncode} {p.stderr.strip()[-200:]!r}, token {len(got or '')} chars, hex {bool(re.fullmatch(r'[0-9a-f]+', got or ''))}, mode {oct(mode or 0)}, dir {os.listdir(d)}")
+    d, fd_ = os.path.realpath(tempfile.mkdtemp()), os.path.realpath(tempfile.mkdtemp())
+    for _ in range(2):   # run as rendered on two temp dirs: 64 lowercase hex characters (32 random bytes) each, mode 0440; a
+        # rerun on the same dirs (the pod's sandbox recreated, the emptyDirs kept) replaces the read-only tokens with fresh ones
+        p = subprocess.run(["node", "-e", cmd[2].replace(TDIR, d).replace(FTDIR, fd_)], capture_output=True, text=True)
+        got2 = []
+        for dd in (d, fd_):
+            f = os.path.join(dd, "token")
+            got = open(f).read() if os.path.exists(f) else None
+            mode = stat.S_IMODE(os.stat(f).st_mode) if got is not None else None
+            if p.returncode != 0 or not re.fullmatch(r"[0-9a-f]{64}", got or "") or mode != 0o440 or os.listdir(dd) != ["token"]:
+                bad.append(f"{tag}: run as rendered: exit {p.returncode} {p.stderr.strip()[-200:]!r}, token {len(got or '')} chars, hex {bool(re.fullmatch(r'[0-9a-f]+', got or ''))}, mode {oct(mode or 0)}, dir {os.listdir(dd)}")
+            got2.append(got)
         if p.stdout or p.stderr: bad.append(f"{tag}: it prints {len(p.stdout) + len(p.stderr)} characters (the token must never reach a log)")
-        toks.append(got)
-    if toks[0] == toks[1]: bad.append(f"{tag}: two runs wrote the same token")
+        # sidecar-tokens writes two different tokens: one value would let either sidecar's bearer open the other
+        if got2[0] is not None and got2[0] == got2[1]: bad.append(f"sidecar-tokens writes two different tokens ({label}): the docs and files tokens are the same")
+        toks.append(got2)
+    if toks[0][0] == toks[1][0] or toks[0][1] == toks[1][1]: bad.append(f"{tag}: two runs wrote the same token")
     # a token it can't make in full fails the init container instead of leaving a short one
-    d = os.path.realpath(tempfile.mkdtemp())
-    p = subprocess.run(["node", "-e", cmd[2].replace(TDIR, d).replace("/dev/urandom", "/dev/null")], capture_output=True, text=True)
-    if p.returncode == 0 or os.listdir(d): bad.append(f"{tag}: with an empty /dev/urandom it exits {p.returncode} leaving {os.listdir(d)}")
+    d, fd_ = os.path.realpath(tempfile.mkdtemp()), os.path.realpath(tempfile.mkdtemp())
+    p = subprocess.run(["node", "-e", cmd[2].replace(TDIR, d).replace(FTDIR, fd_).replace("/dev/urandom", "/dev/null")], capture_output=True, text=True)
+    if p.returncode == 0 or os.listdir(d) or os.listdir(fd_): bad.append(f"{tag}: with an empty /dev/urandom it exits {p.returncode} leaving {os.listdir(d)} and {os.listdir(fd_)}")
+    # the command names each token file once and both folders (a shared value or one file left out fails above)
+    if cmd[2].count(f"{TDIR}/token") != 1 or cmd[2].count(f"{FTDIR}/token") != 1: bad.append(f"{tag}: the command does not name each token file exactly once")
     data = {**r[("ConfigMap", "assistant-claude")]["data"], **r[("ConfigMap", "assistant-harness")]["data"]}
-    tag = f"Ruling 22: the runs' static settings deny both folders ({label})"
+    tag = f"Ruling 22: the runs' static settings deny both folders, and the files sidecar's two ({label})"
     deny = json.loads(data["harness-settings.json"])["permissions"]["deny"]
     for t_ in ("Read", "Edit", "Write"):
-        for dd in (TDIR, SDIR):
+        for dd in (TDIR, SDIR, FTDIR, FSDIR):
             if f"{t_}(/{dd}/**)" not in deny: bad.append(f"{tag}: harness-settings.json lacks {t_}(/{dd}/**)")
     if "docs-auth" in data["harness-settings.json"]: bad.append(f"{tag}: harness-settings.json still names docs-auth")
     # harness-start.sh: the core (an image with dist/docs-relay.js) gives each run docs through the relay, so no user-scope docs
@@ -2598,7 +2677,8 @@ def services(r):
     v = val(ctr(r, "harness"), "HARNESS_SERVICES")
     try: return json.loads(v) if v is not None else None
     except ValueError: return f"not JSON: {v!r}"
-WANT = {"finance": ["MCP_FINANCE_TOKEN"], "vault": [], "docs": [], "cluster": [], "web": []}
+# file actions Task 17: files (the sidecar's file actions) and calc (the calculator), neither with a write credential
+WANT = {"finance": ["MCP_FINANCE_TOKEN"], "vault": [], "docs": [], "cluster": [], "web": [], "files": [], "calc": []}
 def want(ids): return {"version": 1, "services": {i: {"writeCredentials": WANT[i]} for i in ids}}
 bad = []
 
@@ -2684,7 +2764,7 @@ if p.returncode != 0: bad.append(f"{tag}: the render fails: {p.stderr.strip()[-3
 else:
     r = loads(p.stdout)
     if empty_to(r) or peers(r) or len(egress(r)) != 2: bad.append(f"{tag}: the egress is {egress(r)!r}, want DNS and 443 alone")
-    if services(r) != want(["vault", "docs", "web"]): bad.append(f"{tag}: HARNESS_SERVICES is {services(r)!r}")
+    if services(r) != want(["vault", "docs", "web", "files", "calc"]): bad.append(f"{tag}: HARNESS_SERVICES is {services(r)!r}")
 tag = "services.cluster disabled drops the ops peer and keeps finance's"
 p = render(*OFF("cluster"), "--set-json", f"harness.roleSpec.roles={json.dumps(roles_without('assistant-ops'))}")
 if p.returncode != 0: bad.append(f"{tag}: the render fails: {p.stderr.strip()[-300:]}")
@@ -2727,8 +2807,8 @@ else:
           "for (const raw of raws) { try { out.push(`ok ${parseServicesConfig(raw === '-' ? undefined : raw).ids.join(',')}`) } catch (e) { out.push(e.message) } } console.log(out.join('\\n'))")
     p2 = load(sys.argv[12])
     if H not in p2 or services(p2) is not None: bad.append(f"{tag}: the PHASE2_REF ({p2ref}) render has no harness pod, or already has HARNESS_SERVICES")
-    cases = [("prod", val(ctr(load(sys.argv[2]), "harness"), "HARNESS_SERVICES"), "ok finance,vault,docs,cluster,web"),
-             ("finance disabled", val(ctr(nofin.get("real", {}), "harness"), "HARNESS_SERVICES"), "ok vault,docs,cluster,web"),
+    cases = [("prod", val(ctr(load(sys.argv[2]), "harness"), "HARNESS_SERVICES"), "ok finance,vault,docs,cluster,web,files,calc"),
+             ("finance disabled", val(ctr(nofin.get("real", {}), "harness"), "HARNESS_SERVICES"), "ok vault,docs,cluster,web,files,calc"),
              (f"the PHASE2_REF ({p2ref}) render (none)", val(ctr(p2, "harness"), "HARNESS_SERVICES"), "services: HARNESS_SERVICES is missing: the chart predates pure-core phase 3 (services as plug-ins)")]
     p = subprocess.run(["node", "--input-type=module", "-e", js, cfg_js, reg_js, *[c[1] if c[1] is not None else "-" for c in cases]], capture_output=True, text=True)
     o = p.stdout.splitlines()
@@ -2776,7 +2856,7 @@ bad = []
 sl = test[CMH]["data"]["harness-start.sh"].splitlines()
 OLD = "this naila image predates pure-core phase 3 (services as plug-ins): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
 DIFFER = "HARNESS_SERVICES and the image's services differ: ship them together"
-DECL = {"finance": ["MCP_FINANCE_TOKEN"], "vault": [], "docs": [], "cluster": [], "web": []}
+DECL = {"finance": ["MCP_FINANCE_TOKEN"], "vault": [], "docs": [], "cluster": [], "web": [], "files": [], "calc": []}   # file actions: files and calc
 WGT = json.loads(os.environ["WRITE_GUARD_TOOLS"])
 # naila's RESEARCHED_WRITE_REFUSED (packages/harness/src/research.ts), verbatim; with NAILA_WORKTREE the built dist export must equal it
 REFUSED = "A web search happened in this message, so files can't be written in it: ask again in a message of its own."
@@ -2972,8 +3052,18 @@ for ph, now_, then_ in (("test", test, srt), ("real", real, srr)):
     d = tempfile.mkdtemp()   # one folder for both, so the paths in the hooks are the same
     a, b = written(now_, ph, d), written(then_, ph, d)
     shutil.rmtree(d)
-    if a is None or b is None: bad.append(f"{tag}: the settings patch failed ({ph} phase)")
-    elif a != b: bad.append(f"{tag}: they differ ({ph} phase)")
+    if a is None or b is None: bad.append(f"{tag}: the settings patch failed ({ph} phase)"); continue
+    # file actions Task 17: but for the six files-token and files-sock denies right after the docs-sock ones, and the desk
+    # (HARNESS_DESK_ROOT) as --desk in the docs hook right after --root; byte for byte otherwise
+    t_ = b.decode()
+    at_ = [l for l in t_.splitlines(keepends=True) if l.strip() == '"Write(//run/docs-sock/**)",']
+    desk_ = val(now_, "HARNESS_DESK_ROOT")
+    if len(at_) != 1 or not desk_: bad.append(f"{tag}: the ref's settings have {len(at_)} docs-sock Write denies, or the render no HARNESS_DESK_ROOT ({ph} phase)"); continue
+    ind_ = at_[0][:len(at_[0]) - len(at_[0].lstrip())]
+    t_ = t_.replace(at_[0], at_[0] + "".join(f'{ind_}"{x}(//run/{f_}/**)",\n' for f_ in ("files-token", "files-sock") for x in ("Read", "Edit", "Write")))
+    t_, n_ = re.subn(r"(docs-grant\.mjs --by-caps --uploads \S+ --root \S+)( --exclude \S+)? \|\| exit 2", lambda m_: f"{m_.group(1)} --desk {desk_}{m_.group(2) or ''} || exit 2", t_)
+    if n_ != 1: bad.append(f"{tag}: the ref's settings have {n_} docs hooks ({ph} phase)")
+    elif a != t_.encode(): bad.append(f"{tag}: they differ beyond the files sidecar's six denies and the docs hook's --desk ({ph} phase): {' | '.join(l for l in __import__('difflib').unified_diff(t_.splitlines(), a.decode().splitlines(), n=0, lineterm='') if l[:1] in '+-')[:600]}")
 
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
@@ -3044,11 +3134,24 @@ PLACES = [{"conversation": c, "channel": "discord", "ref": r} for c, r in (("nai
 # resume on the subscription; no cacheTtl, no subscription cap)
 BUDGETS = {"providers": {"anthropic-api": {"monthlyUsd": 100, "runCapUsd": 5}}, "roles": {}, "liveChecks": {}}
 PSETTINGS = {"claude-subscription": {"resume": {"roles": ["naila", "finance-bookkeeper", "finance-advisor", "ops-oncall"], "maxInputTokens": 100000, "maxIdleMinutes": 55}}}
+# file actions Task 17: setup spec 4 adds the files settings, the chart defaults of naila Task 3's fixture (desk.ttlHours 24:
+# call 1), checked against that fixture below when NAILA_WORKTREE is set
+FILES = {"desk": {"ttlHours": 24, "workerQuotaMiB": 512, "totalQuotaMiB": 1024}, "jobs": {"memoryMiB": 900, "cpuSeconds": 60, "wallSeconds": 60, "queueSeconds": 60},
+         "unzip": {"maxZipMiB": 25, "maxEntries": 1000, "maxUnpackedMiB": 200, "maxEntryMiB": 100, "maxRatio": 200, "maxDepth": 3, "maxLevels": 8},
+         "zip": {"maxEntries": 200, "maxInMiB": 100}, "image": {"maxPixels": 50000000, "previewSide": 1568, "maxOutMiB": 100, "keepExif": False},
+         "csv": {"maxMiB": 25, "maxRows": 200000, "maxColumns": 200, "maxCellKiB": 32, "rowsShown": 50, "maxShownCellChars": 200, "maxGroups": 200},
+         "workspace": {"quotaMiB": 1024, "maxFileMiB": 25, "maxCopyFiles": 200, "maxCopyMiB": 100}, "outfiles": {"totalQuotaMiB": 300, "maxPerAnswer": 5, "keepDays": 7},
+         "types": {"remove": []}}
+_fx = os.path.join(os.environ.get("NAILA_WORKTREE", ""), "packages/harness/test/fixtures/setup.json")
+if os.environ.get("NAILA_WORKTREE") and json.load(open(_fx)).get("files") != FILES: bad.append(f"the chart's files defaults are naila Task 3's fixture: {_fx}'s files differ from this file's FILES")
+# the workspaces and finance folders of the profile (vault-mcp layout.ts: <system>/Workspace), as the files sidecar mounts them
+FILES_DIRS = ("Naila/Workspace", "Finance")
 tag = "the profile equals today's literals"
 for label, r in (("prod", prod), ("test phase", test), ("real phase", real), ("staging (harness on)", staging_on)):
     s = setup(r)
-    if not isinstance(s, dict) or sorted(s) != ["budgets", "places", "profile", "providerSettings", "schedules", "version"] or s["version"] != 3: bad.append(f"{tag}: the {label} setup file is {s!r}"); continue
+    if not isinstance(s, dict) or sorted(s) != ["budgets", "files", "places", "profile", "providerSettings", "schedules", "version"] or s["version"] != 4: bad.append(f"{tag}: the {label} setup file is {s!r}"); continue
     if s["budgets"] != BUDGETS: bad.append(f"{tag}: the {label} budgets are {s['budgets']!r}, want {BUDGETS!r}")
+    if s["files"] != FILES: bad.append(f"{tag}: the {label} files settings are {s['files']!r}, want {FILES!r}")
     if s["providerSettings"] != PSETTINGS: bad.append(f"{tag}: the {label} provider settings are {s['providerSettings']!r}, want {PSETTINGS!r}")
     if label.startswith("staging"): continue   # staging's own profile and places are not production's
     if s["profile"] != PROFILE: bad.append(f"{tag}: the {label} profile is {s['profile']!r}, want {PROFILE!r}")
@@ -3071,9 +3174,14 @@ for label, r, root in (("prod", prod, "/vault"), ("real phase", real, "/vault"),
     want = None if root != "/vault" else "Harness-test"
     if val(h, "VAULT_EXCLUDE") != want: bad.append(f"{tag}: VAULT_EXCLUDE is {val(h, 'VAULT_EXCLUDE')!r}, want {want!r} ({label})")
     if val(h, "VAULT_ROOT") != root: bad.append(f"{tag}: VAULT_ROOT is {val(h, 'VAULT_ROOT')!r}, want {root!r} ({label})")
+    sub_ = f"{SUB}/Harness-test" if root != "/vault" else SUB
     for c in pod(r)["containers"]:
         for m in c.get("volumeMounts", []):
-            if m["name"] == "vault" and (m["mountPath"] != root or m.get("subPath", "") != (f"{SUB}/Harness-test" if root != "/vault" else SUB)): bad.append(f"{tag}: {c['name']} mounts the vault at {m['mountPath']} subPath {m.get('subPath')!r} ({label})")
+            if m["name"] != "vault": continue
+            # file actions (call 26): the files sidecar mounts the profile's workspaces and finance folders alone, read-only
+            if c["name"] == "files":
+                if (m["mountPath"], m.get("subPath", ""), m.get("readOnly")) not in {(f"{root}/{d_}", f"{sub_}/{d_}", True) for d_ in FILES_DIRS}: bad.append(f"{tag}: files mounts the vault at {m['mountPath']} subPath {m.get('subPath')!r} ({label})")
+            elif m["mountPath"] != root or m.get("subPath", "") != sub_: bad.append(f"{tag}: {c['name']} mounts the vault at {m['mountPath']} subPath {m.get('subPath')!r} ({label})")
 for label, r in (("harness off", off), ("staging", staging)):
     if data(r) or any(k in json.dumps(d) for d in r.values() for k in ("harness-setup.json", "harness-job-")): bad.append(f"{tag}: the {label} render names the setup file or a job key")
 
@@ -3144,7 +3252,8 @@ for ph, k, want in (("test", "VAULT_ROOT", "/vault/Probe-x"), ("real", "VAULT_EX
     if val(ctr(r, "harness"), k) != want: bad.append(f"{tag}: {k} is {val(ctr(r, 'harness'), k)!r}, want {want!r}")
     if ph == "test":
         mounts = {(c["name"], m["mountPath"], m.get("subPath")) for c in pod(r)["containers"] for m in c.get("volumeMounts", []) if m["name"] == "vault"}
-        if mounts != {("harness", "/vault/Probe-x", f"{SUB}/Probe-x"), ("docs", "/vault/Probe-x", f"{SUB}/Probe-x")}: bad.append(f"{tag}: the vault mounts are {sorted(mounts)}")
+        if mounts != {("harness", "/vault/Probe-x", f"{SUB}/Probe-x"), ("docs", "/vault/Probe-x", f"{SUB}/Probe-x"),
+                      *(("files", f"/vault/Probe-x/{d_}", f"{SUB}/Probe-x/{d_}") for d_ in FILES_DIRS)}: bad.append(f"{tag}: the vault mounts are {sorted(mounts)}")
         if "/vault/Probe-x/Finance/" not in data(r).get("harness-workers.json", ""): bad.append(f"{tag}: the worker spec's notes root does not follow it")
 
 # the whole render, as at <git-ref> but for the setup and job keys, the removed VIEW_FILE and FINANCE_NOTES_ROOT and the
@@ -3258,15 +3367,15 @@ print("setup: harness-setup.json is the owner's profile (today's literals) and t
       + "; the test folder, TZ and views follow it, VIEW_FILE and FINANCE_NOTES_ROOT are gone; bad config fails"
       + (f"; the render is {ref}'s but for those" if diffs else ""))
 PY
-# Pure core phase 4 Task 13: harness-start pairs with the image's setup (dist/setup.js: SETUP_SPEC_VERSION 3 since plan 7a
-# Task 17, 2 since phase 6 Task 13, 1 before; parseSetup on
+# Pure core phase 4 Task 13: harness-start pairs with the image's setup (dist/setup.js: SETUP_SPEC_VERSION 4 since file
+# actions Task 17, 3 since plan 7a Task 17, 2 since phase 6 Task 13, 1 before; parseSetup on
 # /config/harness-setup.json with the requests read beside it) and takes the profile's paths from it (vault-mcp's layout.js),
 # run as rendered on stand-in images and on naila's built dist (NAILA_WORKTREE):
 #  - the pairing block (marker `# PAIRING: the image's setup`, after the services pairing, before the vault server checks and
 #    the settings) dies on an image without setup.js (printing the import error), without layout.js, or whose
-#    SETUP_SPEC_VERSION is not 3 (an image above 3 says it is the newer side), and when the image's parseSetup refuses the
-#    chart's setup (the built image: a setup 1 and a setup 2 naming the chart, 4, none without places, budgets or
-#    providerSettings, a numeric ref); the real phase dies unless
+#    SETUP_SPEC_VERSION is not 4 (an image above 4 says it is the newer side), and when the image's parseSetup refuses the
+#    chart's setup (the built image: a setup 1, 2 and 3 naming the chart, 5, none without places, budgets, providerSettings
+#    or files, a numeric ref); the real phase dies unless
 #    VAULT_EXCLUDE names the profile's test folder; a test folder or workspace root that is no plain path dies;
 #  - the prod render pairs with the built image, printing Harness-test, Finance, Naila/Workspace and an empty VAULT_PATHS;
 #  - a non-default profile (system Home) reaches the user-scope vault server as VAULT_PATHS (prod's adds nothing), and the
@@ -3284,8 +3393,8 @@ def ctr(r, n): return next((c for c in r[H]["spec"]["template"]["spec"]["contain
 def val(r, k): return next((e.get("value") for e in (ctr(r, "harness") or {}).get("env", []) if e["name"] == k), None)
 bad = []
 sl = test[CMH]["data"]["harness-start.sh"].splitlines()
-OLD = "this naila image predates plan 7a (budgets and provider settings): deploy the image that ships with this chart, or roll both back (revert the promote merge)"   # pure-core phase 6 (places) before plan 7a Task 17
-NEWER = "this naila image reads setup spec 4, newer than this chart's 3: deploy the chart that ships with this image, or roll the image back (revert the promote merge)"   # plan 7a Task 17: worded both ways
+OLD = "this naila image predates file actions (the files settings): deploy the image that ships with this chart, or roll both back (revert the promote merge)"   # plan 7a's text before file actions Task 17
+NEWER = "this naila image reads setup spec 5, newer than this chart's 4: deploy the chart that ships with this image, or roll the image back (revert the promote merge)"   # plan 7a Task 17: worded both ways
 REFUSES = "the image refuses this chart's setup: "
 NW = os.environ.get("NAILA_WORKTREE", "")
 DIST, VDIST = f"{NW}/packages/harness/dist", f"{NW}/packages/vault-mcp/dist"
@@ -3299,7 +3408,7 @@ def started(p): return p.returncode == 0 and p.stdout.strip().endswith("started"
 def one(pred): return [i for i, l in enumerate(sl) if pred(l)]
 
 # where the block is
-tag = "harness-start dies on an image whose SETUP_SPEC_VERSION is not 3"   # 2 before plan 7a Task 17, 1 before pure core phase 6 Task 13
+tag = "harness-start dies on an image whose SETUP_SPEC_VERSION is not 4"   # 3 before file actions Task 17, 2 before plan 7a Task 17, 1 before pure core phase 6 Task 13
 mk = one(lambda l: l == "# PAIRING: the image's setup")
 end = [j for j in range(mk[0], len(sl)) if sl[j] == "fi"][:1] if len(mk) == 1 else []
 svc_end = one(lambda l: l.startswith("})().catch(") and l.endswith(' "$SERVICES_JS"'))
@@ -3329,8 +3438,8 @@ def config(r, setup=None):
     if setup is not None: open(os.path.join(d, "harness-setup.json"), "w").write(setup if isinstance(setup, str) else json.dumps(setup))
     return d
 def prof(r): return json.loads(r[CMH]["data"]["harness-setup.json"])
-SETUP_OK = ("export const SETUP_SPEC_VERSION = 3\n"
-            "export function parseSetup(raw, file, read) { const s = JSON.parse(raw); for (const j of s.schedules.jobs) if (j.request) read(j.request); return { profile: s.profile, jobs: [], places: s.places, budgets: s.budgets, providerSettings: s.providerSettings } }\n")
+SETUP_OK = ("export const SETUP_SPEC_VERSION = 4\n"
+            "export function parseSetup(raw, file, read) { const s = JSON.parse(raw); for (const j of s.schedules.jobs) if (j.request) read(j.request); return { profile: s.profile, jobs: [], places: s.places, budgets: s.budgets, providerSettings: s.providerSettings, files: s.files } }\n")
 LAYOUT_OK = ("const D = JSON.stringify({ system: 'Naila', finance: 'Finance', inbox: 'Inbox', daily: 'Daily', testFolder: 'Harness-test' })\n"
              "export const vaultLayout = (p) => ({ workspaces: `${p.system}/Workspace` })\n"
              "export const vaultPathsEnv = (p) => JSON.stringify({ system: p.system, finance: p.finance, inbox: p.inbox, daily: p.daily, testFolder: p.testFolder }) === D ? {} : { VAULT_PATHS: JSON.stringify(p) }\n")
@@ -3344,18 +3453,18 @@ def stub_pairing(setup_js=SETUP_OK, layout_js=LAYOUT_OK, r=test, setup=None, **k
     d, cfg = stub(setup_js, layout_js), config(r, setup)
     p = pairing(f"{d}/h", f"{d}/v", cfg, **kw); shutil.rmtree(d); shutil.rmtree(cfg); return p, d
 
-if not started(p := stub_pairing()[0]) or shown(p) != "Harness-test|Finance|Naila/Workspace|": bad.append(f"{tag}: refuses (or misreads) an image with SETUP_SPEC_VERSION 3: exit {p.returncode} {p.stderr.strip()!r} {p.stdout!r}")
+if not started(p := stub_pairing()[0]) or shown(p) != "Harness-test|Finance|Naila/Workspace|": bad.append(f"{tag}: refuses (or misreads) an image with SETUP_SPEC_VERSION 4: exit {p.returncode} {p.stderr.strip()!r} {p.stdout!r}")
 p, d = stub_pairing(None)
 if not died(p, OLD, f"cannot load {d}/h/setup.js: ", "Cannot find module"): bad.append(f"{tag}: an image without setup.js: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying cannot load <path>: <the import error>: {OLD}")
 p, d = stub_pairing("throw new Error('setup boom')\n")
 if not died(p, OLD, f"cannot load {d}/h/setup.js: setup boom"): bad.append(f"{tag}: a setup.js that throws: exit {p.returncode} {p.stderr.strip()!r}")
-for what, v in (("SETUP_SPEC_VERSION 2 (pure-core phase 6: no budgets or provider settings)", "2"), ("SETUP_SPEC_VERSION 1 (phase 4: no places)", "1"), ("SETUP_SPEC_VERSION 0", "0"),
-                ('SETUP_SPEC_VERSION "3"', '"3"'), ("no SETUP_SPEC_VERSION", None)):
-    js = SETUP_OK.replace("export const SETUP_SPEC_VERSION = 3\n", "" if v is None else f"export const SETUP_SPEC_VERSION = {v}\n")
+for what, v in (("SETUP_SPEC_VERSION 3 (plan 7a: no files settings)", "3"), ("SETUP_SPEC_VERSION 2 (pure-core phase 6: no budgets or provider settings)", "2"), ("SETUP_SPEC_VERSION 1 (phase 4: no places)", "1"), ("SETUP_SPEC_VERSION 0", "0"),
+                ('SETUP_SPEC_VERSION "4"', '"4"'), ("no SETUP_SPEC_VERSION", None)):
+    js = SETUP_OK.replace("export const SETUP_SPEC_VERSION = 4\n", "" if v is None else f"export const SETUP_SPEC_VERSION = {v}\n")
     if not died(p := stub_pairing(js)[0], OLD): bad.append(f"{tag}: an image with {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {OLD!r}")
 # plan 7a Task 17 (worded both ways): an image newer than the chart says so, and names the chart as the older side
-js = SETUP_OK.replace("export const SETUP_SPEC_VERSION = 3\n", "export const SETUP_SPEC_VERSION = 4\n")
-if not died(p := stub_pairing(js)[0], NEWER) or OLD in p.stderr: bad.append(f"{tag}: an image with SETUP_SPEC_VERSION 4: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {NEWER!r} (and not that the image predates the chart)")
+js = SETUP_OK.replace("export const SETUP_SPEC_VERSION = 4\n", "export const SETUP_SPEC_VERSION = 5\n")
+if not died(p := stub_pairing(js)[0], NEWER) or OLD in p.stderr: bad.append(f"{tag}: an image with SETUP_SPEC_VERSION 5: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {NEWER!r} (and not that the image predates the chart)")
 p, d = stub_pairing(layout_js=None)
 if not died(p, OLD, f"cannot load {d}/v/layout.js: "): bad.append(f"{tag}: an image without vault-mcp's layout.js: exit {p.returncode} {p.stderr.strip()!r}")
 tag = "harness-start dies when the image refuses the chart's setup"
@@ -3387,16 +3496,21 @@ if HAVE:
     # refusal carries the setup's own `setup: <file>:` prefix, so it is matched by substring
     bent = prof(prod); bent["version"] = 1; bent.pop("places", None); bent["profile"]["paths"]["views"].pop("places", None)
     cfg = config(prod, bent); p = pairing(DIST, VDIST, cfg); shutil.rmtree(cfg)
-    if not died(p, REFUSES + "setup: ", "harness-setup.json: version must be 3 (got 1): the chart predates pure-core phase 6 (places)"): bad.append(f"{tag}: the built image accepts a setup of version 1: exit {p.returncode} {p.stderr.strip()!r}")
+    if not died(p, REFUSES + "setup: ", "harness-setup.json: version must be 4 (got 1): the chart predates pure-core phase 6 (places)"): bad.append(f"{tag}: the built image accepts a setup of version 1: exit {p.returncode} {p.stderr.strip()!r}")
     # plan 7a Task 17: the built image refuses promote 1's chart's setup (version 2, no budgets or provider settings), with
     # naila Task 10's text naming the chart as the older side
     bent = prof(prod); bent["version"] = 2; bent.pop("budgets", None); bent.pop("providerSettings", None)
     cfg = config(prod, bent); p = pairing(DIST, VDIST, cfg); shutil.rmtree(cfg)
-    if not died(p, REFUSES + "setup: ", "harness-setup.json: version must be 3 (got 2): the chart predates plan 7a (budgets and provider settings)"): bad.append(f"{tag}: the built image accepts a setup of version 2: exit {p.returncode} {p.stderr.strip()!r}")
-    bent = prof(prod); bent["version"] = 4
+    if not died(p, REFUSES + "setup: ", "harness-setup.json: version must be 4 (got 2): the chart predates plan 7a (budgets and provider settings)"): bad.append(f"{tag}: the built image accepts a setup of version 2: exit {p.returncode} {p.stderr.strip()!r}")
+    # file actions Task 17: the built image refuses b991dd4's setup (version 3, no files settings), with naila Task 3's text
+    # naming the chart as the older side
+    bent = prof(prod); bent["version"] = 3; bent.pop("files", None)
     cfg = config(prod, bent); p = pairing(DIST, VDIST, cfg); shutil.rmtree(cfg)
-    if not died(p, REFUSES + "setup: ", "version must be 3 (got 4)"): bad.append(f"{tag}: the built image accepts a setup of version 4: exit {p.returncode} {p.stderr.strip()!r}")
-    for k in ("budgets", "providerSettings"):
+    if not died(p, REFUSES + "setup: ", "harness-setup.json: version must be 4 (got 3): the chart predates file actions (the files settings)"): bad.append(f"{tag}: the built image accepts a setup of version 3: exit {p.returncode} {p.stderr.strip()!r}")
+    bent = prof(prod); bent["version"] = 5
+    cfg = config(prod, bent); p = pairing(DIST, VDIST, cfg); shutil.rmtree(cfg)
+    if not died(p, REFUSES + "setup: ", "version must be 4 (got 5)"): bad.append(f"{tag}: the built image accepts a setup of version 5: exit {p.returncode} {p.stderr.strip()!r}")
+    for k in ("budgets", "providerSettings", "files"):
         bent = prof(prod); bent.pop(k, None)
         cfg = config(prod, bent); p = pairing(DIST, VDIST, cfg); shutil.rmtree(cfg)
         if not died(p, REFUSES + "setup: ", f"{k} is missing"): bad.append(f"{tag}: the built image accepts a setup without {k}: exit {p.returncode} {p.stderr.strip()!r}")
@@ -4016,7 +4130,7 @@ if not HAVE: print("NOTICE: NAILA_WORKTREE has no built dist: the setup's econom
 VALUES = yaml.safe_load(open("helm/assistant/values.yaml"))
 bad = []
 
-# the setups are version 3 with the budgets and the provider settings production ships
+# the setups are version 4 (3 until file actions Task 17) with the budgets and the provider settings production ships
 API = {"anthropic-api": {"monthlyUsd": 100, "runCapUsd": 5}}
 OWNER = ["naila", "finance-bookkeeper", "finance-advisor", "ops-oncall"]
 BUDGETS = {"providers": API, "roles": {}, "liveChecks": {}}
@@ -4024,7 +4138,7 @@ PSETTINGS = {"claude-subscription": {"resume": {"roles": OWNER, "maxInputTokens"
 tag = 'the prod render\'s budgets.providers equal {"anthropic-api": {"monthlyUsd": 100, "runCapUsd": 5}}, its provider settings resume the owner roles'
 for label, r in (("prod", prod), ("test phase", test), ("real phase", real), ("staging (harness on)", staging_on)):
     s = setup(r) or {}
-    if s.get("version") != 3: bad.append(f"{tag}: the {label} setup's version is {s.get('version')!r}, want 3")
+    if s.get("version") != 4: bad.append(f"{tag}: the {label} setup's version is {s.get('version')!r}, want 4 (3 until file actions Task 17)")
     if s.get("budgets") != BUDGETS: bad.append(f"{tag}: the {label} budgets are {s.get('budgets')!r}, want {BUDGETS!r}")
     if s.get("providerSettings") != PSETTINGS: bad.append(f"{tag}: the {label} provider settings are {s.get('providerSettings')!r}, want {PSETTINGS!r}")
     if "cacheTtl" in json.dumps(s.get("providerSettings")): bad.append(f"{tag}: the {label} provider settings set a cacheTtl (the 1h default stays until the verdict)")
@@ -4426,4 +4540,337 @@ if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
 print("roles spec 5: the summary's trigger (60000, unchanged) beside its brain" + (", naila's parseWorkerSpecs accepts it and judges the range, the prod render's roles guard pairs with the built image" if HAVE else "")
       + "; a maxChars that is no number fails the render" + (f"; the render is {ref}'s but for those" if diffs else ""))
+PY
+# File actions Task 17 (setup spec 4): the files sidecar with its desk, the files settings, and the roles' file actions:
+#  - the files container: the docs container's python:3.12-slim digest, uid and gid 1003 (its own: no other container's
+#    /proc), a read-only root filesystem, its venv files-venv's (an init container on the same image and uid installs the
+#    pinned requirements with --require-hashes --only-binary :all:; files mounts it read-only, so neither its server nor a
+#    job's child can change the code a later job runs: Task 6 ruling I4), no pip at its own start; FILES_SOCKET, FILES_TOKEN_FILE,
+#    FILES_DESK=/desk, FILES_CLIENT_UID the core's uid (1000) and FILES_ROOTS exactly the uploads, this phase's workspaces and
+#    finance folders and the desk; its probes, run as rendered, need the socket to accept; requests 128Mi and a memory limit
+#    of exactly harness.files.jobs.memoryMiB + 128 MiB (1028Mi at the default, 640Mi at 512; call 3);
+#  - it mounts only naila (read-only), the uploads subPath (read-only), the vault's workspaces and finance folders as subPaths
+#    (read-only, under the phase's subPath; never the whole vault), files-venv (read-only), files-tmp, files-token
+#    (read-only), files-sock and the desk; files-venv and files-tmp have sizeLimit 256Mi;
+#  - the desk (files-desk, an emptyDir of sizeLimit 2Gi) is mounted rw only by files, read-only by harness (HARNESS_DESK_ROOT)
+#    and docs (DOCS_ROOTS ends :/desk), by no other container; desk.totalQuotaMiB plus the largest job output cap (call 28:
+#    image.maxOutMiB, 3 x csv.maxMiB, workspace.maxFileMiB, zip.maxInMiB + 1, unzip.maxUnpackedMiB) stays under 2048, at the
+#    chart's values and at rules.json's ceilings;
+#  - the render fails on a files setting that is missing, no number (no boolean for image.keepExif), on a gateway taking uid
+#    1003 (or 0, 1000, 1001) or the name files, files-venv or sidecar-tokens; values above a ceiling (desk.ttlHours 73,
+#    jobs.memoryMiB 901) render, and the built image's parseSetup refuses them; the harness checksum follows harness.files;
+#    each values.yaml files comment names its rules.json ceiling;
+#  - harness-start dies on a HARNESS_DESK_ROOT that is no plain absolute path, run as rendered;
+#  - the roles: the seeds as the roles spec check above pins them, every tool the seeds' capabilities grant (the image's
+#    CAPABILITY_TOOLS, for the role's own servers and the core) is in its ceiling, and the instruction lines each once;
+#  - the prod render differs from <git-ref>'s only in the setup file (version 4 and files), the services JSON (files and
+#    calc), the harness and docs mounts and env, the files container and its volumes, the init containers (docs-token became
+#    sidecar-tokens, files-venv), the seeds and the ceilings (harness-workers.json), the instruction files, harness-settings.json,
+#    harness-start.sh, docs-grant.mjs and the checksums (the RC pod's follows docs-grant.mjs, an RC key too).
+helm template helm/assistant -f helm/assistant/values.yaml -f helm/assistant/values.prod.yaml --set harness.files.jobs.memoryMiB=512 > "$tmp/files-512.yaml"
+python3 - "$ref" "$tmp/prod.yaml" "$tmp/prod-ref.yaml" "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/files-512.yaml" "$tmp/staging-on.yaml" "$tmp/two.yaml" <<'PY'
+import sys, yaml, json, os, re, subprocess, tempfile, shutil, socket, copy
+ref = sys.argv[1]
+def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
+def loads(s): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(s) if d}
+prod, prod_ref, test, real, m512, staging_on, two = (load(p) for p in sys.argv[2:9])
+H, CMH, CMC, RC = ("Deployment", "assistant-harness"), ("ConfigMap", "assistant-harness"), ("ConfigMap", "assistant-claude"), ("Deployment", "assistant-claude")
+def pod(r): return r[H]["spec"]["template"]["spec"]
+def ctr(r, n): return next((c for c in pod(r)["containers"] if c["name"] == n), None)
+def init(r, n): return next((c for c in pod(r).get("initContainers", []) if c["name"] == n), None)
+def envmap(c): return {e["name"]: e for e in (c or {}).get("env", [])}
+def val(c, k): return (envmap(c).get(k) or {}).get("value")
+def vol(r, n): return next((v for v in pod(r).get("volumes", []) if v["name"] == n), None)
+bad = []
+NW = os.environ.get("NAILA_WORKTREE", "")
+DIST = f"{NW}/packages/harness/dist"
+HAVE = bool(NW) and os.path.isfile(f"{DIST}/setup.js") and os.path.isfile(f"{DIST}/services/registry.js")
+if not HAVE: print("NOTICE: NAILA_WORKTREE has no built dist: the files settings' ceilings and the roles' capability tools were not checked against naila's built image")
+VALUES = yaml.safe_load(open("helm/assistant/values.yaml"))
+FILESV = VALUES["harness"].get("files") or {}
+if not FILESV: bad.append("values.yaml has no harness.files")
+PHASES = (("prod", prod, "/vault", "My Vault"), ("test phase", test, "/vault/Harness-test", "My Vault/Harness-test"), ("real phase", real, "/vault", "My Vault"))
+DOCS_IMAGE = ctr(prod, "docs")["image"]
+UP = "/home/claude/.claude/uploads"
+WS, FIN = "Naila/Workspace", "Finance"   # the prod profile's workspaces (vault-mcp layout.ts: <system>/Workspace) and finance folders
+
+tag = "the files container runs as 1003 with requests 128Mi and a limit of exactly harness.files.jobs.memoryMiB + 128 MiB (1Gi at the default)"
+for label, r, want in (("prod", prod, "1028Mi"), ("--set jobs.memoryMiB=512", m512, "640Mi")):
+    f = ctr(r, "files")
+    if f is None: bad.append(f"{tag}: no files container ({label})"); continue
+    res = f.get("resources", {})
+    if res != {"requests": {"cpu": "10m", "memory": "128Mi"}, "limits": {"memory": want}}: bad.append(f"{tag}: its resources are {res!r}, want requests 128Mi and limit {want} ({label})")
+    sc = f.get("securityContext", {})
+    if sc != {"runAsUser": 1003, "runAsGroup": 1003, "allowPrivilegeEscalation": False, "capabilities": {"drop": ["ALL"]}, "readOnlyRootFilesystem": True}: bad.append(f"{tag}: its securityContext is {sc!r} ({label})")
+if int((FILESV.get("jobs") or {}).get("memoryMiB") or 0) + 128 != 1028: bad.append(f"{tag}: values.yaml's jobs.memoryMiB is {(FILESV.get('jobs') or {}).get('memoryMiB')}, not the default 900")
+
+tag = "the files container is the docs image, runs its server from files-venv's venv, and installs nothing itself"
+for label, r, root, sub in PHASES:
+    f, fv, st = ctr(r, "files"), init(r, "files-venv"), init(r, "sidecar-tokens")
+    if f is None or fv is None or st is None: bad.append(f"{tag}: files, files-venv or sidecar-tokens is missing ({label})"); continue
+    if f["image"] != DOCS_IMAGE or fv["image"] != DOCS_IMAGE or "@sha256:" not in DOCS_IMAGE: bad.append(f"{tag}: images {f['image']!r} and {fv['image']!r}, want the docs container's digest {DOCS_IMAGE!r} ({label})")
+    if f.get("command") != ["sh", "-c", "cd /naila/packages/files-sidecar && exec /venv/bin/python -B server.py"]: bad.append(f"{tag}: its command is {f.get('command')!r} ({label})")
+    c = (fv.get("command") or ["", "", ""])[2]
+    if "/venv/bin/pip install -q --no-cache-dir --require-hashes --only-binary :all: -r /naila/packages/files-sidecar/requirements.txt" not in c or "python -m venv /venv" not in c: bad.append(f"files-venv installs the pinned requirements by hash, wheels only: its command is {c!r} ({label})")
+    if (fv.get("securityContext") or {}) != {"runAsUser": 1003, "runAsGroup": 1003, "allowPrivilegeEscalation": False, "capabilities": {"drop": ["ALL"]}, "readOnlyRootFilesystem": True}: bad.append(f"files-venv runs as files' uid with a read-only root: {fv.get('securityContext')!r} ({label})")
+    if fv.get("volumeMounts") != [{"name": "naila", "mountPath": "/naila", "readOnly": True}, {"name": "files-venv", "mountPath": "/venv"}, {"name": "files-tmp", "mountPath": "/tmp"}]: bad.append(f"files-venv mounts {fv.get('volumeMounts')!r} ({label})")
+    names = [x["name"] for x in pod(r).get("initContainers", [])]
+    if names != ["naila-tools", "sidecar-tokens", "files-venv"]: bad.append(f"the init containers are naila-tools, sidecar-tokens and files-venv, in that order: {names} ({label})")
+    if [x["name"] for x in pod(r)["containers"]] != ["harness", "discord", "docs", "files", "login"]: bad.append(f"the containers are harness, discord, docs, files and login: {[x['name'] for x in pod(r)['containers']]} ({label})")
+    # the venv is written only by files-venv; every other container that mounts it reads it
+    for x in pod(r)["containers"] + pod(r).get("initContainers", []):
+        for m in x.get("volumeMounts", []):
+            if m["name"] == "files-venv" and (x["name"], m.get("readOnly", False)) not in (("files-venv", False), ("files", True)): bad.append(f"files-venv is written by files-venv alone and read by files: {x['name']} mounts it {m!r} ({label})")
+
+# files-venv's install, run as rendered with stand-ins: a failed install leaves the venv empty and exits 0 (the pod starts)
+tag = "files-venv, run as rendered, leaves an empty venv and exits 0 when the install fails"
+c = ((init(prod, "files-venv") or {}).get("command") or ["", "", "true"])[2]
+d = os.path.realpath(tempfile.mkdtemp()); venv, bind = f"{d}/venv", f"{d}/bin"; os.makedirs(venv); os.makedirs(bind)
+open(f"{venv}/stale", "w").write("x")
+open(f"{bind}/python", "w").write(f"#!/bin/sh\nmkdir -p \"$3/bin\"; printf '#!/bin/sh\\nexit 1\\n' > \"$3/bin/pip\"; chmod +x \"$3/bin/pip\"; touch \"$3/pyvenv.cfg\"\n"); os.chmod(f"{bind}/python", 0o755)
+p = subprocess.run(["sh", "-c", c.replace("/venv", venv)], capture_output=True, text=True, env={"PATH": f"{bind}:{os.environ['PATH']}"})
+if p.returncode != 0 or os.listdir(venv) or "the install failed" not in p.stderr: bad.append(f"{tag}: exit {p.returncode}, venv holds {os.listdir(venv)}, stderr {p.stderr.strip()[-200:]!r}")
+os.remove(f"{bind}/python")
+open(f"{bind}/python", "w").write(f"#!/bin/sh\nmkdir -p \"$3/bin\"; printf '#!/bin/sh\\nexit 0\\n' > \"$3/bin/pip\"; chmod +x \"$3/bin/pip\"; touch \"$3/pyvenv.cfg\"\n"); os.chmod(f"{bind}/python", 0o755)
+open(f"{venv}/stale", "w").write("x")
+p = subprocess.run(["sh", "-c", c.replace("/venv", venv)], capture_output=True, text=True, env={"PATH": f"{bind}:{os.environ['PATH']}"})
+if p.returncode != 0 or sorted(os.listdir(venv)) != ["bin", "pyvenv.cfg"]: bad.append(f"files-venv, run as rendered, makes a fresh venv (nothing left from before): exit {p.returncode}, venv holds {sorted(os.listdir(venv))}")
+shutil.rmtree(d)
+
+tag = "files mounts only uploads, the workspaces and finance subPaths and the desk; never the whole vault"
+for label, r, root, sub in PHASES:
+    f = ctr(r, "files") or {}
+    want = [{"name": "naila", "mountPath": "/naila", "readOnly": True},
+            {"name": "home", "mountPath": UP, "subPath": ".claude/uploads", "readOnly": True},
+            {"name": "vault", "mountPath": f"{root}/{WS}", "subPath": f"{sub}/{WS}", "readOnly": True},
+            {"name": "vault", "mountPath": f"{root}/{FIN}", "subPath": f"{sub}/{FIN}", "readOnly": True},
+            {"name": "files-venv", "mountPath": "/venv", "readOnly": True}, {"name": "files-tmp", "mountPath": "/tmp"},
+            {"name": "files-token", "mountPath": "/run/files-token", "readOnly": True}, {"name": "files-sock", "mountPath": "/run/files-sock"},
+            {"name": "files-desk", "mountPath": "/desk"}]
+    if f.get("volumeMounts") != want: bad.append(f"{tag}: its mounts are {f.get('volumeMounts')!r}, want {want!r} ({label})")
+    for m in f.get("volumeMounts", []):
+        if m["name"] == "vault" and not m.get("subPath", "").strip("/").count("/"): bad.append(f"{tag}: a vault mount without a folder subPath: {m!r} ({label})")
+        if m["name"] == "home" and m.get("subPath") != ".claude/uploads": bad.append(f"{tag}: a home mount beyond the uploads: {m!r} ({label})")
+    tag2 = "FILES_ROOTS names exactly those four"
+    if val(f, "FILES_ROOTS") != f"{UP}:{root}/{WS}:{root}/{FIN}:/desk": bad.append(f"{tag2}: it is {val(f, 'FILES_ROOTS')!r} ({label})")
+    for k, w in (("FILES_SOCKET", "/run/files-sock/files.sock"), ("FILES_TOKEN_FILE", "/run/files-token/token"), ("FILES_DESK", "/desk"), ("HOME", "/tmp"),
+                 ("FILES_CLIENT_UID", str(pod(r).get("securityContext", {}).get("runAsUser")))):
+        if val(f, k) != w: bad.append(f"the files container's {k} is {val(f, k)!r}, want {w!r} ({label})")
+    if "FILES_TEST_ACTIONS" in envmap(f) or any(e.get("valueFrom") or e.get("envFrom") for e in f.get("env", [])) or f.get("envFrom"): bad.append(f"the files container has a test switch or a secret: {f.get('env')!r} ({label})")
+    if ctr(r, "harness").get("securityContext", {}).get("runAsUser", pod(r)["securityContext"]["runAsUser"]) != int(val(f, "FILES_CLIENT_UID") or -1) if f else True: bad.append(f"FILES_CLIENT_UID is the harness container's uid ({label})")
+# the mounted folders are the image's layout of the profile (with NAILA_WORKTREE): vault-mcp's vaultLayout(paths).workspaces
+if HAVE:
+    pth = json.loads(prod[CMH]["data"]["harness-setup.json"])["profile"]["paths"]
+    q = subprocess.run(["node", "--input-type=module", "-e", f"const m = await import({json.dumps(NW + '/packages/vault-mcp/dist/layout.js')}); process.stdout.write(m.vaultLayout({json.dumps(pth)}).workspaces)"], capture_output=True, text=True)
+    if q.returncode != 0 or q.stdout != WS or pth["finance"] != FIN: bad.append(f"{tag}: the built vaultLayout's workspaces is {q.stdout or q.stderr.strip()!r}, the profile's finance {pth['finance']!r}; want {WS} and {FIN}")
+# a moved system and finance folder move the mounts and FILES_ROOTS with them
+p = subprocess.run(["helm", "template", "helm/assistant", "-f", "helm/assistant/values.yaml", "-f", "helm/assistant/values.prod.yaml", "--set", "harness.profile.paths.system=Home", "--set", "harness.profile.paths.finance=Money/Notes"], capture_output=True, text=True)
+f = ctr(loads(p.stdout), "files") if p.returncode == 0 else None
+if not f or val(f, "FILES_ROOTS") != f"{UP}:/vault/Home/Workspace:/vault/Money/Notes:/desk" or [(m["mountPath"], m.get("subPath")) for m in f["volumeMounts"] if m["name"] == "vault"] != [("/vault/Home/Workspace", "My Vault/Home/Workspace"), ("/vault/Money/Notes", "My Vault/Money/Notes")]:
+    bad.append(f"{tag}: a moved system and finance folder: {(val(f, 'FILES_ROOTS'), [m for m in f['volumeMounts'] if m['name'] == 'vault']) if f else p.stderr.strip()[-300:]}")
+
+tag = "files-venv and files-tmp have sizeLimit 256Mi"
+for label, r, _, _ in PHASES:
+    for v in ("files-venv", "files-tmp"):
+        if vol(r, v) != {"name": v, "emptyDir": {"sizeLimit": "256Mi"}}: bad.append(f"{tag}: {v} is {vol(r, v)!r} ({label})")
+
+tag = "the desk is mounted rw only in files, ro in harness and docs, and sizeLimit 2Gi"
+for label, r, _, _ in PHASES + (("two channels", two, "", ""),):
+    if vol(r, "files-desk") != {"name": "files-desk", "emptyDir": {"sizeLimit": "2Gi"}}: bad.append(f"{tag}: files-desk is {vol(r, 'files-desk')!r} ({label})")
+    got = {x["name"]: [(m["mountPath"], m.get("readOnly", False)) for m in x.get("volumeMounts", []) if m["name"] == "files-desk"] for x in pod(r)["containers"] + pod(r).get("initContainers", [])}
+    got = {k: v for k, v in got.items() if v}
+    if got != {"harness": [("/desk", True)], "docs": [("/desk", True)], "files": [("/desk", False)]}: bad.append(f"{tag}: the desk mounts are {got} ({label})")
+    if val(ctr(r, "harness"), "HARNESS_DESK_ROOT") != "/desk": bad.append(f"{tag}: HARNESS_DESK_ROOT is {val(ctr(r, 'harness'), 'HARNESS_DESK_ROOT')!r} ({label})")
+    for x in pod(r)["containers"] + pod(r).get("initContainers", []):
+        if x["name"] != "harness" and "HARNESS_DESK_ROOT" in envmap(x): bad.append(f"{tag}: {x['name']} has HARNESS_DESK_ROOT ({label})")
+
+tag = "DOCS_ROOTS ends with /desk"
+for label, r, root, _ in PHASES:
+    if not (val(ctr(r, "docs"), "DOCS_ROOTS") or "").endswith(":/desk") or val(ctr(r, "docs"), "DOCS_ROOTS") != f"{UP}:{root}:/desk": bad.append(f"{tag}: it is {val(ctr(r, 'docs'), 'DOCS_ROOTS')!r} ({label})")
+
+tag = "desk.totalQuotaMiB + the largest job output cap < 2048"
+def job_cap(f): return max(f["image"]["maxOutMiB"], 3 * f["csv"]["maxMiB"], f["workspace"]["maxFileMiB"], f["zip"]["maxInMiB"] + 1, f["unzip"]["maxUnpackedMiB"])
+for label, r in (("prod", prod), ("staging (harness on)", staging_on)):
+    f = json.loads(r[CMH]["data"]["harness-setup.json"]).get("files")
+    if not f: bad.append(f"{tag}: the {label} setup has no files settings"); continue
+    if not f["desk"]["totalQuotaMiB"] + job_cap(f) < 2048: bad.append(f"{tag}: {f['desk']['totalQuotaMiB']} + {job_cap(f)} ({label})")
+RULES_F = os.path.join(NW, "packages/files-sidecar/rules.json")
+if NW and os.path.isfile(RULES_F):
+    ceil = json.load(open(RULES_F))["ceilings"]
+    if not ceil["desk"]["totalQuotaMiB"] + job_cap(ceil) < 2048: bad.append(f"{tag}: at rules.json's ceilings, {ceil['desk']['totalQuotaMiB']} + {job_cap(ceil)}")
+    # each values.yaml files comment names its rules.json ceiling, word for word
+    src = open("helm/assistant/values.yaml").read()
+    blk = src[src.index("\n  files:\n"):src.index("\n  # The roles config")] if "\n  files:\n" in src else ""
+    grp = None
+    for line in blk.splitlines():
+        m = re.match(r"^    (\w+):$", line)
+        if m: grp = m.group(1); continue
+        m = re.match(r"^      (\w+): (\S+)\s+# ceiling (\d+):", line)
+        if m and int(m.group(3)) != ceil[grp][m.group(1)]: bad.append(f"values.yaml's harness.files.{grp}.{m.group(1)} comment names ceiling {m.group(3)}, rules.json has {ceil[grp][m.group(1)]}")
+        if m and int(m.group(2)) > ceil[grp][m.group(1)]: bad.append(f"values.yaml's harness.files.{grp}.{m.group(1)} is {m.group(2)}, above its ceiling {ceil[grp][m.group(1)]}")
+    named = len(re.findall(r"# ceiling \d+:", blk))
+    numbers = sum(1 for g, e in FILESV.items() for k in e if (g, k) not in (("image", "keepExif"), ("types", "remove")))
+    if named != numbers: bad.append(f"values.yaml names {named} files ceilings for its {numbers} numbers")
+
+BASE = ["helm", "template", "helm/assistant", "-f", "helm/assistant/values.yaml", "-f", "helm/assistant/values.prod.yaml"]
+def render(*a): return subprocess.run(BASE + list(a), capture_output=True, text=True)
+def fails(p, says): return p.returncode != 0 and says in p.stderr
+tag = "a files setting that is missing, or no number (no boolean), fails the render"
+for what, args, says in (("desk.ttlHours missing", ["--set", "harness.files.desk.ttlHours=null"], "harness.files.desk.ttlHours is missing"),
+                         ("jobs.memoryMiB a string", ["--set-string", "harness.files.jobs.memoryMiB=900"], "harness.files.jobs.memoryMiB must be a number"),
+                         ("csv.maxMiB a boolean", ["--set", "harness.files.csv.maxMiB=true"], "harness.files.csv.maxMiB must be a number"),
+                         ("image.keepExif a number", ["--set", "harness.files.image.keepExif=1"], "harness.files.image.keepExif must be true or false"),
+                         ("types.remove missing", ["--set", "harness.files.types.remove=null"], "harness.files.types.remove is missing"),
+                         ("the outfiles group missing", ["--set", "harness.files.outfiles=null"], "harness.files.outfiles is missing"),
+                         ("harness.files missing", ["--set", "harness.files=null"], "harness.files is missing")):
+    if not fails(p := render(*args), says): bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()[-300:]!r}, want it to say {says!r}")
+# the chart's key list is the image's FILES_SETTINGS_KEYS: values.yaml holds exactly those keys, and the render fails on each
+# one missing (so the template's copy of the list holds every one)
+if HAVE:
+    q = subprocess.run(["node", "--input-type=module", "-e", f"const m = await import({json.dumps(DIST + '/files/config.js')}); process.stdout.write(JSON.stringify(m.FILES_SETTINGS_KEYS))"], capture_output=True, text=True)
+    FK = json.loads(q.stdout) if q.returncode == 0 else {}
+    if not FK: bad.append(f"the image's FILES_SETTINGS_KEYS could not be read: {q.stderr.strip()[-200:]}")
+    if {g: sorted(e) for g, e in FILESV.items()} != {g: sorted(ks) for g, ks in FK.items()}: bad.append(f"values.yaml's harness.files keys are not the image's FILES_SETTINGS_KEYS: {sorted((g, sorted(e)) for g, e in FILESV.items())} vs {sorted((g, sorted(ks)) for g, ks in FK.items())}")
+    for g, ks in FK.items():
+        for k in ks:
+            if not fails(p := render("--set", f"harness.files.{g}.{k}=null"), f"harness.files.{g}.{k} is missing"): bad.append(f"a files setting that is missing fails the render: {g}.{k}: exit {p.returncode} {p.stderr.strip()[-200:]!r}")
+tag = "harness.files above a ceiling fails parseSetup with the built image"
+for what, args, says in (("desk.ttlHours 73", ["--set", "harness.files.desk.ttlHours=73"], "files.desk.ttlHours must be a whole number from 1 to 72"),
+                         ("jobs.memoryMiB 901", ["--set", "harness.files.jobs.memoryMiB=901"], "files.jobs.memoryMiB must be a whole number from 1 to 900")):
+    p = render(*args)
+    if p.returncode != 0: bad.append(f"{tag}: {what} does not render (the ceilings are the image's to check): {p.stderr.strip()[-300:]}"); continue
+    if not HAVE: continue
+    d = tempfile.mkdtemp()
+    for k, v in loads(p.stdout)[CMH]["data"].items(): open(os.path.join(d, k), "w").write(v)
+    js = ("const [s, f] = process.argv.slice(1); const fs = await import('node:fs'), path = await import('node:path'); const m = await import(s); "
+          "try { m.parseSetup(fs.readFileSync(f, 'utf8'), f, (n) => fs.readFileSync(path.join(path.dirname(f), n), 'utf8')); console.log('accepted') } catch (e) { console.log(e.message) }")
+    q = subprocess.run(["node", "--input-type=module", "-e", js, f"{DIST}/setup.js", os.path.join(d, "harness-setup.json")], capture_output=True, text=True)
+    shutil.rmtree(d)
+    if says not in q.stdout: bad.append(f"{tag}: {what}: the built parseSetup says {(q.stdout or q.stderr).strip()!r}, want {says!r}")
+tag = "the harness checksum follows harness.files"
+def ck(r, k): return r[k]["spec"]["template"]["metadata"]["annotations"]["checksum/config"]
+p = render("--set", "harness.files.desk.ttlHours=12")
+if p.returncode != 0 or ck(loads(p.stdout), H) == ck(prod, H): bad.append(f"{tag}: a changed desk.ttlHours leaves it {ck(prod, H)}")
+
+tag = "a gateway may not take uid 1003 or the name files"
+GW = lambda name, uid: ["--set-json", f'harness.channels.{name}={{"enabled":true,"kind":"owner","label":"x","settle":"none","secretKey":"GATEWAY_X_SECRET","gateway":{{"uid":{uid}}}}}']
+for what, args, says in (("uid 1003", GW("tg", 1003), "harness.channels.tg.gateway.uid 1003 is taken (root, the core, docs, the files sidecar or another gateway)"),
+                         ("uid 1001", GW("tg", 1001), "harness.channels.tg.gateway.uid 1001 is taken"), ("uid 1000", GW("tg", 1000), "harness.channels.tg.gateway.uid 1000 is taken"),
+                         ("uid 0", GW("tg", 0), "harness.channels.tg.gateway.uid 0 is taken"),
+                         ("the name files", GW("files", 1004), "harness.channels.files: files is already a container of the harness pod"),
+                         ("the name files-venv", GW("files-venv", 1004), "harness.channels.files-venv: files-venv is already a container of the harness pod"),
+                         ("the name sidecar-tokens", GW("sidecar-tokens", 1004), "harness.channels.sidecar-tokens: sidecar-tokens is already a container of the harness pod")):
+    if not fails(p := render(*args), says): bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()[-300:]!r}, want it to say {says!r}")
+if (p := render(*GW("tg", 1004))).returncode != 0: bad.append(f"{tag}: uid 1004 is free, but the render fails: {p.stderr.strip()[-300:]}")
+
+tag = "the files sidecar's probes, run as rendered, need its socket to accept"
+f = ctr(prod, "files") or {}
+rp, sp = f.get("readinessProbe") or {}, f.get("startupProbe") or {}
+if not rp or not sp or (rp.get("exec") or {}).get("command") != (sp.get("exec") or {}).get("command"): bad.append(f"{tag}: readiness {rp!r}, startup {sp!r}")
+else:
+    pc = rp["exec"]["command"]
+    for listening, ok in ((True, True), (False, False), (None, False)):
+        d = os.path.realpath(tempfile.mkdtemp()); srv = None
+        if listening: srv = socket.socket(socket.AF_UNIX); srv.bind(f"{d}/files.sock"); srv.listen(1)
+        elif listening is None: st_ = socket.socket(socket.AF_UNIX); st_.bind(f"{d}/files.sock"); st_.close()
+        cmd = [a.replace("/run/files-sock", d).replace("python -c", f"{sys.executable} -c") for a in pc]
+        rc = subprocess.run(cmd, capture_output=True, text=True, timeout=20).returncode
+        if srv: srv.close()
+        if (rc == 0) != ok: bad.append(f"{tag}: the probe {'fails' if ok else 'passes'} with the socket {'accepting' if listening else 'stale' if listening is None else 'absent'}")
+
+tag = "harness-start dies on a HARNESS_DESK_ROOT that is no plain absolute path"
+sl = prod[CMH]["data"]["harness-start.sh"].splitlines()
+a = [i for i, l in enumerate(sl) if l == 'if [ -n "${HARNESS_DESK_ROOT:-}" ]; then']
+b = [i for i in range(a[0], len(sl)) if sl[i] == "fi"][:1] if len(a) == 1 else []
+if len(a) != 1 or not b: bad.append(f"{tag}: want one HARNESS_DESK_ROOT check block, got {len(a)}")
+else:
+    snippet = "\n".join(sl[a[0]:b[0] + 1])
+    for v, ok in (("/desk", True), ("", True), ("/run/desk-1", True), ("desk", False), ("/de sk", False), ("/desk/../x", False), ("/desk/./x", False), ("/.desk", False), ("/desk;rm", False), ("/desk/", False), ("//desk", False)):
+        p = subprocess.run(["bash", "-c", 'set -eu; die() { echo "harness-start: $*" >&2; exit 2; }\n' + snippet + "\necho started"], env={"PATH": os.environ["PATH"], "HARNESS_DESK_ROOT": v}, capture_output=True, text=True)
+        if (p.returncode == 0 and p.stdout.strip() == "started") != ok: bad.append(f"{tag}: HARNESS_DESK_ROOT={v!r}: exit {p.returncode} {p.stderr.strip()!r}, want {'a start' if ok else 'exit 2'}")
+    patch_ = [i for i, l in enumerate(sl) if "/config/settings.json /config/harness-settings.json \"$C/settings.json\"" in l and l.endswith('"${HARNESS_DESK_ROOT:-}"')]
+    if len(patch_) != 1 or not a[0] < patch_[0]: bad.append(f"{tag}: the check is not before the settings patch, which passes HARNESS_DESK_ROOT on ({len(patch_)} patches)")
+
+tag = "the ceilings name every tool the seeds' capabilities grant"
+spec = json.loads(prod[CMH]["data"]["harness-workers.json"])
+if HAVE:
+    js = f"const m = await import({json.dumps(DIST + '/services/registry.js')}); process.stdout.write(JSON.stringify(m.CAPABILITY_TOOLS))"
+    q = subprocess.run(["node", "--input-type=module", "-e", js], capture_output=True, text=True)
+    CT = json.loads(q.stdout) if q.returncode == 0 else {}
+    if not CT: bad.append(f"{tag}: could not read the built CAPABILITY_TOOLS: {q.stderr.strip()[-200:]}")
+    for r_ in spec["roles"]:
+        if "ceiling" not in r_: continue
+        mine = {"core", *(s_["name"] for s_ in r_.get("servers", []))}
+        for c_ in r_.get("seed", []):
+            t_ = CT.get(c_, {})
+            need = [*t_.get("builtins", []), *(x for x in t_.get("mcp", []) if x.split("__")[1] in mine)]
+            miss = [x for x in need if x not in r_["ceiling"]]
+            if miss: bad.append(f"{tag}: {r_['id']}'s ceiling lacks {miss} ({c_})")
+    for c_, ts in (("files.process", ["mcp__core__file_unzip", "mcp__core__file_zip", "mcp__core__image_convert", "mcp__core__csv_query"]), ("files.send", ["mcp__core__attach_file"]),
+                   ("calc.use", ["mcp__core__calculate"]), ("files.write", ["mcp__core__workspace_delete", "mcp__core__workspace_move", "mcp__core__workspace_copy"])):
+        if CT and not set(ts) <= set(CT.get(c_, {}).get("mcp", [])): bad.append(f"{tag}: the built {c_} does not grant {ts}: {CT.get(c_)!r}")
+# the researcher (quarantined) holds none of the new capabilities or tools
+rs = next(r_ for r_ in spec["roles"] if r_["id"] == "researcher")
+if set(rs.get("seed", [])) & {"files.process", "files.send", "calc.use"} or any("file_" in t or "calculate" in t or "attach_file" in t or "csv_query" in t or "image_convert" in t for t in rs.get("ceiling", [])): bad.append(f"{tag}: the researcher holds a file action: {rs!r}")
+
+tag = "the instruction lines: the calculator in naila's and the finance workers' instructions, the desk in naila's, each once"
+CALC = "Any sum, split or percentage of money: use calculate, never mental arithmetic."
+DESK = 'What your file actions make sits on your desk for a day (gone after a restart); when the user says "keep it", copy it into your workspace with workspace_copy (ask once for files.write with propose_capability_change if it is off).'
+cm = prod[CMC]["data"]
+for k, lines in (("harness-CLAUDE.md", (CALC, DESK)), ("harness-agent-finance-bookkeeper.md", (CALC,)), ("harness-agent-finance-advisor.md", (CALC,)), ("harness-agent-ops-oncall.md", ()), ("harness-agent-researcher.md", ())):
+    for t in (CALC, DESK):
+        n = cm.get(k, "").count(t)
+        if n != (1 if t in lines else 0): bad.append(f"{tag}: {k} holds {t[:40]!r}… {n} times")
+
+tag = f"the prod render differs from {ref} only in the setup file, the services JSON, the harness and docs mounts and env, the new container and volumes, the init container, the seeds, the ceiling and instruction files, harness-settings.json, harness-start.sh, docs-grant.mjs and the checksum"
+new_, old_ = copy.deepcopy(prod), copy.deepcopy(prod_ref)
+if (json.loads(old_[CMH]["data"]["harness-setup.json"]) or {}).get("version") != 3: print(f"NOTICE: the {ref} render has no setup spec 3: the whole-render diff against it (file actions Task 17's change alone) was skipped")
+else:
+    # the setup: version 3 -> 4 and files, nothing else
+    s_ = json.loads(new_[CMH]["data"]["harness-setup.json"]); s_["version"] = 3; s_.pop("files", None)
+    if s_ != json.loads(old_[CMH]["data"]["harness-setup.json"]): bad.append(f"{tag}: harness-setup.json differs beyond its version and files")
+    # the roles: the seeds and ceilings, back to the ref's, give the ref's spec
+    w_ = json.loads(new_[CMH]["data"]["harness-workers.json"])
+    for r_ in w_["roles"]:
+        r_["seed"] = [x for x in r_["seed"] if x not in ("files.process", "files.send", "calc.use")]
+        if "ceiling" in r_: r_["ceiling"] = [x for x in r_["ceiling"] if x not in ("mcp__core__workspace_move", "mcp__core__workspace_copy", "mcp__core__file_unzip", "mcp__core__file_zip", "mcp__core__image_convert", "mcp__core__csv_query", "mcp__core__attach_file", "mcp__core__calculate")]
+    if w_ != json.loads(old_[CMH]["data"]["harness-workers.json"]): bad.append(f"{tag}: harness-workers.json differs beyond the seeds and ceilings")
+    for k in ("harness-setup.json", "harness-workers.json", "harness-start.sh"): new_[CMH]["data"].pop(k); old_[CMH]["data"].pop(k)
+    # the instruction files lose exactly their new lines; harness-settings.json its six denies (and its comment); docs-grant.mjs
+    for k, lines in (("harness-CLAUDE.md", (f"- {DESK}\n", f"- {CALC}\n")), ("harness-agent-finance-bookkeeper.md", (f"\n{CALC}\n",)), ("harness-agent-finance-advisor.md", (f"{CALC}\n\n",))):
+        t = new_[CMC]["data"][k]
+        for l_ in lines: t = t.replace(l_, "", 1)
+        if t != old_[CMC]["data"][k]: bad.append(f"{tag}: {k} differs beyond its new lines")
+        new_[CMC]["data"].pop(k); old_[CMC]["data"].pop(k)
+    hn, ho = json.loads(new_[CMC]["data"]["harness-settings.json"]), json.loads(old_[CMC]["data"]["harness-settings.json"])
+    hn["permissions"]["deny"] = [x for x in hn["permissions"]["deny"] if not re.fullmatch(r"(Read|Edit|Write)\(//run/files-(token|sock)/\*\*\)", x)]
+    hn.pop("_comment"); ho.pop("_comment")
+    if hn != ho: bad.append(f"{tag}: harness-settings.json differs beyond the six files-token and files-sock denies")
+    for k in ("harness-settings.json", "docs-grant.mjs"): new_[CMC]["data"].pop(k); old_[CMC]["data"].pop(k)
+    # the harness pod: the files container, its init container and volumes, the harness and docs additions, the token init
+    pn, po = new_[H]["spec"]["template"]["spec"], old_[H]["spec"]["template"]["spec"]
+    pn["containers"] = [c_ for c_ in pn["containers"] if c_["name"] != "files"]
+    pn["initContainers"] = [c_ for c_ in pn["initContainers"] if c_["name"] not in ("files-venv", "sidecar-tokens")]
+    po["initContainers"] = [c_ for c_ in po["initContainers"] if c_["name"] != "docs-token"]
+    pn["volumes"] = [v_ for v_ in pn["volumes"] if v_["name"] not in ("files-venv", "files-tmp", "files-token", "files-sock", "files-desk")]
+    for c_ in pn["containers"]:
+        if c_["name"] == "harness":
+            c_["env"] = [e for e in c_["env"] if e["name"] not in ("HARNESS_DESK_ROOT", "FILES_TOKEN_FILE", "FILES_SOCKET")]
+            c_["volumeMounts"] = [m for m in c_["volumeMounts"] if m["name"] not in ("files-token", "files-sock", "files-desk")]
+            for e in c_["env"]:
+                if e["name"] == "HARNESS_SERVICES":
+                    sv = json.loads(e["value"]); sv["services"].pop("files", None); sv["services"].pop("calc", None); e["value"] = json.dumps(sv, separators=(",", ":"))
+        if c_["name"] == "docs":
+            c_["volumeMounts"] = [m for m in c_["volumeMounts"] if m["name"] != "files-desk"]
+            for e in c_["env"]:
+                if e["name"] == "DOCS_ROOTS" and e["value"].endswith(":/desk"): e["value"] = e["value"][:-len(":/desk")]
+    for k in (H, RC):
+        new_[k]["spec"]["template"]["metadata"]["annotations"].pop("checksum/config"); old_[k]["spec"]["template"]["metadata"]["annotations"].pop("checksum/config")
+    for k in sorted(set(new_) | set(old_)):
+        if new_.get(k) != old_.get(k): bad.append(f"{tag}: {k[0]}/{k[1]} differs beyond those")
+
+if bad:
+    print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
+print("file actions: the files sidecar (uid 1003, 128Mi + a limit of memoryMiB + 128 MiB, venv read-only from files-venv, only uploads, the workspaces and finance folders and the desk), the desk rw only in files"
+      + ", setup spec 4 with the files settings (bad ones fail the render" + (", ceilings the built image's" if HAVE else "") + "), two tokens, the roles' file actions and instruction lines; the render is " + ref + "'s but for those")
 PY

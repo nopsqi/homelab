@@ -3178,7 +3178,7 @@ if os.environ.get("NAILA_WORKTREE") and json.load(open(_fx)).get("files") != FIL
 FILES_DIRS = ("Naila/Workspace", "Finance")
 # plan 7b Task 18: setup spec 4 adds the memory's limits (under the core's ceilings) and views.memory; the summaries' re-make
 # (Task 3's 8 runs per role) is production's alone: values.prod.yaml sets it, staging never
-MEMORY = {"standing": {"maxLines": 20, "maxQuoteChars": 300, "maxMeaningChars": 200, "maxChangesPerRun": 3}, "search": {"maxHits": 10, "maxHitChars": 600, "maxScanTurns": 20000}}
+MEMORY = {"standing": {"maxLines": 20, "maxQuoteChars": 600, "maxMeaningChars": 200, "maxChangesPerRun": 3}, "search": {"maxHits": 10, "maxHitChars": 600, "maxScanTurns": 20000}}
 MEMORY_PROD = {**MEMORY, "remake": {"maxRunsPerRole": 8}}
 tag = "the profile equals today's literals"
 for label, r in (("prod", prod), ("test phase", test), ("real phase", real), ("staging (harness on)", staging_on)):
@@ -5091,8 +5091,8 @@ PY
 #    with NAILA_WORKTREE every permanent role's ceiling holds the built image's CORE_ALWAYS_TOOLS (a ceiling left without one
 #    would silently take that tool from the role: Task 13 review M3);
 #  - each permanent role's instructions carry the standing-fact paragraph right after its self-note paragraph (the whole
-#    message quoted, the 300-character sentence, "noted", history_search after saving, a fact in the notes moved to the
-#    standing lines; the finance roles keep account data in the finance notes; ops-oncall's examples are alerts and quiet
+#    message quoted, the 600-character sentence, "noted", history_search after saving, and no "move it out of your notes"
+#    sentence until promote 2's 7-day watch closes; the finance roles keep account data in the finance notes; ops-oncall's examples are alerts and quiet
 #    times), and no file says "quoting their words exactly"; the researcher's names no memory tool;
 #  - plan 7b's rebase onto file actions: one whole-render check over the union of this block's list and file actions' (the block
 #    above): prod, test phase, harness off and staging render as at <git-ref> but for harness-setup.json (version, views.memory,
@@ -5129,7 +5129,7 @@ MEMORY_TOOLS = ["mcp__core__standing_save", "mcp__core__standing_remove", "mcp__
 bad = []
 
 # the setups: version 4, the memory view, and the memory's limits (the re-make production's alone)
-MEMORY = {"standing": {"maxLines": 20, "maxQuoteChars": 300, "maxMeaningChars": 200, "maxChangesPerRun": 3}, "search": {"maxHits": 10, "maxHitChars": 600, "maxScanTurns": 20000}}
+MEMORY = {"standing": {"maxLines": 20, "maxQuoteChars": 600, "maxMeaningChars": 200, "maxChangesPerRun": 3}, "search": {"maxHits": 10, "maxHitChars": 600, "maxScanTurns": 20000}}
 REMAKE = {"maxRunsPerRole": 8}   # Task 3's ruling: the most chunks a role's history needs (finance-advisor 6) plus 2
 tag = "the prod render's memory equals values.yaml's, with values.prod.yaml's re-make"
 vm = (VALUES["values.yaml"].get("harness") or {}).get("memory")
@@ -5165,7 +5165,7 @@ def naila(r, mutate=""):
 def why(p):
     err = (p.stderr or p.stdout).strip()
     return next((l for l in err.splitlines() if l.startswith("Error: ")), err[-300:])
-LIMITS = "memory: standing 20 lines (quote 300, meaning 200, 3 a message); search 10 hits of 600 characters over 20000 turns; "
+LIMITS = "memory: standing 20 lines (quote 600, meaning 200, 3 a message); search 10 hits of 600 characters over 20000 turns; "
 if HAVE:
     tag = "the built image parses the rendered memory"
     for label, r, rm in (("prod", prod, "remake 8 runs per role"), ("test phase", test, "remake 8 runs per role"), ("staging (harness on)", staging_on, "remake off")):
@@ -5175,7 +5175,7 @@ if HAVE:
         if o["text"] != LIMITS + rm or o["memory"] != setup(r)["memory"] or o["view"] != "Memory.md": bad.append(f"{tag}: the {label} setup parses as {o!r}, want {LIMITS + rm!r}")
     # the ceilings are the image's: the chart renders a raise, the image refuses it
     for what, mutate, says in (("31 standing lines", "s.memory.standing.maxLines = 31", "memory.standing.maxLines must be a whole number from 1 to 30"),
-                               ("a 301-character quote", "s.memory.standing.maxQuoteChars = 301", "memory.standing.maxQuoteChars must be a whole number from 20 to 300"),
+                               ("a 601-character quote", "s.memory.standing.maxQuoteChars = 601", "memory.standing.maxQuoteChars must be a whole number from 20 to 600"),
                                ("21 hits", "s.memory.search.maxHits = 21", "memory.search.maxHits must be a whole number from 1 to 20"),
                                ("21 re-make runs", "s.memory.remake.maxRunsPerRole = 21", "memory.remake.maxRunsPerRole must be a whole number from 1 to 20"),
                                ("no memory", "delete s.memory", "memory is missing"),
@@ -5221,9 +5221,8 @@ if HAVE:
 KEYS = {"naila": "harness-CLAUDE.md", "finance-bookkeeper": "harness-agent-finance-bookkeeper.md", "finance-advisor": "harness-agent-finance-advisor.md", "ops-oncall": "harness-agent-ops-oncall.md"}
 HEAD = "Facts and plans the user states about themselves or their life ("
 SAYS = ["are standing facts: save each with standing_save the moment the user says it in your conversation, quoting their whole message exactly, with one line on what it changes; replace an older line it contradicts (replaces) and remove one they say no longer holds.",
-        "If the fact sits inside a long message (over 300 characters), ask the user to say it in a short message of its own.",
-        'Say at most "noted". Your own conventions stay in your notes. To find what was said before, use history_search, after saving.',
-        "A fact or plan the user told you that sits in your own notes moves to standing_save the next time the user states it: save it there from their words, then rewrite your notes without it (self_note_set)."]
+        "If the fact sits inside a long message (over 600 characters), ask the user to say it in a short message of its own.",
+        'Say at most "noted". Your own conventions stay in your notes. To find what was said before, use history_search, after saving.']
 FINANCE = "Account data stays in the finance notes; standing facts are what the user intends or tells you about themselves."
 def standing_at(lines):
     """The index of the standing-fact paragraph's line in `lines` (a bullet in naila's), or None."""
@@ -5233,6 +5232,7 @@ for label, r in (("prod", prod), ("test phase", test)):
     for w, k in KEYS.items():
         t = r[CC]["data"].get(k, "")
         if "quoting their words exactly" in t: bad.append(f"{tag}: the {label} {k} still says 'quoting their words exactly' (a standing quote is the user's whole message)")
+        if "sits in your own notes moves" in t: bad.append(f"{tag}: the {label} {k} tells the worker to move facts out of its notes (held until promote 2's 7-day watch closes)")
         ls = t.splitlines()
         i = standing_at(ls)
         if i is None or sum(1 for l in ls if l.removeprefix("- ").startswith(HEAD)) != 1: bad.append(f"{tag}: the {label} {k} has no standing-fact paragraph, or more than one"); continue

@@ -201,7 +201,7 @@ harness:
   #    re-make. Left out, no re-make runs.
   # The render fails on a memory, standing, search or remake that is no map; the core checks the numbers.
   memory:
-    standing: { maxLines: 20, maxQuoteChars: 300, maxMeaningChars: 200, maxChangesPerRun: 3 }   # under the core's ceilings (plan 7b)
+    standing: { maxLines: 20, maxQuoteChars: 600, maxMeaningChars: 200, maxChangesPerRun: 3 }   # under the core's ceilings (plan 7b)
     search: { maxHits: 10, maxHitChars: 600, maxScanTurns: 20000 }
   # The files settings (file actions, setup spec 4; naila packages/harness/src/files/config.ts), rendered into
   # harness-setup.json as they stand here. Every key is required (the core holds no default), each a whole number from 1 to

@@ -4569,7 +4569,7 @@ PY
 #    harness-start.sh, docs-grant.mjs and the checksums (the RC pod's follows docs-grant.mjs, an RC key too).
 helm template helm/assistant -f helm/assistant/values.yaml -f helm/assistant/values.prod.yaml --set harness.files.jobs.memoryMiB=512 > "$tmp/files-512.yaml"
 python3 - "$ref" "$tmp/prod.yaml" "$tmp/prod-ref.yaml" "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/files-512.yaml" "$tmp/staging-on.yaml" "$tmp/two.yaml" <<'PY'
-import sys, yaml, json, os, re, subprocess, tempfile, shutil, socket, copy
+import sys, yaml, json, os, re, subprocess, tempfile, shutil, socket, copy, stat, shlex
 ref = sys.argv[1]
 def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
 def loads(s): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(s) if d}
@@ -4601,18 +4601,27 @@ for label, r, want in (("prod", prod, "1028Mi"), ("--set jobs.memoryMiB=512", m5
     res = f.get("resources", {})
     if res != {"requests": {"cpu": "10m", "memory": "128Mi"}, "limits": {"memory": want}}: bad.append(f"{tag}: its resources are {res!r}, want requests 128Mi and limit {want} ({label})")
     sc = f.get("securityContext", {})
-    if sc != {"runAsUser": 1003, "runAsGroup": 1003, "allowPrivilegeEscalation": False, "capabilities": {"drop": ["ALL"]}, "readOnlyRootFilesystem": True}: bad.append(f"{tag}: its securityContext is {sc!r} ({label})")
+    if sc != {"runAsUser": 1003, "runAsGroup": 1000, "allowPrivilegeEscalation": False, "capabilities": {"drop": ["ALL"]}, "readOnlyRootFilesystem": True}: bad.append(f"{tag}: its securityContext is {sc!r} ({label})")
 if int((FILESV.get("jobs") or {}).get("memoryMiB") or 0) + 128 != 1028: bad.append(f"{tag}: values.yaml's jobs.memoryMiB is {(FILESV.get('jobs') or {}).get('memoryMiB')}, not the default 900")
 
 tag = "the files container is the docs image, runs its server from files-venv's venv, and installs nothing itself"
+# fix round 1 (I1): with no venv (files-venv's install failed) it logs one line and sleeps, so the pod stays Ready
+FILES_CMD = ("[ -x /venv/bin/python ] || { echo 'files: no venv (files-venv could not install the requirements): file actions are off until the pod restarts' >&2; exec sleep infinity; }; "
+             "cd /naila/packages/files-sidecar && exec /venv/bin/python -B server.py")
+tag_g = "files runs with the harness's group"
+for label, r, root, sub in PHASES:
+    for n_, x_ in (("files", ctr(r, "files")), ("files-venv", init(r, "files-venv"))):
+        g_ = ((x_ or {}).get("securityContext") or {}).get("runAsGroup")
+        if g_ != pod(r)["securityContext"]["runAsGroup"] or g_ != pod(r)["securityContext"]["fsGroup"] or ((x_ or {}).get("securityContext") or {}).get("runAsUser") != 1003:
+            bad.append(f"{tag_g}: {n_} runs as {((x_ or {}).get('securityContext') or {}).get('runAsUser')}:{g_}, want its own uid 1003 with the harness container's group {pod(r)['securityContext']['runAsGroup']} (fsGroup {pod(r)['securityContext']['fsGroup']}) ({label})")
 for label, r, root, sub in PHASES:
     f, fv, st = ctr(r, "files"), init(r, "files-venv"), init(r, "sidecar-tokens")
     if f is None or fv is None or st is None: bad.append(f"{tag}: files, files-venv or sidecar-tokens is missing ({label})"); continue
     if f["image"] != DOCS_IMAGE or fv["image"] != DOCS_IMAGE or "@sha256:" not in DOCS_IMAGE: bad.append(f"{tag}: images {f['image']!r} and {fv['image']!r}, want the docs container's digest {DOCS_IMAGE!r} ({label})")
-    if f.get("command") != ["sh", "-c", "cd /naila/packages/files-sidecar && exec /venv/bin/python -B server.py"]: bad.append(f"{tag}: its command is {f.get('command')!r} ({label})")
+    if f.get("command") != ["sh", "-c", FILES_CMD]: bad.append(f"{tag}: its command is {f.get('command')!r} ({label})")
     c = (fv.get("command") or ["", "", ""])[2]
     if "/venv/bin/pip install -q --no-cache-dir --require-hashes --only-binary :all: -r /naila/packages/files-sidecar/requirements.txt" not in c or "python -m venv /venv" not in c: bad.append(f"files-venv installs the pinned requirements by hash, wheels only: its command is {c!r} ({label})")
-    if (fv.get("securityContext") or {}) != {"runAsUser": 1003, "runAsGroup": 1003, "allowPrivilegeEscalation": False, "capabilities": {"drop": ["ALL"]}, "readOnlyRootFilesystem": True}: bad.append(f"files-venv runs as files' uid with a read-only root: {fv.get('securityContext')!r} ({label})")
+    if (fv.get("securityContext") or {}) != {"runAsUser": 1003, "runAsGroup": 1000, "allowPrivilegeEscalation": False, "capabilities": {"drop": ["ALL"]}, "readOnlyRootFilesystem": True}: bad.append(f"files-venv runs as files' uid with a read-only root: {fv.get('securityContext')!r} ({label})")
     if fv.get("volumeMounts") != [{"name": "naila", "mountPath": "/naila", "readOnly": True}, {"name": "files-venv", "mountPath": "/venv"}, {"name": "files-tmp", "mountPath": "/tmp"}]: bad.append(f"files-venv mounts {fv.get('volumeMounts')!r} ({label})")
     names = [x["name"] for x in pod(r).get("initContainers", [])]
     if names != ["naila-tools", "sidecar-tokens", "files-venv"]: bad.append(f"the init containers are naila-tools, sidecar-tokens and files-venv, in that order: {names} ({label})")
@@ -4622,19 +4631,41 @@ for label, r, root, sub in PHASES:
         for m in x.get("volumeMounts", []):
             if m["name"] == "files-venv" and (x["name"], m.get("readOnly", False)) not in (("files-venv", False), ("files", True)): bad.append(f"files-venv is written by files-venv alone and read by files: {x['name']} mounts it {m!r} ({label})")
 
-# files-venv's install, run as rendered with stand-ins: a failed install leaves the venv empty and exits 0 (the pod starts)
-tag = "files-venv, run as rendered, leaves an empty venv and exits 0 when the install fails"
+# files-venv's install, run as rendered with stand-ins (python, pip and sleep): fix round 1 (I1): it tries the install 3 times,
+# 10 s apart; a run that keeps failing leaves the venv empty, logs one line naming the failure and exits 0 (the pod starts)
+tag = "files-venv, run as rendered, tries the install 3 times, 10 s apart, then leaves an empty venv and exits 0"
 c = ((init(prod, "files-venv") or {}).get("command") or ["", "", "true"])[2]
-d = os.path.realpath(tempfile.mkdtemp()); venv, bind = f"{d}/venv", f"{d}/bin"; os.makedirs(venv); os.makedirs(bind)
-open(f"{venv}/stale", "w").write("x")
-open(f"{bind}/python", "w").write(f"#!/bin/sh\nmkdir -p \"$3/bin\"; printf '#!/bin/sh\\nexit 1\\n' > \"$3/bin/pip\"; chmod +x \"$3/bin/pip\"; touch \"$3/pyvenv.cfg\"\n"); os.chmod(f"{bind}/python", 0o755)
-p = subprocess.run(["sh", "-c", c.replace("/venv", venv)], capture_output=True, text=True, env={"PATH": f"{bind}:{os.environ['PATH']}"})
-if p.returncode != 0 or os.listdir(venv) or "the install failed" not in p.stderr: bad.append(f"{tag}: exit {p.returncode}, venv holds {os.listdir(venv)}, stderr {p.stderr.strip()[-200:]!r}")
-os.remove(f"{bind}/python")
-open(f"{bind}/python", "w").write(f"#!/bin/sh\nmkdir -p \"$3/bin\"; printf '#!/bin/sh\\nexit 0\\n' > \"$3/bin/pip\"; chmod +x \"$3/bin/pip\"; touch \"$3/pyvenv.cfg\"\n"); os.chmod(f"{bind}/python", 0o755)
-open(f"{venv}/stale", "w").write("x")
-p = subprocess.run(["sh", "-c", c.replace("/venv", venv)], capture_output=True, text=True, env={"PATH": f"{bind}:{os.environ['PATH']}"})
-if p.returncode != 0 or sorted(os.listdir(venv)) != ["bin", "pyvenv.cfg"]: bad.append(f"files-venv, run as rendered, makes a fresh venv (nothing left from before): exit {p.returncode}, venv holds {sorted(os.listdir(venv))}")
+def venv_run(pip_ok_on):
+    """files-venv's command with stand-ins: pip fails until its call number pip_ok_on (0: always). Returns the run, the venv's
+    entries, the pip calls and the sleeps."""
+    d = os.path.realpath(tempfile.mkdtemp()); venv, bind, log = f"{d}/venv", f"{d}/bin", f"{d}/log"; os.makedirs(venv); os.makedirs(bind)
+    open(f"{venv}/stale", "w").write("x"); open(log, "w").write("")
+    open(f"{bind}/python", "w").write(f"#!/bin/sh\nmkdir -p \"$3/bin\"; printf '#!/bin/sh\\necho pip >> {log}\\n[ $(grep -c pip {log}) = {pip_ok_on} ]\\n' > \"$3/bin/pip\"; chmod +x \"$3/bin/pip\"; touch \"$3/pyvenv.cfg\"\n"); os.chmod(f"{bind}/python", 0o755)
+    open(f"{bind}/sleep", "w").write(f"#!/bin/sh\necho \"sleep $*\" >> {log}\n"); os.chmod(f"{bind}/sleep", 0o755)
+    p = subprocess.run(["sh", "-c", c.replace("/venv", venv)], capture_output=True, text=True, env={"PATH": f"{bind}:{os.environ['PATH']}"}, timeout=60)
+    lines = open(log).read().split()
+    out = (p, sorted(os.listdir(venv)), open(log).read().count("pip"), [l for l in open(log).read().splitlines() if l.startswith("sleep")])
+    shutil.rmtree(d); return out
+p, entries, pips, sleeps = venv_run(0)
+if p.returncode != 0 or entries or pips != 3 or sleeps != ["sleep 10", "sleep 10"]: bad.append(f"{tag}: a failing install: exit {p.returncode}, venv holds {entries}, pip ran {pips} times, sleeps {sleeps}; want exit 0, an empty venv, 3 tries, 2 sleeps of 10")
+if len([l for l in p.stderr.splitlines() if "files-venv" in l and "failed" in l]) != 1: bad.append(f"{tag}: a failing install logs {p.stderr.strip()!r}, want one line naming the failure")
+p, entries, pips, sleeps = venv_run(2)
+if p.returncode != 0 or entries != ["bin", "pyvenv.cfg"] or pips != 2 or sleeps != ["sleep 10"]: bad.append(f"{tag}: an install that works the second time: exit {p.returncode}, venv holds {entries}, pip ran {pips} times, sleeps {sleeps}")
+p, entries, pips, sleeps = venv_run(1)
+if p.returncode != 0 or entries != ["bin", "pyvenv.cfg"] or pips != 1 or sleeps: bad.append(f"files-venv, run as rendered, makes a fresh venv (nothing left from before): exit {p.returncode}, venv holds {entries}, pip {pips}, sleeps {sleeps}")
+# the files container's command with an empty venv: one line, then sleep (Ready, no crash loop); with a venv: the server
+tag = "an empty venv keeps files Ready"
+d = os.path.realpath(tempfile.mkdtemp()); venv, bind, nl, log = f"{d}/venv", f"{d}/bin", f"{d}/naila", f"{d}/log"
+for x_ in (venv, bind, f"{nl}/packages/files-sidecar"): os.makedirs(x_)
+open(log, "w").write("")
+open(f"{bind}/sleep", "w").write(f"#!/bin/sh\necho \"sleep $*\" >> {log}\n"); os.chmod(f"{bind}/sleep", 0o755)
+fc = ((ctr(prod, "files") or {}).get("command") or ["", "", "true"])[2].replace("/venv", venv).replace("/naila/", f"{nl}/")
+p = subprocess.run(["sh", "-c", fc], capture_output=True, text=True, env={"PATH": f"{bind}:{os.environ['PATH']}"}, timeout=20)
+if p.returncode != 0 or open(log).read().split("\n")[0] != "sleep infinity" or len(p.stderr.strip().splitlines()) != 1 or "no venv" not in p.stderr: bad.append(f"{tag}: with an empty venv the files command exits {p.returncode}, ran {open(log).read()!r}, logged {p.stderr.strip()!r}; want one line and sleep infinity")
+os.makedirs(f"{venv}/bin"); open(f"{venv}/bin/python", "w").write(f"#!/bin/sh\necho \"server $* in $(pwd)\" >> {log}\n"); os.chmod(f"{venv}/bin/python", 0o755)
+open(log, "w").write("")
+p = subprocess.run(["sh", "-c", fc], capture_output=True, text=True, env={"PATH": f"{bind}:{os.environ['PATH']}"}, timeout=20)
+if p.returncode != 0 or open(log).read().strip() != f"server -B server.py in {nl}/packages/files-sidecar" or p.stderr: bad.append(f"{tag}: with a venv the files command runs {open(log).read()!r}, logged {p.stderr.strip()!r}; want the server")
 shutil.rmtree(d)
 
 tag = "files mounts only uploads, the workspaces and finance subPaths and the desk; never the whole vault"
@@ -4668,6 +4699,44 @@ p = subprocess.run(["helm", "template", "helm/assistant", "-f", "helm/assistant/
 f = ctr(loads(p.stdout), "files") if p.returncode == 0 else None
 if not f or val(f, "FILES_ROOTS") != f"{UP}:/vault/Home/Workspace:/vault/Money/Notes:/desk" or [(m["mountPath"], m.get("subPath")) for m in f["volumeMounts"] if m["name"] == "vault"] != [("/vault/Home/Workspace", "My Vault/Home/Workspace"), ("/vault/Money/Notes", "My Vault/Money/Notes")]:
     bad.append(f"{tag}: a moved system and finance folder: {(val(f, 'FILES_ROOTS'), [m for m in f['volumeMounts'] if m['name'] == 'vault']) if f else p.stderr.strip()[-300:]}")
+
+# fix round 1 (C1): what the files sidecar makes on the desk must be readable by the core and docs (group 1000 through the
+# pod's fsGroup). desk.py sets its folders' modes exactly (0750, setgid cleared), so below the desk root every entry gets the
+# process's primary group: the rendered runAsGroup. Modelled here with naila's own desk.py: a setgid desk root of this
+# user's primary group stands for the fsGroup emptyDir, and the jobs run with that group as their primary group when the
+# render gives files the fsGroup, else (under sg) with another group of this user's
+tag = "every desk entry the files sidecar makes is readable by the harness group"
+DESK_PY = os.path.join(NW, "packages/files-sidecar/desk.py")
+if not (NW and os.path.isfile(DESK_PY)): print("NOTICE: NAILA_WORKTREE has no packages/files-sidecar/desk.py: the desk group check was not run")
+else:
+    import grp
+    psc_ = pod(prod)["securityContext"]
+    run_g = ((ctr(prod, "files") or {}).get("securityContext") or {}).get("runAsGroup")
+    others = [g for g in os.getgroups() if g != os.getgid()]
+    if run_g != psc_["fsGroup"] and not others: print("NOTICE: this user has no second group: the desk group check was not run")
+    else:
+        d = os.path.realpath(tempfile.mkdtemp()); desk_ = f"{d}/desk"; os.makedirs(desk_)
+        os.chmod(d, 0o755); os.chown(desk_, -1, os.getgid()); os.chmod(desk_, 0o2777)   # kubelet's fsGroup emptyDir
+        code = os.path.join(d, "jobs.py")
+        open(code, "w").write(
+            "import os, sys\nsys.path.insert(0, sys.argv[1])\nimport desk\n"
+            "for key in ('naila', '_test/naila'):\n"
+            "    j = desk.make_job_folder(sys.argv[2], key, '20261122-0901-1a2b-unzip')\n"
+            "    os.makedirs(os.path.join(j, 'sub'), 0o750)\n"
+            "    desk.write_counted(os.path.join(j, 'out.txt'), [b'x'], 100)\n"
+            "    desk.write_counted(os.path.join(j, 'sub', 'in.txt'), [b'x'], 100)\n")
+        py = f"python3 -I -B {code} {os.path.dirname(DESK_PY)} {desk_}"
+        run_ = py if run_g == psc_["fsGroup"] else f"sg {grp.getgrgid(others[0]).gr_name} -c {shlex.quote(py)}"
+        p = subprocess.run(["systemd-run", "--user", "--scope", "--quiet", "-p", "MemoryMax=2G", "-p", "MemorySwapMax=0", "nice", "-n", "19", "sh", "-c", run_], capture_output=True, text=True, timeout=120)
+        if p.returncode != 0: bad.append(f"{tag}: desk.py's jobs fail: {p.stderr.strip()[-300:]}")
+        else:
+            got = []
+            for top, dirs, files_ in os.walk(desk_):
+                for n_ in dirs + files_:
+                    st_ = os.lstat(os.path.join(top, n_)); got.append((os.path.relpath(os.path.join(top, n_), desk_), st_.st_gid, stat.S_IMODE(st_.st_mode)))
+            wrong = [(n_, g_, oct(m_)) for n_, g_, m_ in got if g_ != os.getgid() or m_ & 0o777 != (0o750 if os.path.isdir(os.path.join(desk_, n_)) else 0o640)]
+            if len(got) != 11 or wrong: bad.append(f"{tag}: with files running as group {run_g} (fsGroup {psc_['fsGroup']}), entries not of the desk's group or not 0750/0640: {wrong} (of {len(got)})")
+        shutil.rmtree(d)
 
 tag = "files-venv and files-tmp have sizeLimit 256Mi"
 for label, r, _, _ in PHASES:
@@ -4763,20 +4832,27 @@ for what, args, says in (("uid 1003", GW("tg", 1003), "harness.channels.tg.gatew
     if not fails(p := render(*args), says): bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()[-300:]!r}, want it to say {says!r}")
 if (p := render(*GW("tg", 1004))).returncode != 0: bad.append(f"{tag}: uid 1004 is free, but the render fails: {p.stderr.strip()[-300:]}")
 
-tag = "the files sidecar's probes, run as rendered, need its socket to accept"
+# fix round 1 (Minor 1): the probes look for the listening socket in /proc/net/unix (the pod's one network namespace) and never
+# connect, so a probe is never logged as a refused uid 1003; an empty venv (files-venv's install failed) passes them (I1)
+tag = "the files sidecar's probes, run as rendered, need its socket to listen, never connect, and pass with an empty venv"
 f = ctr(prod, "files") or {}
 rp, sp = f.get("readinessProbe") or {}, f.get("startupProbe") or {}
 if not rp or not sp or (rp.get("exec") or {}).get("command") != (sp.get("exec") or {}).get("command"): bad.append(f"{tag}: readiness {rp!r}, startup {sp!r}")
 else:
     pc = rp["exec"]["command"]
-    for listening, ok in ((True, True), (False, False), (None, False)):
-        d = os.path.realpath(tempfile.mkdtemp()); srv = None
-        if listening: srv = socket.socket(socket.AF_UNIX); srv.bind(f"{d}/files.sock"); srv.listen(1)
+    if "/proc/net/unix" not in " ".join(pc) or re.search(r"connect|socket\.socket|nc |socat", " ".join(pc)): bad.append(f"{tag}: the probe is {pc!r}, want a /proc/net/unix listener check that never connects")
+    for venv_ok, listening, ok in ((True, True, True), (True, False, False), (True, None, False), (False, False, True), (False, None, True)):
+        d = os.path.realpath(tempfile.mkdtemp()); srv = None; venv = f"{d}/venv"; os.makedirs(f"{venv}/bin")
+        if venv_ok: open(f"{venv}/bin/python", "w").write("#!/bin/sh\n"); os.chmod(f"{venv}/bin/python", 0o755)
+        if listening: srv = socket.socket(socket.AF_UNIX); srv.bind(f"{d}/files.sock"); srv.listen(1); srv.setblocking(False)
         elif listening is None: st_ = socket.socket(socket.AF_UNIX); st_.bind(f"{d}/files.sock"); st_.close()
-        cmd = [a.replace("/run/files-sock", d).replace("python -c", f"{sys.executable} -c") for a in pc]
+        cmd = [a.replace("/run/files-sock", d).replace("/venv", venv) for a in pc]
         rc = subprocess.run(cmd, capture_output=True, text=True, timeout=20).returncode
-        if srv: srv.close()
-        if (rc == 0) != ok: bad.append(f"{tag}: the probe {'fails' if ok else 'passes'} with the socket {'accepting' if listening else 'stale' if listening is None else 'absent'}")
+        if (rc == 0) != ok: bad.append(f"{tag}: the probe {'fails' if ok else 'passes'} with {'a venv' if venv_ok else 'an empty venv'} and the socket {'listening' if listening else 'stale' if listening is None else 'absent'}")
+        if srv:
+            try: srv.accept(); bad.append(f"{tag}: the probe connected to the socket")
+            except BlockingIOError: pass
+            srv.close()
 
 tag = "harness-start dies on a HARNESS_DESK_ROOT that is no plain absolute path"
 sl = prod[CMH]["data"]["harness-start.sh"].splitlines()

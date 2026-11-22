@@ -479,16 +479,18 @@ spec:
           resources: { requests: { cpu: 10m, memory: 32Mi }, limits: { memory: 128Mi } }   # a bare node start
         # The files sidecar's Python (file actions; Task 6 ruling I4): its pinned requirements (hashes required, wheels only)
         # into a fresh venv, here and not in the files container, which mounts it read-only: neither its server nor a job's
-        # child can change the code a later job runs. On the files container's image and uid (1003). A failed install (PyPI
-        # down) leaves the venv empty and lets the pod start: the core and the channels run, the files container crash-loops
-        # (ContainerRestarting) and every file action refuses until the pod restarts with PyPI back.
+        # child can change the code a later job runs. On the files container's image, uid (1003) and group (1000). It tries 3
+        # times, 10 s apart, each from an empty venv. When all three fail (PyPI down), it logs one line, leaves the venv empty
+        # and lets the pod start: the core, the channels and the login page run, the files container stays Ready without its
+        # server (below), and every file action refuses (no socket) until the pod restarts with PyPI back. A cleanup that
+        # fails exits non-zero, so kubelet runs this container again.
         - name: files-venv
           image: python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159
-          command: ["sh", "-c", "find /venv -mindepth 1 -delete && python -m venv /venv && /venv/bin/pip install -q --no-cache-dir --require-hashes --only-binary :all: -r /naila/packages/files-sidecar/requirements.txt || { echo 'files-venv: the install failed: the files sidecar will not start until the pod restarts' >&2; find /venv -mindepth 1 -delete; }"]
+          command: ["sh", "-c", "for i in 1 2 3; do find /venv -mindepth 1 -delete && python -m venv /venv && /venv/bin/pip install -q --no-cache-dir --require-hashes --only-binary :all: -r /naila/packages/files-sidecar/requirements.txt && exit 0; find /venv -mindepth 1 -delete || exit 1; [ $i = 3 ] || sleep 10; done; echo 'files-venv: the install failed 3 times, 10 s apart: the files sidecar is off (no venv) and every file action refuses until the pod restarts' >&2"]
           env:
             - { name: HOME, value: /tmp }
             - { name: PIP_DISABLE_PIP_VERSION_CHECK, value: "1" }
-          securityContext: { runAsUser: 1003, runAsGroup: 1003, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
+          securityContext: { runAsUser: 1003, runAsGroup: 1000, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
           volumeMounts:
             - { name: naila, mountPath: /naila, readOnly: true }
             - { name: files-venv, mountPath: /venv }
@@ -630,12 +632,16 @@ spec:
         # (FILES_SOCKET), answers only the core's uid (FILES_CLIENT_UID) holding the bearer in files-token, and sees only what a
         # file action may read (FILES_ROOTS, call 26): the uploads, this phase's workspaces and finance folders (each a read-only
         # subPath of the vault volume, never the whole vault) and the desk, the one folder it writes. Its venv is files-venv's
-        # (read-only), its root filesystem read-only, its uid 1003 its own (no other container's /proc). Its memory limit is a
+        # (read-only), its root filesystem read-only, its uid 1003 its own (no other container's /proc), its group 1000 as the
+        # gateways': desk.py sets its folders' modes exactly (setgid cleared), so what it makes takes its primary group, which
+        # must be the core's and docs' for them to read the desk. The probes look for its listening socket in /proc/net/unix
+        # (the pod's one network namespace) and never connect (the server would log the refused uid 1003). With no venv
+        # (files-venv's install failed) it logs one line and sleeps, Ready, so the pod stays in its Services. Its memory limit is a
         # job's address space plus 128 MiB (call 3: the low request makes a job child the kernel's first OOM victim, before
         # the core). Its sockets and the token are in RAM.
         - name: files
           image: python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159
-          command: ["sh", "-c", "cd /naila/packages/files-sidecar && exec /venv/bin/python -B server.py"]
+          command: ["sh", "-c", "[ -x /venv/bin/python ] || { echo 'files: no venv (files-venv could not install the requirements): file actions are off until the pod restarts' >&2; exec sleep infinity; }; cd /naila/packages/files-sidecar && exec /venv/bin/python -B server.py"]
           env:
             - { name: HOME, value: /tmp }
             - { name: FILES_SOCKET, value: /run/files-sock/files.sock }   # its only listener
@@ -644,9 +650,9 @@ spec:
             - { name: FILES_ROOTS, value: {{ $filesRoots | quote }} }
             - { name: FILES_CLIENT_UID, value: "1000" }   # the core's uid (the pod's runAsUser): the only peer it serves
             - { name: PIP_DISABLE_PIP_VERSION_CHECK, value: "1" }
-          startupProbe: { exec: { command: ["sh", "-c", "python -c \"import socket; s = socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect('/run/files-sock/files.sock')\""] }, periodSeconds: 10, failureThreshold: 30 }
-          readinessProbe: { exec: { command: ["sh", "-c", "python -c \"import socket; s = socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect('/run/files-sock/files.sock')\""] }, periodSeconds: 15 }
-          securityContext: { runAsUser: 1003, runAsGroup: 1003, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
+          startupProbe: { exec: { command: ["sh", "-c", "grep -q ' 00010000 .* /run/files-sock/files.sock$' /proc/net/unix || [ ! -x /venv/bin/python ]"] }, periodSeconds: 10, failureThreshold: 30 }
+          readinessProbe: { exec: { command: ["sh", "-c", "grep -q ' 00010000 .* /run/files-sock/files.sock$' /proc/net/unix || [ ! -x /venv/bin/python ]"] }, periodSeconds: 15 }
+          securityContext: { runAsUser: 1003, runAsGroup: 1000, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
           volumeMounts:
             - { name: naila, mountPath: /naila, readOnly: true }
             - { name: home, mountPath: /home/claude/.claude/uploads, subPath: .claude/uploads, readOnly: true }

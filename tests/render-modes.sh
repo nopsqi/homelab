@@ -465,7 +465,7 @@ for t in ("For anything on the web, ask the researcher. Never put the user's fig
           "(the researcher's refusals are handled below)", "a second request, even one sent side by side, is refused", "wait for the user's next message",
           "`undo_vault_change`, `workspace_delete`", "too deep", "`decision_status` shows `researched: true`",
           # final fix M5: a settled decision's line has no approval wording
-          '"⚠️ This plan was made after a web search."',
+          '"⚠️ This plan was made after the worker read web or forwarded text (a web search, or a history search that returned such text)."',
           # pure core phase 6 Task 13 (pre-flight M8): propose_place_change waits after a search too, and engine_info has places
           "File no `propose_capability_change`, `propose_brain_change` or `propose_place_change` in that message (the core refuses all three): offer them for the user's next message.",
           "answer from `engine_info(section)` (read-only; section workers, decisions, usage, channels, places or version)"):
@@ -482,7 +482,7 @@ for w in ("finance-bookkeeper", "finance-advisor", "ops-oncall"):
     k = f"harness-agent-{w}.md"
     s_ = new.get(k, "")
     for t in ("For web facts, ask Naila.", "without the user's figures or account numbers", "name the web facts you need in your answer", "⚠️", "`decision_status` shows `researched: true`",
-              '"⚠️ This plan was made after a web search."'):
+              '"⚠️ This plan was made after the worker read web or forwarded text (a web search, or a history search that returned such text)."'):
         if t not in s_: bad.append(f"{tag}: {k} lacks {t!r}")
     for t in ("WebSearch", "WebFetch", "such as the web or files"):
         if t in s_: bad.append(f"{tag}: {k} names {t!r}")
@@ -4554,6 +4554,10 @@ def setup_guard(lines):
     j = next((n for n in range(i, len(lines)) if lines[n].startswith("})().catch(") and '"$SETUP_JS"' in lines[n]), None) if i is not None else None
     return range(i, j + 1) if j is not None else range(0)
 def without_standing(t):
+    # plan 7b final fix I2: the researched lines the workers quote say "read web or forwarded text", not "a web search"
+    for new_, old_ in (("⚠️ This plan was made after the worker read web or forwarded text (a web search, or a history search that returned such text); check it before approving.", "⚠️ This plan was made after a web search; check it before approving."),
+                       ("⚠️ This plan was made after the worker read web or forwarded text (a web search, or a history search that returned such text).", "⚠️ This plan was made after a web search."),
+                       ("For a decision filed after a worker read web or forwarded text,", "For a decision filed after a web search,")): t = t.replace(new_, old_)
     ls = t.split("\n")
     i = next((n for n, l in enumerate(ls) if l.removeprefix("- ").startswith(STANDING_HEAD)), None)
     if i is None: return t
@@ -5294,6 +5298,10 @@ def start_gaps(a, b, roles):
 COMMENT = ("(decision_status, propose_capability_change, the self_note tools, the standing tools and history_search)", "(decision_status, propose_capability_change and the self_note tools)")
 def without_standing(t):
     """`t` without its standing-fact paragraph (and the blank line before it, outside naila's bullets)."""
+    # plan 7b final fix I2: the researched lines the workers quote say "read web or forwarded text", not "a web search"
+    for new_, old_ in (("⚠️ This plan was made after the worker read web or forwarded text (a web search, or a history search that returned such text); check it before approving.", "⚠️ This plan was made after a web search; check it before approving."),
+                       ("⚠️ This plan was made after the worker read web or forwarded text (a web search, or a history search that returned such text).", "⚠️ This plan was made after a web search."),
+                       ("For a decision filed after a worker read web or forwarded text,", "For a decision filed after a web search,")): t = t.replace(new_, old_)
     ls = t.split("\n")
     i = standing_at(ls)
     if i is None: return t

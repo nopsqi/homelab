@@ -480,13 +480,14 @@ spec:
         # The files sidecar's Python (file actions; Task 6 ruling I4): its pinned requirements (hashes required, wheels only)
         # into a fresh venv, here and not in the files container, which mounts it read-only: neither its server nor a job's
         # child can change the code a later job runs. On the files container's image, uid (1003) and group (1000). It tries 3
-        # times, 10 s apart, each from an empty venv. When all three fail (PyPI down), it logs one line, leaves the venv empty
+        # times, 10 s apart, each from an empty venv, each pip call bounded (--timeout 10 --retries 1: a PyPI that never
+        # answers holds the pod's start about a minute, not five). When all three fail (PyPI down), it logs one line, leaves the venv empty
         # and lets the pod start: the core, the channels and the login page run, the files container stays Ready without its
         # server (below), and every file action refuses (no socket) until the pod restarts with PyPI back. A cleanup that
         # fails exits non-zero, so kubelet runs this container again.
         - name: files-venv
           image: python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159
-          command: ["sh", "-c", "for i in 1 2 3; do find /venv -mindepth 1 -delete && python -m venv /venv && /venv/bin/pip install -q --no-cache-dir --require-hashes --only-binary :all: -r /naila/packages/files-sidecar/requirements.txt && exit 0; find /venv -mindepth 1 -delete || exit 1; [ $i = 3 ] || sleep 10; done; echo 'files-venv: the install failed 3 times, 10 s apart: the files sidecar is off (no venv) and every file action refuses until the pod restarts' >&2"]
+          command: ["sh", "-c", "for i in 1 2 3; do find /venv -mindepth 1 -delete && python -m venv /venv && /venv/bin/pip install -q --no-cache-dir --timeout 10 --retries 1 --require-hashes --only-binary :all: -r /naila/packages/files-sidecar/requirements.txt && exit 0; find /venv -mindepth 1 -delete || exit 1; [ $i = 3 ] || sleep 10; done; echo 'files-venv: the install failed 3 times, 10 s apart: the files sidecar is off (no venv) and every file action refuses until the pod restarts' >&2"]
           env:
             - { name: HOME, value: /tmp }
             - { name: PIP_DISABLE_PIP_VERSION_CHECK, value: "1" }

@@ -4544,7 +4544,8 @@ PY
 # File actions Task 17 (setup spec 4): the files sidecar with its desk, the files settings, and the roles' file actions:
 #  - the files container: the docs container's python:3.12-slim digest, uid and gid 1003 (its own: no other container's
 #    /proc), a read-only root filesystem, its venv files-venv's (an init container on the same image and uid installs the
-#    pinned requirements with --require-hashes --only-binary :all:; files mounts it read-only, so neither its server nor a
+#    pinned requirements with --require-hashes --only-binary :all:, each try bounded by --timeout 10 --retries 1 so a PyPI
+#    that never answers delays the pod's start by about a minute, not five; files mounts it read-only, so neither its server nor a
 #    job's child can change the code a later job runs: Task 6 ruling I4), no pip at its own start; FILES_SOCKET, FILES_TOKEN_FILE,
 #    FILES_DESK=/desk, FILES_CLIENT_UID the core's uid (1000) and FILES_ROOTS exactly the uploads, this phase's workspaces and
 #    finance folders and the desk; its probes, run as rendered, need the socket to accept; requests 128Mi and a memory limit
@@ -4554,8 +4555,8 @@ PY
 #    (read-only), files-sock and the desk; files-venv and files-tmp have sizeLimit 256Mi;
 #  - the desk (files-desk, an emptyDir of sizeLimit 2Gi) is mounted rw only by files, read-only by harness (HARNESS_DESK_ROOT)
 #    and docs (DOCS_ROOTS ends :/desk), by no other container; desk.totalQuotaMiB plus the largest job output cap (call 28:
-#    image.maxOutMiB, 3 x csv.maxMiB, workspace.maxFileMiB, zip.maxInMiB + 1, unzip.maxUnpackedMiB) stays under 2048, at the
-#    chart's values and at rules.json's ceilings;
+#    image.maxOutMiB, 4 x csv.maxMiB (the core's jobOutMiB), workspace.maxFileMiB, zip.maxInMiB + 1, unzip.maxUnpackedMiB)
+#    stays under 2048, at the chart's values and at rules.json's ceilings, and values.yaml's csv.maxMiB comment says 4 times;
 #  - the render fails on a files setting that is missing, no number (no boolean for image.keepExif), on a gateway taking uid
 #    1003 (or 0, 1000, 1001) or the name files, files-venv or sidecar-tokens; values above a ceiling (desk.ttlHours 73,
 #    jobs.memoryMiB 901) render, and the built image's parseSetup refuses them; the harness checksum follows harness.files;
@@ -4620,7 +4621,7 @@ for label, r, root, sub in PHASES:
     if f["image"] != DOCS_IMAGE or fv["image"] != DOCS_IMAGE or "@sha256:" not in DOCS_IMAGE: bad.append(f"{tag}: images {f['image']!r} and {fv['image']!r}, want the docs container's digest {DOCS_IMAGE!r} ({label})")
     if f.get("command") != ["sh", "-c", FILES_CMD]: bad.append(f"{tag}: its command is {f.get('command')!r} ({label})")
     c = (fv.get("command") or ["", "", ""])[2]
-    if "/venv/bin/pip install -q --no-cache-dir --require-hashes --only-binary :all: -r /naila/packages/files-sidecar/requirements.txt" not in c or "python -m venv /venv" not in c: bad.append(f"files-venv installs the pinned requirements by hash, wheels only: its command is {c!r} ({label})")
+    if "/venv/bin/pip install -q --no-cache-dir --timeout 10 --retries 1 --require-hashes --only-binary :all: -r /naila/packages/files-sidecar/requirements.txt" not in c or "python -m venv /venv" not in c: bad.append(f"files-venv installs the pinned requirements by hash, wheels only, each try bounded (--timeout 10 --retries 1): its command is {c!r} ({label})")
     if (fv.get("securityContext") or {}) != {"runAsUser": 1003, "runAsGroup": 1000, "allowPrivilegeEscalation": False, "capabilities": {"drop": ["ALL"]}, "readOnlyRootFilesystem": True}: bad.append(f"files-venv runs as files' uid with a read-only root: {fv.get('securityContext')!r} ({label})")
     if fv.get("volumeMounts") != [{"name": "naila", "mountPath": "/naila", "readOnly": True}, {"name": "files-venv", "mountPath": "/venv"}, {"name": "files-tmp", "mountPath": "/tmp"}]: bad.append(f"files-venv mounts {fv.get('volumeMounts')!r} ({label})")
     names = [x["name"] for x in pod(r).get("initContainers", [])]
@@ -4758,7 +4759,7 @@ for label, r, root, _ in PHASES:
     if not (val(ctr(r, "docs"), "DOCS_ROOTS") or "").endswith(":/desk") or val(ctr(r, "docs"), "DOCS_ROOTS") != f"{UP}:{root}:/desk": bad.append(f"{tag}: it is {val(ctr(r, 'docs'), 'DOCS_ROOTS')!r} ({label})")
 
 tag = "desk.totalQuotaMiB + the largest job output cap < 2048"
-def job_cap(f): return max(f["image"]["maxOutMiB"], 3 * f["csv"]["maxMiB"], f["workspace"]["maxFileMiB"], f["zip"]["maxInMiB"] + 1, f["unzip"]["maxUnpackedMiB"])
+def job_cap(f): return max(f["image"]["maxOutMiB"], 4 * f["csv"]["maxMiB"], f["workspace"]["maxFileMiB"], f["zip"]["maxInMiB"] + 1, f["unzip"]["maxUnpackedMiB"])
 for label, r in (("prod", prod), ("staging (harness on)", staging_on)):
     f = json.loads(r[CMH]["data"]["harness-setup.json"]).get("files")
     if not f: bad.append(f"{tag}: the {label} setup has no files settings"); continue
@@ -4767,6 +4768,9 @@ RULES_F = os.path.join(NW, "packages/files-sidecar/rules.json")
 if NW and os.path.isfile(RULES_F):
     ceil = json.load(open(RULES_F))["ceilings"]
     if not ceil["desk"]["totalQuotaMiB"] + job_cap(ceil) < 2048: bad.append(f"{tag}: at rules.json's ceilings, {ceil['desk']['totalQuotaMiB']} + {job_cap(ceil)}")
+    # the csv output factor the comment names is the core's (contract.ts jobOutMiB: 4 x csv.maxMiB)
+    if not re.search(r"\n      maxMiB: \d+ +# ceiling \d+: one CSV file \(the job's output cap is 4 times this\)\n", open("helm/assistant/values.yaml").read()):
+        bad.append(f"{tag}: values.yaml's csv.maxMiB comment does not say the job's output cap is 4 times it")
     # each values.yaml files comment names its rules.json ceiling, word for word
     src = open("helm/assistant/values.yaml").read()
     blk = src[src.index("\n  files:\n"):src.index("\n  # The roles config")] if "\n  files:\n" in src else ""

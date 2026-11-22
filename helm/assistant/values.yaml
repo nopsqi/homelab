@@ -48,7 +48,7 @@ harness:
       # retainMs: <ms>                    # optional: drop its unacked posts older than this (a channel nobody polls between runs)
       secretKey: GATEWAY_DISCORD_SECRET   # key in assistant-harness-secret: the gateway's and the core's shared secret
       gateway:                            # absent: no container (a channel served from outside the pod, such as the tests')
-        uid: 1002                         # its own uid (group 1000), never 0, 1000 (the core, login), 1001 (docs) or another gateway's
+        uid: 1002                         # its own uid (group 1000), never 0, 1000 (the core, login), 1001 (docs), 1003 (files) or another gateway's
         # Plain env; "" leaves a variable out. Ids are not secret; quoted, they're too large for a YAML number.
         # DISCORD_OWNER_ID: the only user whose messages and confirmations count. Its channels are harness.places (pure-core
         # phase 6): the gateway routes each conversation by the places the core's directory gives it, so no env names a channel
@@ -224,7 +224,7 @@ harness:
       maxOutMiB: 100        # ceiling 100: one converted image (the job's output cap)
       keepExif: false       # true or false: keep the camera data (never the location) in a converted photo
     csv:
-      maxMiB: 25            # ceiling 25: one CSV file (the job's output cap is 3 times this)
+      maxMiB: 25            # ceiling 25: one CSV file (the job's output cap is 4 times this)
       maxRows: 200000       # ceiling 200000: its rows
       maxColumns: 200       # ceiling 200: its columns
       maxCellKiB: 32        # ceiling 32: one cell

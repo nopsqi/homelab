@@ -185,7 +185,7 @@ harness:
   providerSettings:
     claude-subscription:
       resume: { roles: [naila, finance-bookkeeper, finance-advisor, ops-oncall], maxInputTokens: 100000, maxIdleMinutes: 55 }
-  # The roles config (naila packages/harness/src/workers-spec.ts, ROLES_SPEC_VERSION 4): templates/harness.yaml renders it as
+  # The roles config (naila packages/harness/src/workers-spec.ts, ROLES_SPEC_VERSION 5): templates/harness.yaml renders it as
   # harness-workers.json beside each role's instructions (/config), the core installs its roles from it at start (in this
   # order, the lead first), and the claude-code adapter's prepare.js writes the agent files from it. `roles` is an ordered
   # list: each role's `id` (immutable once rows are written under it), `lead: true` on exactly one (listed first), `lifecycle`
@@ -265,8 +265,11 @@ harness:
         ceiling: tools
         servers: []
     retired: []
+    # The summary run (spec 5, plan 7b): its brain, and maxChars, the trigger (a history's unsummarised text past this many
+    # characters is summarised). The render fails on a maxChars that is no number; the core checks its range at start.
     summary:
       brain: { provider: claude-subscription, model: default }
+      maxChars: 60000          # the summary trigger, moved from naila's code (plan 7b), unchanged
 ops:
   enabled: false           # on-call tool server (cluster-mcp over HTTP, read-only ServiceAccount); the `ops` subagent calls it
   # Namespaces whose pod logs ops may read. Never: assistant (Naila's terminal), sealed-secrets, argocd, kube-system.

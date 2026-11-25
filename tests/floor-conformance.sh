@@ -12,7 +12,7 @@
 #    (F14); a path under ~/.claude stays the literal /home/claude/.claude;
 #  - it pipes the Claude Code hook input {tool_name, tool_input, cwd} (cwd: T/work/<role>, also the hook's own) into the hook, with
 #    the env the core gives the run: naila's hookEnv (packages/harness/dist/floor/hook-env.js, its roster installed from the
-#    cases' own role fixtures, cases.json `roles`: a roles spec v4 with the roles chief, ledger, planner, watch and scout; and,
+#    cases' own role fixtures, cases.json `roles`: a roles spec v5 with the roles chief, ledger, planner, watch and scout; and,
 #    since pure-core phase 4, the setup the chart renders for production installed from the prod render's
 #    harness-setup.json (helm template, values.yaml + values.prod.yaml: naila's parseSetup with the job requests beside it,
 #    then installSetup; the core's policy reads the profile's paths); build naila first) for the case's role (run.role), switches, origin and asked flag in the case's tree and phase (HARNESS_CAPS,
@@ -126,7 +126,7 @@ const { parseWorkerSpecs } = await import(join(dist, 'workers-spec.js'))
 const { hookEnv } = await import(join(dist, 'floor/hook-env.js'))
 const { CAPABILITY_IDS } = await import(join(dist, 'capabilities.js'))
 if (typeof hookEnv !== 'function') { bad(`naila's built ${dist}/floor/hook-env.js has no hookEnv: build naila first (npm run build)`); process.exit(1) }
-// the cases' own role fixtures (cases.json `roles`, a roles spec v4), as naila's floor-conformance.test.ts installs them
+// the cases' own role fixtures (cases.json `roles`, a roles spec v5), as naila's floor-conformance.test.ts installs them
 if (!roles || !Array.isArray(roles.roles)) { bad(`${casesFile} has no role fixtures (roles): naila predates pure-core phase 2`); process.exit(1) }
 installRoster(rosterFrom(parseWorkerSpecs(JSON.stringify(roles), () => '')))
 // pure-core phase 4: the core's policy (hookEnv -> compile, policy) reads the installed profile; the one the chart renders

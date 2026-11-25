@@ -2,8 +2,8 @@
 {{- define "assistant.harnessModeFiles" -}}
 {{- range $p, $_ := .Files.Glob "files/modes/harness/**" }}{{ $.Files.Get $p }}{{ end }}
 {{- end }}
-{{- /* The roles config (harness.roleSpec; naila packages/harness/src/workers-spec.ts, ROLES_SPEC_VERSION 4) as
-       harness-workers.json for harness.phase: {"version":4,"roles":[…],"retired":[…],"summary":…}, the roles in values
+{{- /* The roles config (harness.roleSpec; naila packages/harness/src/workers-spec.ts, ROLES_SPEC_VERSION 5) as
+       harness-workers.json for harness.phase: {"version":5,"roles":[…],"retired":[…],"summary":{"brain":…,"maxChars":…}}, the roles in values
        order, each role's `lifecycle` (permanent or temporary), its `hireable` when set, and its `paths` (its path grants)
        when it has them. One source per value: a role's model is its workers[].model, its description its files/agents/<id>.md
        frontmatter's, its ceiling files/modes/harness/<id>.<ceiling>.md split on ", ". The markers __FINANCE_HOST__ and
@@ -15,7 +15,8 @@
        the body. Fails the render on what the core would refuse at start: a duplicate id, no lead or two, a lead not listed
        first, a retired id that roles also lists, an unresolved marker, a server holding a $, a lifecycle other than
        permanent or temporary, a hireable on a permanent role or not a boolean on a temporary one, a temporary lead (the rule
-       that a quarantined role is temporary is left to the core: tests/render-modes.sh runs it). A temporary role is hired for
+       that a quarantined role is temporary is left to the core: tests/render-modes.sh runs it), and a summary.maxChars
+       that is no number (plan 7b: the summary trigger; its range is the core's to check). A temporary role is hired for
        one job by the lead, so it has no RC line (workers[]) and no Git place (an entry of harness.places, pure-core phase 6):
        either fails the render. Two chart-only checks besides:
        a server holding a write credential of any service harness.services lists, enabled or not (P11: a disabled service's
@@ -108,7 +109,10 @@
 {{- end }}
 {{- $roles = append $roles $x }}
 {{- end }}
-{{- $json := printf "{\"version\":4,\"roles\":%s,\"retired\":%s,\"summary\":%s}" (toJson $roles) (toJson $retired) (toJson $h.roleSpec.summary) | replace "__FINANCE_HOST__" $finance | replace "__VAULT_ROOT__" $vaultRoot | replace "__FINANCE_FOLDER__" (toString $paths.finance) }}
+{{- $summary := $h.roleSpec.summary }}
+{{- if not (kindIs "map" $summary) }}{{ fail "harness.roleSpec.summary.maxChars must be a number" }}{{ end }}
+{{- if not (has (kindOf (index $summary "maxChars")) (list "float64" "int64" "int")) }}{{ fail "harness.roleSpec.summary.maxChars must be a number" }}{{ end }}
+{{- $json := printf "{\"version\":5,\"roles\":%s,\"retired\":%s,\"summary\":%s}" (toJson $roles) (toJson $retired) (toJson $summary) | replace "__FINANCE_HOST__" $finance | replace "__VAULT_ROOT__" $vaultRoot | replace "__FINANCE_FOLDER__" (toString $paths.finance) }}
 {{- with regexFind "__[A-Z_]+__" $json }}{{ fail (printf "harness.roleSpec: the marker %s is not resolved" .) }}{{ end }}
 {{- $json }}
 {{- end }}

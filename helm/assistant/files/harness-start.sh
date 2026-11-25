@@ -22,12 +22,23 @@ case "${HARNESS_PHASE:-}" in test|real) ;; *) die "HARNESS_PHASE must be test or
 # The worker spec (chart) and the claude-code adapter that writes the agent files from it (image) come together: roll back both.
 [ -f "$PREPARE" ] || die "$PREPARE is missing: this naila image predates the worker spec"
 [ -f /config/harness-workers.json ] || die "/config/harness-workers.json is missing: this chart predates the worker spec"
-# The roles config (harness-workers.json version 4, pure-core phase 5: every role permanent or temporary, a temporary one
-# hired by the lead for one job and released, `hireable` on a temporary role) and the image that reads it come together: an
-# image whose ROLES_SPEC_VERSION is not 4 would refuse it at start, or misread it (a phase 5 image refuses a version 3 spec
-# in turn). The roles' instructions files are the spec's to name: prepare.js refuses one that is missing.
+# The roles config (harness-workers.json version 5, plan 7b: the summary's trigger, summary.maxChars, beside its brain; since
+# pure-core phase 5 every role permanent or temporary, a temporary one hired by the lead for one job and released, `hireable`
+# on a temporary role) and the image that reads it come together. An image without workers-spec.js, or whose
+# ROLES_SPEC_VERSION is below 5 or no number, predates the chart (the import error printed first): it would refuse the spec
+# at start, or misread it. One whose ROLES_SPEC_VERSION is above 5 is newer than the chart, and says so (the image refuses an
+# older chart's spec in turn, naming the chart). Each fails the start. The roles' instructions files are the spec's to name:
+# prepare.js refuses one that is missing.
 SPEC_JS=/naila/packages/harness/dist/workers-spec.js
-node -e 'import(process.argv[1]).then((m) => process.exit(m.ROLES_SPEC_VERSION === 4 ? 0 : 1), (e) => { console.error(String(e?.message ?? e)); process.exit(1) })' "$SPEC_JS" || die "this naila image predates pure-core phase 5 (roles spec 4): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+node -e '
+const fail = (m) => { console.error(`harness-start: ${m}`); process.exit(2) }
+const old = "this naila image predates plan 7b (roles spec 5: the summary size): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+import(process.argv[1]).then((m) => {
+if (m.ROLES_SPEC_VERSION === 5) return
+const v = m.ROLES_SPEC_VERSION
+if (Number.isInteger(v) && v > 5) fail(`this naila image is newer than this chart (roles spec ${v}): deploy the chart that ships with it`)
+fail(old)
+}, (e) => fail(`cannot load ${process.argv[1]}: ${e?.message ?? e}: ${old}`))' "$SPEC_JS"
 # PAIRING: the image's services
 # Pure-core phase 3 (services as plug-ins): the services this chart enables (HARNESS_SERVICES: {"version":1,"services":{"<id>":
 # {"writeCredentials":[…]}}}) and the image that declares them (dist/services/registry.js) come together. An image without

@@ -149,13 +149,13 @@
 {{- $specs := list }}
 {{- $entries := list }}
 {{- $keys := list }}
-{{- $uids := list 0 1000 1001 }}   {{- /* root, the core and login, docs: a shared process namespace opens /proc to the same uid */}}
+{{- $uids := list 0 1000 1001 1003 }}   {{- /* root, the core and login, docs, the files sidecar: a shared process namespace opens /proc to the same uid */}}
 {{- range $name, $c := $h.channels }}
 {{- $at := printf "harness.channels.%s" $name }}
 {{- if and $c (not (kindIs "bool" $c.enabled)) }}{{ fail (printf "%s.enabled must be true or false" $at) }}{{ end }}
 {{- if and $c $c.enabled }}
 {{- if not (regexMatch "^[a-z][a-z0-9-]{0,31}$" $name) }}{{ fail (printf "%s: the name must match ^[a-z][a-z0-9-]{0,31}$" $at) }}{{ end }}
-{{- if has $name (list "harness" "docs" "login" "naila-tools") }}{{ fail (printf "%s: %s is already a container of the harness pod" $at $name) }}{{ end }}
+{{- if has $name (list "harness" "docs" "login" "naila-tools" "files" "files-venv" "sidecar-tokens") }}{{ fail (printf "%s: %s is already a container of the harness pod" $at $name) }}{{ end }}
 {{- if not $c.secretKey }}{{ fail (printf "%s.secretKey is missing (the channel's key in assistant-harness-secret)" $at) }}{{ end }}
 {{- if eq (toString $c.secretKey) "CORE_TOOLS_SECRET" }}{{ fail (printf "%s.secretKey may not be CORE_TOOLS_SECRET" $at) }}{{ end }}
 {{- if has (toString $c.secretKey) $keys }}{{ fail (printf "%s.secretKey %s is another channel's: each channel needs its own" $at (toString $c.secretKey)) }}{{ end }}
@@ -180,7 +180,7 @@
 {{- with $c.gateway }}
 {{- if not (regexMatch "^[0-9]+$" (toString .uid)) }}{{ fail (printf "%s.gateway.uid must be a number" $at) }}{{ end }}
 {{- $uid := int .uid }}
-{{- if has $uid $uids }}{{ fail (printf "%s.gateway.uid %d is taken (root, the core, docs or another gateway)" $at $uid) }}{{ end }}
+{{- if has $uid $uids }}{{ fail (printf "%s.gateway.uid %d is taken (root, the core, docs, the files sidecar or another gateway)" $at $uid) }}{{ end }}
 {{- $uids = append $uids $uid }}
 {{- if hasKey . "uploads" }}{{ fail (printf "%s.gateway.uploads is gone: the core owns uploads (Task 13), so no gateway mounts anything; drop the key" $at) }}{{ end }}
 {{- /* Pure-core phase 6: a channel's places are harness.places, so DISCORD_CHANNELS, its old name:id list, may not come back */}}
@@ -219,9 +219,10 @@
 {{- $gws = append $gws $ch.name }}
 {{- end }}{{ end }}
 {{- /* The owner's profile and the schedules (pure-core phase 4; naila packages/harness/src/setup.ts and schedules-file.ts),
-       the Git base of places (setup spec 2, pure-core phase 6; places-config.ts), and the budgets and the provider settings
-       (setup spec 3, plan 7a; economy-config.ts) as harness-setup.json:
-       {"version":3,"profile":{"timeZone":<tz>,…},"schedules":{"jobs":[…]},"places":[…],"budgets":{…},"providerSettings":{…}},
+       the Git base of places (setup spec 2, pure-core phase 6; places-config.ts), the budgets and the provider settings
+       (setup spec 3, plan 7a; economy-config.ts) and the files settings (setup spec 4, file actions; files/config.ts) as
+       harness-setup.json:
+       {"version":4,"profile":{"timeZone":<tz>,…},"schedules":{"jobs":[…]},"places":[…],"budgets":{…},"providerSettings":{…},"files":{…}},
        the profile's time zone the top-level tz (one source with TZ), the jobs in values order, each without its chart-only
        `uses`, and a job's request text (files/schedules/<id>.txt) the key harness-job-<id>.txt beside it (the budgets and the
        provider settings are rendered and checked after the roles spec, below). The chart checks only what it uses itself or
@@ -349,7 +350,38 @@
 {{- range $st.resume.roles }}{{ if not (has (toString .) $permanent) }}{{ fail (printf "harness.providerSettings.%s.resume.roles names %s, which is no permanent role of harness.roleSpec" $p (toString .)) }}{{ end }}{{ end }}
 {{- end }}{{ end }}
 {{- end }}
-{{- $setupJson := printf "{\"version\":3,\"profile\":%s,\"schedules\":{\"jobs\":%s},\"places\":%s,\"budgets\":%s,\"providerSettings\":%s}" (toJson $prof) (toJson $jobs) (toJson $placeList) (toJson $budgets) (toJson $psettings) }}
+{{- /* The files settings (harness.files; file actions, setup spec 4), rendered as the values hold them. The chart checks what
+       it uses itself: every key the image's FILES_SETTINGS_KEYS names is present, a number (image.keepExif true or false;
+       types.remove only present): jobs.memoryMiB sizes the files container's memory limit, the desk's quota and the jobs'
+       output caps its emptyDir. The core refuses the rest at start (ranges under rules.json's ceilings, types.remove's types;
+       render-modes runs its parseSetup on the render). */ -}}
+{{- $filesKeys := dict "desk" (list "ttlHours" "workerQuotaMiB" "totalQuotaMiB") "jobs" (list "memoryMiB" "cpuSeconds" "wallSeconds" "queueSeconds") "unzip" (list "maxZipMiB" "maxEntries" "maxUnpackedMiB" "maxEntryMiB" "maxRatio" "maxDepth" "maxLevels") "zip" (list "maxEntries" "maxInMiB") "image" (list "maxPixels" "previewSide" "maxOutMiB" "keepExif") "csv" (list "maxMiB" "maxRows" "maxColumns" "maxCellKiB" "rowsShown" "maxShownCellChars" "maxGroups") "workspace" (list "quotaMiB" "maxFileMiB" "maxCopyFiles" "maxCopyMiB") "outfiles" (list "totalQuotaMiB" "maxPerAnswer" "keepDays") "types" (list "remove") }}
+{{- $files := $h.files }}
+{{- if not (kindIs "map" $files) }}{{ fail "harness.files is missing" }}{{ end }}
+{{- range $g := keys $filesKeys | sortAlpha }}
+{{- $e := index $files $g }}
+{{- if not (kindIs "map" $e) }}{{ fail (printf "harness.files.%s is missing" $g) }}{{ end }}
+{{- range $k := index $filesKeys $g }}
+{{- $at := printf "harness.files.%s.%s" $g $k }}
+{{- if not (hasKey $e $k) }}{{ fail (printf "%s is missing" $at) }}{{ end }}
+{{- $v := index $e $k }}
+{{- if eq $at "harness.files.image.keepExif" }}{{ if not (kindIs "bool" $v) }}{{ fail (printf "%s must be true or false" $at) }}{{ end }}
+{{- else if ne $at "harness.files.types.remove" }}{{ if not (has (kindOf $v) $isNumber) }}{{ fail (printf "%s must be a number" $at) }}{{ end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- $setupJson := printf "{\"version\":4,\"profile\":%s,\"schedules\":{\"jobs\":%s},\"places\":%s,\"budgets\":%s,\"providerSettings\":%s,\"files\":%s}" (toJson $prof) (toJson $jobs) (toJson $placeList) (toJson $budgets) (toJson $psettings) (toJson $files) }}
+{{- /* The desk and the files sidecar's view of the vault (file actions, call 26): the desk is the files-desk emptyDir at
+       /desk (HARNESS_DESK_ROOT, FILES_DESK); the files container mounts, read-only, only the workspaces folder (vault-mcp
+       layout.ts: <profile.paths.system>/Workspace) and the finance folder (profile.paths.finance) of this phase's vault, each
+       as a subPath of the vault volume (under $vaultSub when set), never the whole vault. The memory limit follows a job's
+       address space: harness.files.jobs.memoryMiB + 128 MiB (call 3). */ -}}
+{{- $desk := "/desk" }}
+{{- $workspacesDir := printf "%s/Workspace" (toString $paths.system) }}
+{{- $financeDir := toString $paths.finance }}
+{{- $filesSub := dict "workspaces" (ternary (printf "%s/%s" $vaultSub $workspacesDir) $workspacesDir (ne $vaultSub "")) "finance" (ternary (printf "%s/%s" $vaultSub $financeDir) $financeDir (ne $vaultSub "")) }}
+{{- $filesRoots := printf "%s:%s/%s:%s/%s:%s" $up $vaultRoot $workspacesDir $vaultRoot $financeDir $desk }}
+{{- $filesLimit := printf "%dMi" (add (int $files.jobs.memoryMiB) 128) }}
 # Harness mode as its own pod: the core (packages/harness) runs each worker as a one-shot Claude Code run with this pod's
 # own Max login (naila.nopsqi.dev/harness), each channel's gateway (harness.channels) carries the user's messages and
 # confirmations, and the core alone carries out an approved decision. The RC pod (assistant-claude) is not touched.
@@ -422,24 +454,49 @@ spec:
             - { name: naila, mountPath: /naila }
             - { name: home, mountPath: /home/claude }
           resources: { requests: { cpu: 10m, memory: 32Mi }, limits: { memory: 256Mi } }
-        # The docs folders (Rulings 19, 21, 22): two in-memory emptyDirs mounted only by the core and docs. docs-sock: docs
-        # listens there on a Unix socket (docs.sock, 0660), never on a TCP port of the pod's shared 127.0.0.1, which a gateway
-        # facing the internet could bind first; docs alone may write it, the core connects through a read-only mount. docs-token:
-        # docs answers only `Authorization: Bearer <token>` with the token this container writes there, read-only to both docs
-        # and the core (so docs can't swap it for a link the core would then read): a fresh one at every pod start, 32 bytes from
-        # /dev/urandom as exactly 64 hex characters, mode 0440, uid and group 1000; the core and its relay read it O_NOFOLLOW and
-        # only as such a file of uid 1000. Every container of the pod is in group 1000 (fsGroup), the gateways too: what keeps
-        # them out is that they mount neither folder, and that their own uids keep /proc/<pid>/root of the core and docs closed. The runs reach docs through
-        # the core's stdio relay (naila docs-relay.js), which reads the token itself. No Secret and nothing in git; nothing prints it.
-        # A short read fails this container, and the pod with it, rather than leave a weak token. A rerun (the pod's sandbox
-        # recreated, the emptyDir kept) replaces the read-only file of the run before. node, not busybox's od: no doubt about
-        # which applets and flags the image's busybox has.
-        - name: docs-token
+        # The sidecars' folders (Rulings 19, 21, 22; file actions): two in-memory emptyDirs per sidecar, mounted only by the core
+        # and that sidecar. docs-sock and files-sock: the sidecar listens there on a Unix socket (0660), never on a TCP port of
+        # the pod's shared 127.0.0.1, which a gateway facing the internet could bind first; the sidecar alone may write it, the
+        # core connects through a read-only mount (the files sidecar also serves only the core's uid, FILES_CLIENT_UID).
+        # docs-token and files-token: the sidecar answers only `Authorization: Bearer <token>` with the token this container
+        # writes there, read-only to both the sidecar and the core (so the sidecar can't swap it for a link the core would then
+        # read): a fresh one at every pod start, 32 bytes from /dev/urandom as exactly 64 hex characters, mode 0440, uid and
+        # group 1000; the core and its relay read it O_NOFOLLOW and only as such a file of uid 1000. The two tokens are read
+        # separately, never shared: one value would let either sidecar's bearer open the other. Every container of the pod is in
+        # group 1000 (fsGroup), the gateways too: what keeps them out is that they mount none of these folders, and that their
+        # own uids keep /proc/<pid>/root of the core and the sidecars closed. The runs reach docs through the core's stdio relay
+        # (naila docs-relay.js), which reads the token itself, and the files sidecar only through the core's file actions. No
+        # Secret and nothing in git; nothing prints them. A short read fails this container, and the pod with it, rather than
+        # leave a weak token. A rerun (the pod's sandbox recreated, the emptyDirs kept) replaces the read-only files of the run
+        # before. node, not busybox's od: no doubt about which applets and flags the image's busybox has.
+        - name: sidecar-tokens
           image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
-          command: ["node", "-e", "const fs = require('fs'), f = '/run/docs-token/token', b = Buffer.alloc(32), fd = fs.openSync('/dev/urandom', 'r'); if (fs.readSync(fd, b, 0, 32, null) !== 32) process.exit(1); fs.rmSync(f, { force: true }); fs.writeFileSync(f, b.toString('hex'), { mode: 0o440, flag: 'wx' }); fs.chmodSync(f, 0o440)"]
+          command: ["node", "-e", "const fs = require('fs'); for (const f of ['/run/docs-token/token', '/run/files-token/token']) { const b = Buffer.alloc(32), fd = fs.openSync('/dev/urandom', 'r'); if (fs.readSync(fd, b, 0, 32, null) !== 32) process.exit(1); fs.closeSync(fd); fs.rmSync(f, { force: true }); fs.writeFileSync(f, b.toString('hex'), { mode: 0o440, flag: 'wx' }); fs.chmodSync(f, 0o440) }"]
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
-          volumeMounts: [{ name: docs-token, mountPath: /run/docs-token }]
+          volumeMounts:
+            - { name: docs-token, mountPath: /run/docs-token }
+            - { name: files-token, mountPath: /run/files-token }
           resources: { requests: { cpu: 10m, memory: 32Mi }, limits: { memory: 128Mi } }   # a bare node start
+        # The files sidecar's Python (file actions; Task 6 ruling I4): its pinned requirements (hashes required, wheels only)
+        # into a fresh venv, here and not in the files container, which mounts it read-only: neither its server nor a job's
+        # child can change the code a later job runs. On the files container's image, uid (1003) and group (1000). It tries 3
+        # times, 10 s apart, each from an empty venv, each pip call bounded (--timeout 10 --retries 1: a PyPI that never
+        # answers holds the pod's start about a minute, not five). When all three fail (PyPI down), it logs one line, leaves the venv empty
+        # and lets the pod start: the core, the channels and the login page run, the files container stays Ready without its
+        # server (below), and every file action refuses (no socket) until the pod restarts with PyPI back. A cleanup that
+        # fails exits non-zero, so kubelet runs this container again.
+        - name: files-venv
+          image: python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159
+          command: ["sh", "-c", "for i in 1 2 3; do find /venv -mindepth 1 -delete && python -m venv /venv && /venv/bin/pip install -q --no-cache-dir --timeout 10 --retries 1 --require-hashes --only-binary :all: -r /naila/packages/files-sidecar/requirements.txt && exit 0; find /venv -mindepth 1 -delete || exit 1; [ $i = 3 ] || sleep 10; done; echo 'files-venv: the install failed 3 times, 10 s apart: the files sidecar is off (no venv) and every file action refuses until the pod restarts' >&2"]
+          env:
+            - { name: HOME, value: /tmp }
+            - { name: PIP_DISABLE_PIP_VERSION_CHECK, value: "1" }
+          securityContext: { runAsUser: 1003, runAsGroup: 1000, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
+          volumeMounts:
+            - { name: naila, mountPath: /naila, readOnly: true }
+            - { name: files-venv, mountPath: /venv }
+            - { name: files-tmp, mountPath: /tmp }
+          resources: { requests: { cpu: 10m, memory: 64Mi }, limits: { memory: 512Mi } }   # pip unpacking the wheels
       containers:
         - name: harness
           image: node:24-bookworm@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413
@@ -488,6 +545,9 @@ spec:
             - { name: HARNESS_SERVICES, value: {{ $servicesJson | quote }} }   # the services the core enables (pure-core phase 3)
             - { name: DOCS_TOKEN_FILE, value: /run/docs-token/token }   # docs' bearer: checked at start; set and unusable fails it
             - { name: DOCS_SOCKET, value: /run/docs-sock/docs.sock }    # where each run's docs relay reaches docs
+            - { name: HARNESS_DESK_ROOT, value: {{ $desk }} }   # file actions: the desk (files-desk), read-only here; the files sidecar writes it
+            - { name: FILES_TOKEN_FILE, value: /run/files-token/token }   # the files sidecar's bearer
+            - { name: FILES_SOCKET, value: /run/files-sock/files.sock }   # where the core reaches the files sidecar
             - { name: PROVIDER_KEYS_DIR, value: /run/provider-keys }    # the API providers' keys, one file each; none: that provider can't run
           ports: [{ name: core-metrics, containerPort: 3102 }]
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
@@ -498,6 +558,9 @@ spec:
             - { name: naila, mountPath: /naila, readOnly: true }
             - { name: docs-token, mountPath: /run/docs-token, readOnly: true }
             - { name: docs-sock, mountPath: /run/docs-sock, readOnly: true }   # connecting needs no write to the mount
+            - { name: files-token, mountPath: /run/files-token, readOnly: true }
+            - { name: files-sock, mountPath: /run/files-sock, readOnly: true }
+            - { name: files-desk, mountPath: {{ $desk }}, readOnly: true }   # the files sidecar alone writes the desk
             - { name: provider-keys, mountPath: /run/provider-keys, readOnly: true }   # this container alone; every run is denied it
             - name: vault
               mountPath: {{ $vaultRoot }}
@@ -539,7 +602,7 @@ spec:
           command: ["sh", "-c", "python -m venv /venv && /venv/bin/pip install -q --no-cache-dir -r /naila/packages/docs-mcp/requirements.txt && cd /naila/packages/docs-mcp && exec /venv/bin/python server.py"]
           env:
             - { name: HOME, value: /tmp }
-            - { name: DOCS_ROOTS, value: "/home/claude/.claude/uploads:{{ $vaultRoot }}" }
+            - { name: DOCS_ROOTS, value: "/home/claude/.claude/uploads:{{ $vaultRoot }}:{{ $desk }}" }   # the desk: file actions' results
             - { name: DOCS_SOCKET, value: /run/docs-sock/docs.sock }   # its only listener
             - { name: DOCS_TOKEN_FILE, value: /run/docs-token/token }  # every request needs it as a bearer; no usable token: all refused
             - { name: PIP_DISABLE_PIP_VERSION_CHECK, value: "1" }
@@ -563,7 +626,45 @@ spec:
             - { name: docs-tmp, mountPath: /tmp }
             - { name: docs-token, mountPath: /run/docs-token, readOnly: true }
             - { name: docs-sock, mountPath: /run/docs-sock }   # writable: it makes its socket here
+            - { name: files-desk, mountPath: {{ $desk }}, readOnly: true }
           resources: { requests: { cpu: 10m, memory: 128Mi }, limits: { memory: 768Mi } }
+        # The files sidecar (file actions; naila packages/files-sidecar): unzip, zip, image and CSV jobs on the desk for the
+        # core, one at a time, each in a child process under the setup's job limits. It listens only on its socket in files-sock
+        # (FILES_SOCKET), answers only the core's uid (FILES_CLIENT_UID) holding the bearer in files-token, and sees only what a
+        # file action may read (FILES_ROOTS, call 26): the uploads, this phase's workspaces and finance folders (each a read-only
+        # subPath of the vault volume, never the whole vault) and the desk, the one folder it writes. Its venv is files-venv's
+        # (read-only), its root filesystem read-only, its uid 1003 its own (no other container's /proc), its group 1000 as the
+        # gateways': desk.py sets its folders' modes exactly (setgid cleared), so what it makes takes its primary group, which
+        # must be the core's and docs' for them to read the desk. The probes look for its listening socket in /proc/net/unix
+        # (the pod's one network namespace) and never connect (the server would log the refused uid 1003). With no venv
+        # (files-venv's install failed) it logs one line and sleeps, Ready, so the pod stays in its Services. Its memory limit is a
+        # job's address space plus 128 MiB (call 3: the low request makes a job child the kernel's first OOM victim, before
+        # the core). Its sockets and the token are in RAM.
+        - name: files
+          image: python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159
+          command: ["sh", "-c", "[ -x /venv/bin/python ] || { echo 'files: no venv (files-venv could not install the requirements): file actions are off until the pod restarts' >&2; exec sleep infinity; }; cd /naila/packages/files-sidecar && exec /venv/bin/python -B server.py"]
+          env:
+            - { name: HOME, value: /tmp }
+            - { name: FILES_SOCKET, value: /run/files-sock/files.sock }   # its only listener
+            - { name: FILES_TOKEN_FILE, value: /run/files-token/token }  # every request needs it as a bearer; no usable token: all refused
+            - { name: FILES_DESK, value: {{ $desk }} }
+            - { name: FILES_ROOTS, value: {{ $filesRoots | quote }} }
+            - { name: FILES_CLIENT_UID, value: "1000" }   # the core's uid (the pod's runAsUser): the only peer it serves
+            - { name: PIP_DISABLE_PIP_VERSION_CHECK, value: "1" }
+          startupProbe: { exec: { command: ["sh", "-c", "grep -q ' 00010000 .* /run/files-sock/files.sock$' /proc/net/unix || [ ! -x /venv/bin/python ]"] }, periodSeconds: 10, failureThreshold: 30 }
+          readinessProbe: { exec: { command: ["sh", "-c", "grep -q ' 00010000 .* /run/files-sock/files.sock$' /proc/net/unix || [ ! -x /venv/bin/python ]"] }, periodSeconds: 15 }
+          securityContext: { runAsUser: 1003, runAsGroup: 1000, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
+          volumeMounts:
+            - { name: naila, mountPath: /naila, readOnly: true }
+            - { name: home, mountPath: /home/claude/.claude/uploads, subPath: .claude/uploads, readOnly: true }
+            - { name: vault, mountPath: {{ printf "%s/%s" $vaultRoot $workspacesDir | quote }}, subPath: {{ $filesSub.workspaces | quote }}, readOnly: true }
+            - { name: vault, mountPath: {{ printf "%s/%s" $vaultRoot $financeDir | quote }}, subPath: {{ $filesSub.finance | quote }}, readOnly: true }
+            - { name: files-venv, mountPath: /venv, readOnly: true }
+            - { name: files-tmp, mountPath: /tmp }
+            - { name: files-token, mountPath: /run/files-token, readOnly: true }
+            - { name: files-sock, mountPath: /run/files-sock }   # writable: it makes its socket here
+            - { name: files-desk, mountPath: {{ $desk }} }     # the desk: the one folder it writes
+          resources: { requests: { cpu: 10m, memory: 128Mi }, limits: { memory: {{ $filesLimit }} } }
         # Login page for this pod's Claude login (naila.nopsqi.dev/harness, behind Cloudflare Access) and its metrics,
         # labelled pod="harness". After a login it restarts the core (RESTART_MATCH) through the shared process namespace.
         - name: login
@@ -596,6 +697,13 @@ spec:
         - { name: docs-tmp, emptyDir: {} }
         - { name: docs-token, emptyDir: { medium: Memory, sizeLimit: 1Mi } }   # the docs bearer: in RAM, gone with the pod
         - { name: docs-sock, emptyDir: { medium: Memory, sizeLimit: 1Mi } }    # docs' socket
+        - { name: files-venv, emptyDir: { sizeLimit: 256Mi } }   # the files sidecar's venv (files-venv writes it; files reads it)
+        - { name: files-tmp, emptyDir: { sizeLimit: 256Mi } }
+        - { name: files-token, emptyDir: { medium: Memory, sizeLimit: 1Mi } }   # the files bearer: in RAM, gone with the pod
+        - { name: files-sock, emptyDir: { medium: Memory, sizeLimit: 1Mi } }    # the files sidecar's socket
+        # The desk (file actions): what file actions make, one folder per worker, swept after harness.files.desk.ttlHours and
+        # gone with the pod. 2Gi holds desk.totalQuotaMiB plus the largest job's output cap (the render checks it).
+        - { name: files-desk, emptyDir: { sizeLimit: 2Gi } }
         # The API providers' keys (assistant-provider-keys, sealed: one key per provider, e.g. anthropic-api), read by the core
         # alone (naila providers/keys.ts: a regular file others can't read, one line). Optional: without the Secret, or without
         # a provider's key in it, the core logs that provider can't run and starts anyway. root:1000 0440 (fsGroup): every

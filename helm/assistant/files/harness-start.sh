@@ -73,11 +73,12 @@ for (const [id, s] of Object.entries(cfg.services)) {
 }
 })().catch((e) => fail(`${e?.message ?? e}: ${differ}`))' "$SERVICES_JS"
 # PAIRING: the image's setup
-# Pure-core phase 4 (schedules and profile), phase 6 (places) and plan 7a (budgets and provider settings): the owner's
-# profile, the schedules, the Git base of channel places, the budgets and the provider settings (/config/harness-setup.json,
-# the chart's: setup spec 3) and the image that reads them (dist/setup.js) come together. An image without setup.js, or whose
-# SETUP_SPEC_VERSION is below 3 or no number, predates the chart (the import error printed first): a phase 6 image would
-# refuse the budgets, or run without them. One whose SETUP_SPEC_VERSION is above 3 is newer than the chart, and says so (the
+# Pure-core phase 4 (schedules and profile), phase 6 (places), plan 7a (budgets and provider settings) and file actions (the
+# files settings): the owner's profile, the schedules, the Git base of channel places, the budgets, the provider settings and
+# the files settings (/config/harness-setup.json, the chart's: setup spec 4) and the image that reads them (dist/setup.js)
+# come together. An image without setup.js, or whose SETUP_SPEC_VERSION is below 4 or no number, predates the chart (the
+# import error printed first): a plan 7a image would refuse the files settings, or run without them. One whose
+# SETUP_SPEC_VERSION is above 4 is newer than the chart, and says so (the
 # image refuses an older chart's setup in turn, naming the chart). A setup file the image's parseSetup refuses (the jobs'
 # requests read beside it) means the two were not shipped together. Each fails the start. The profile's paths then place
 # what this script makes and checks, one per line: the test folder (VAULT_EXCLUDE, the test phase's rules), the finance
@@ -88,8 +89,8 @@ LAYOUT_JS=/naila/packages/vault-mcp/dist/layout.js
 setup=$(node -e '
 const fs = require("fs"), path = require("path"), [file, layoutFile, setupFile] = process.argv.slice(1)
 const fail = (m) => { console.error(`harness-start: ${m}`); process.exit(2) }
-const old = "this naila image predates plan 7a (budgets and provider settings): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
-const SPEC = 3
+const old = "this naila image predates file actions (the files settings): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+const SPEC = 4
 ;(async () => {
 let img, layout
 try { img = await import(file) } catch (e) { fail(`cannot load ${file}: ${e?.message ?? e}: ${old}`) }
@@ -270,8 +271,13 @@ for k in $wcreds; do [ -z "${!k:-}" ] || ! grep -qF -- "${!k}" "$C"/agents/*.md 
 # entry denied). Real phase: no file tool reads a VAULT_EXCLUDE folder.
 case "$VAULT_ROOT" in /*) ;; *) die "VAULT_ROOT must be an absolute path, got '$VAULT_ROOT'" ;; esac
 printf '%s' "$VAULT_ROOT" | grep -qE '^/[A-Za-z0-9._/-]+$' || die "VAULT_ROOT may hold only letters, digits and ._/- (it goes into a hook command), got '$VAULT_ROOT'"
+# File actions: the desk (HARNESS_DESK_ROOT, the files sidecar's emptyDir) is a docs root of each run's own desk folder, so the
+# docs hook takes it as --desk, after --root and before --exclude. Unset (an older chart): no --desk, no desk docs root.
+if [ -n "${HARNESS_DESK_ROOT:-}" ]; then
+  printf '%s' "$HARNESS_DESK_ROOT" | grep -qE '^(/[A-Za-z0-9_-][A-Za-z0-9._-]*)+$' || die "HARNESS_DESK_ROOT must be a plain absolute path of letters, digits and ._- (it goes into a hook command), got '$HARNESS_DESK_ROOT'"
+fi
 node -e '
-const fs = require("fs"), [src, patch, dst, phase, root, grant, uploads, exclude, testFolder, finance, workspaces] = process.argv.slice(1)
+const fs = require("fs"), [src, patch, dst, phase, root, grant, uploads, exclude, testFolder, finance, workspaces, desk] = process.argv.slice(1)
 const s = JSON.parse(fs.readFileSync(src, "utf8")), p = s.permissions, h = JSON.parse(fs.readFileSync(patch, "utf8")).permissions
 delete p.ask
 p.defaultMode = h.defaultMode
@@ -287,6 +293,7 @@ if (phase === "test") {
 const excluded = phase === "real" ? (exclude ?? "").split(",").map((e) => e.trim()).filter(Boolean) : []
 for (const x of excluded) p.deny.push(`Read(/${root}/${x}/**)`)
 const docsExclude = excluded.length ? ` --exclude ${excluded.map((x) => `${root}/${x}`).join(",")}` : ""
+const docsDesk = desk ? ` --desk ${desk}` : ""
 const pre = (s.hooks ??= {}).PreToolUse ??= []
 // Claude Code runs an entry with no matcher, "" or "*" for every tool: it would hook the guarded tools beside their guard, and
 // dropping it would drop it for every other tool too, so it fails the start (the check below counts such an entry as well).
@@ -295,10 +302,10 @@ if (pre.some(every)) { console.error("harness-start: settings.json has a PreTool
 // each guarded tool keeps one hook: its own entries go, the web guard of the RC lines (no --by-worker) among them
 s.hooks.PreToolUse = pre.filter((e) => !/docs|Write|Edit|Read|Glob|Grep|WebFetch|WebSearch/.test(e.matcher))
 s.hooks.PreToolUse.push({ matcher: "Read|Glob|Grep", hooks: [{ type: "command", command: "node /config/read-guard.mjs --by-origin || exit 2" }] })
-s.hooks.PreToolUse.push({ matcher: "mcp__docs__convert", hooks: [{ type: "command", command: `node ${grant} --by-caps --uploads ${uploads} --root ${root}${docsExclude} || exit 2` }] })
+s.hooks.PreToolUse.push({ matcher: "mcp__docs__convert", hooks: [{ type: "command", command: `node ${grant} --by-caps --uploads ${uploads} --root ${root}${docsDesk}${docsExclude} || exit 2` }] })
 s.hooks.PreToolUse.push({ matcher: "^(Write|Edit|MultiEdit|NotebookEdit|mcp__vault__write_inbox|mcp__vault__append_daily|mcp__vault__workers_write|mcp__finance-notes__.*)$", hooks: [{ type: "command", command: `node /config/harness-write-guard.mjs --root ${root}/${workspaces} || exit 2`, timeout: 30, onFailure: "block" }] })
 s.hooks.PreToolUse.push({ matcher: "WebFetch|WebSearch", hooks: [{ type: "command", command: "node /config/web-guard.mjs --by-worker || exit 2", timeout: 30, onFailure: "block" }] })
-fs.writeFileSync(dst, JSON.stringify(s, null, 2))' /config/settings.json /config/harness-settings.json "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/docs-grant.mjs "$C/uploads" "${VAULT_EXCLUDE:-}" "$TEST_FOLDER" "$FINANCE_FOLDER" "$WORKSPACES"
+fs.writeFileSync(dst, JSON.stringify(s, null, 2))' /config/settings.json /config/harness-settings.json "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/docs-grant.mjs "$C/uploads" "${VAULT_EXCLUDE:-}" "$TEST_FOLDER" "$FINANCE_FOLDER" "$WORKSPACES" "${HARNESS_DESK_ROOT:-}"
 # The check, failing startup: no test-phase rule reaches the real vault; docs conversion follows the run's switches under this
 # phase's roots (docs-grant.mjs --by-caps --root VAULT_ROOT); the deny holds the whole static floor (harness-settings.json, Agent and Bash among it) and, when the image has the capability
 # registry, the image's own FLOOR_DENY (a chart older than the image's floor fails closed); the allow holds nothing beyond the
@@ -314,7 +321,7 @@ fs.writeFileSync(dst, JSON.stringify(s, null, 2))' /config/settings.json /config
 # come from the engine, HARNESS_DOCS_ROOTS). Phase 3: when the image exports CORE_ALWAYS_TOOLS (capabilities.js),
 # harness-settings.json's allow must be exactly that list plus propose_plan and ask_worker.
 node -e '
-const fs = require("fs"), [f, phase, root, patch, capsjs, layerjs, regjs, testFolder, workspaces] = process.argv.slice(1)
+const fs = require("fs"), [f, phase, root, patch, capsjs, layerjs, regjs, testFolder, workspaces, desk] = process.argv.slice(1)
 const fail = (m) => { console.error(`harness-start: ${m}`); process.exit(2) }
 ;(async () => {
 const s = JSON.parse(fs.readFileSync(f, "utf8")), allow = s.permissions.allow, deny = s.permissions.deny
@@ -331,8 +338,11 @@ const hooksOf = (tool) => s.hooks.PreToolUse.filter((e) => every(e) || new RegEx
 const hooked = (tool) => hooksOf(tool).map((x) => x.command)
 const docs = hooked("mcp__docs__convert")
 const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-if (docs.length !== 1 || !new RegExp(`^node \\S+/docs-grant\\.mjs --by-caps --uploads /\\S+ --root ${esc(root)}( --exclude \\S+)? \\|\\| exit 2$`).test(docs[0]))
+if (docs.length !== 1 || !new RegExp(`^node \\S+/docs-grant\\.mjs --by-caps --uploads /\\S+ --root ${esc(root)}( --desk /\\S+)?( --exclude \\S+)? \\|\\| exit 2$`).test(docs[0]))
   fail("mcp__docs__convert does not follow the run\x27s switches under the phase roots (docs-grant.mjs --by-caps --root VAULT_ROOT)")
+// file actions: the desk is a docs root exactly when the pod has one (HARNESS_DESK_ROOT), and then as itself
+const hasDesk = / --desk (\S+)( --exclude \S+)? \|\| exit 2$/.exec(docs[0])
+if ((hasDesk?.[1] ?? "") !== (desk ?? "")) fail(`mcp__docs__convert takes the desk ${hasDesk?.[1] ?? "(none)"}, HARNESS_DESK_ROOT is ${desk || "(unset)"}`)
 if (phase === "real" && !/ --exclude \S+ \|\| exit 2$/.test(docs[0])) fail("mcp__docs__convert does not exclude VAULT_EXCLUDE in the real phase")
 const h = JSON.parse(fs.readFileSync(patch, "utf8")).permissions
 const floor = [...h.deny, "Agent", "Bash"]
@@ -399,7 +409,7 @@ for (const t of ["WebFetch", "WebSearch"]) {
 }
 const rguard = "node /config/read-guard.mjs --by-origin || exit 2"
 for (const t of ["Read", "Glob", "Grep"]) { const c = hooked(t); if (c.length !== 1 || c[0] !== rguard) fail(`${t} does not go through the read guard narrowed to the run\x27s origin (read-guard.mjs --by-origin)`) }
-})().catch((e) => fail(e.message))' "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/harness-settings.json /naila/packages/harness/dist/capabilities.js /naila/packages/harness/dist/providers/claude-code/compile.js "$SERVICES_JS" "$TEST_FOLDER" "$WORKSPACES"
+})().catch((e) => fail(e.message))' "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/harness-settings.json /naila/packages/harness/dist/capabilities.js /naila/packages/harness/dist/providers/claude-code/compile.js "$SERVICES_JS" "$TEST_FOLDER" "$WORKSPACES" "${HARNESS_DESK_ROOT:-}"
 
 # The work dirs are prepare.js's (above), the lead's named by the spec (its one role with lead: true); the finance notes
 # folder (<VAULT_ROOT>/<the profile's finance folder>) may not exist yet in the test phase: made while finance is enabled.

@@ -4,7 +4,7 @@
 // (claude) can change the mode, the sidecar can't. Only real files under uploads/ after resolving symlinks and `..`,
 // with one link (a hardlink in uploads/ can be another name for a file outside it); the vault is already readable
 // and anything else is the sidecar's to refuse. Without flags (the RC lines) it decides nothing.
-// --by-caps --uploads DIR --root VAULT_ROOT (the harness runs): it follows the run's switches, from HARNESS_CAPS (the run's
+// --by-caps --uploads DIR --root VAULT_ROOT --private-root VAULT_ROOT/Private (the harness runs): it follows the run's switches, from HARNESS_CAPS (the run's
 // capabilities that are on, comma-separated), HARNESS_WORKER, HARNESS_ORIGIN (the channel the run's conversation came from)
 // and HARNESS_DOCS_ROOTS (the folders the run's switches open, comma-separated, in order; '' for none), all set by the core
 // per run (as web-guard.mjs and the write guard read them). The core decides the folders (naila's docsRoots: the vault with
@@ -25,6 +25,11 @@
 // usable when it lies strictly under DIR (the core gives a run only its own desk folder there, <DIR>/<worker> or
 // <DIR>/_test/<worker>, with files.read); without the flag a desk entry is outside --root, so it denies everything, as
 // before. A --desk with no value, or a relative or dotted DIR, denies everything.
+// --private-root DIR (workers by plan Task 13, required with --by-caps: <VAULT_ROOT>/Private, the private roles' folders): a
+// path that is, as given or after resolving symlinks, under DIR/<entry> is denied unless <entry> is the run's own folder,
+// HARNESS_PRIVATE_OWN (which the core sets for a private role's run alone) when it is exactly DIR/<HARNESS_WORKER>; compared
+// case-insensitively (NFC, lower case), DIR as named and as its real path. So no other role, the lead included, converts a
+// file there, whatever root would hold it. A missing, empty, relative or dotted DIR denies everything, uploads included.
 // --exclude DIR[,DIR…] (the real phase: /vault/Harness-test) denies every path that is, after resolving symlinks and `..`,
 // under one of those dirs, compared case-insensitively (the vault may be a case-insensitive share). It fails closed too: an
 // empty or relative entry, or a path that can't be resolved, is a deny.
@@ -32,6 +37,9 @@ import { chmodSync, realpathSync, statSync } from 'node:fs'
 import { dirname, posix } from 'node:path'
 
 const UPLOADS = '/home/claude/.claude/uploads'
+/** naila's PRIVATE_REFUSAL (packages/harness/src/floor/paths.ts), word for word. */
+const PRIVATE_TEXT = 'That folder is private: only the worker it belongs to may read or write it.'
+const fold = (s) => s.normalize('NFC').toLowerCase().normalize('NFC')
 const deny = (why) => { console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: why } })); process.exit(0) }
 const argOf = (f) => { const i = process.argv.indexOf(f); return i < 0 ? undefined : process.argv[i + 1] }
 // an absolute path with no `..` or `.` segment, no backslash, no control character (NUL, newline, …), as the write guard
@@ -55,11 +63,13 @@ if (ex >= 0) {
   if (!ok) deny(`Documents in ${process.argv[ex + 1] ?? '(none)'} can't be converted here.`)
 }
 if (process.argv.includes('--by-caps')) {
-  let ok = false, where = 'nowhere'
+  let ok = false, where = 'nowhere', priv = false
   try {
     const caps = process.env.HARNESS_CAPS, w = process.env.HARNESS_WORKER ?? '', o = process.env.HARNESS_ORIGIN, dr = process.env.HARNESS_DOCS_ROOTS
     const origin = typeof o === 'string' && /^[a-z][a-z0-9-]{0,31}$/.test(o) ? o : undefined   // as the core's CHANNEL_NAME
     const upArg = argOf('--uploads'), rootArg = argOf('--root'), withDesk = process.argv.includes('--desk'), deskArg = argOf('--desk')
+    // the private root, as named without a trailing / ('' when missing or unusable: everything is denied)
+    const prArg = argOf('--private-root'), pr = plain(prArg) ? prArg.replace(/\/+$/, '') : ''
     // exactly what the core writes: on capabilities joined by commas, no spaces, no empty entries (an empty string is none on)
     const usable = typeof caps === 'string' && /^(?:[a-z][a-z-]*\.[a-z][a-z-]*(?:,[a-z][a-z-]*\.[a-z][a-z-]*)*)?$/.test(caps)
     // the core's docs roots: '' is none; else each entry plain and at --root or under it (as named), none empty (the core
@@ -71,7 +81,7 @@ if (process.argv.includes('--by-caps')) {
     const inDesk = (e) => desk !== '' && plain(e) && e.startsWith(`${desk}/`) && e.length > desk.length + 1
     const deskOk = !withDesk || desk !== ''
     const given = typeof dr !== 'string' ? undefined : dr === '' ? [] : dr.split(',')
-    if (usable && deskOk && given?.every((e) => inRoot(e) || inDesk(e)) && /^[a-z][a-z0-9-]*$/.test(w) && plain(upArg) && plain(rootArg)) {
+    if (usable && deskOk && pr !== '' && given?.every((e) => inRoot(e) || inDesk(e)) && /^[a-z][a-z0-9-]*$/.test(w) && plain(upArg) && plain(rootArg)) {
       const on = new Set(caps.split(',').filter(Boolean))
       const p = JSON.parse(input).tool_input?.path
       if (on.has('docs.convert') && plain(p)) {
@@ -83,6 +93,12 @@ if (process.argv.includes('--by-caps')) {
         const u = upArg.replace(/\/+$/, '')   // as named, without a trailing /
         where = [...(origin ? [`${u}/${origin}`] : []), ...given].join(', ') || 'nowhere'
         const real = realpathSync(p)
+        // the private folders: the run's own (a private role's, named by the core) and nothing else under DIR
+        const ownPriv = process.env.HARNESS_PRIVATE_OWN
+        const ownName = plain(ownPriv) && ownPriv.replace(/\/+$/, '') === `${pr}/${w}` ? fold(w) : undefined
+        const prs = [pr]; try { prs.push(realpathSync(pr)) } catch { /* no private folder yet: by its name alone */ }
+        const othersPrivate = (x) => { const f = fold(x); return prs.map(fold).some((r) => f.startsWith(`${r}/`) && f.slice(r.length + 1).split('/')[0] !== ownName) }
+        if ([posix.normalize(p), real].some(othersPrivate)) { priv = true; throw new Error('private') }
         const st = statSync(real)
         const under = (r) => r !== '/' && real.startsWith(r + '/')
         // Ruling 16: another channel's upload is denied, whichever root would hold it
@@ -92,7 +108,7 @@ if (process.argv.includes('--by-caps')) {
       }
     }
   } catch { ok = false }
-  if (!ok) deny(`You may convert only a plain file in ${where} (your capabilities decide which; docs.convert must be on).`)
+  if (!ok) deny(priv ? PRIVATE_TEXT : `You may convert only a plain file in ${where} (your capabilities decide which; docs.convert must be on).`)
 }
 try {
   const p = JSON.parse(input).tool_input?.path

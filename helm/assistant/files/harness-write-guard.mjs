@@ -7,7 +7,7 @@
 // and HARNESS_CAPS for every tools run, and this hook serves only those (it is in the harness settings alone), so a run with
 // no HARNESS_WORKER, or with one but no HARNESS_WEB_SLOTS naming a folder, is refused too (fail closed). With no marker,
 // the servers' tools are left to the run's settings (no decision here).
-// Write and Edit may then write only inside the run's own workspace,
+// Write and Edit may then write only inside the run's own workspace (or a private role's own folder, below),
 // <root>/<worker>/, where root (<VAULT_ROOT>/Naila/Workspace) comes from --root on the hook's command line, rendered by
 // harness-start.sh, never from the run's env (P18), and the worker from HARNESS_WORKER, which the core sets per run.
 // The path is resolved first: no `..`, the real path of its nearest existing ancestor (so a link can't lead out), the
@@ -15,6 +15,12 @@
 // another name for a file outside). Anything else, a missing --root or worker included, is a deny; the hook command adds
 // `|| exit 2`, so a crash blocks too. Inside the workspace it decides nothing: the run's settings still have to allow the
 // write (files.write on), so this guard alone never opens a write.
+// --private-root DIR (workers by plan Task 13, required: <VAULT_ROOT>/Private, the private roles' folders): a private role's
+// workspace is its own folder there, so Write and Edit may also write inside DIR/<worker>/ when the run names it as its own
+// (HARNESS_PRIVATE_OWN, which the core sets for a private role's run alone, exactly DIR/<HARNESS_WORKER>); a path that is, as
+// given or real, under any other entry of DIR is refused with the core's words (case-insensitively, NFC, lower case), whoever
+// writes, the lead included. The run's settings still decide inside it (call 11). A missing, empty, relative or dotted DIR
+// refuses every call.
 // Claude Code lets a call through when a hook times out (unless the settings say onFailure "block", which harness-start.sh
 // sets), so this hook also stops itself: if its input has not ended within DEADLINE_MS it refuses with exit 2.
 import { lstatSync, realpathSync, statSync } from 'node:fs'
@@ -24,6 +30,9 @@ import { posix } from 'node:path'
 const RESEARCHED_MARKER = 'researched'
 /** naila's RESEARCHED_WRITE_REFUSED (packages/harness/src/research.ts), word for word (tests/floor-conformance.sh). */
 const RESEARCHED_TEXT = "A web search happened in this message, so files can't be written in it: ask again in a message of its own."
+/** naila's PRIVATE_REFUSAL (packages/harness/src/floor/paths.ts), word for word. */
+const PRIVATE_TEXT = 'That folder is private: only the worker it belongs to may read or write it.'
+const fold = (s) => s.normalize('NFC').toLowerCase().normalize('NFC')
 /** The tools the marker stops. */
 const MARKED = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'mcp__vault__write_inbox', 'mcp__vault__append_daily', 'mcp__vault__workers_write'])
 const marked = (t) => typeof t === 'string' && (MARKED.has(t) || t.startsWith('mcp__finance-notes__'))
@@ -48,8 +57,15 @@ try {
   const at = process.argv.indexOf('--root')
   const rootArg = at < 0 ? undefined : process.argv[at + 1]
   if (!plain(rootArg) || !/^\/[A-Za-z0-9._ /-]+$/.test(rootArg)) deny('No workspace root is set for this run, so nothing may be written.')
+  const pat = process.argv.indexOf('--private-root')
+  const prArg = pat < 0 ? undefined : process.argv[pat + 1]
+  const pr = plain(prArg) && /^\/[A-Za-z0-9._ /-]+$/.test(prArg) ? prArg.replace(/\/+$/, '') : ''
+  if (!pr) deny('No private root is set for this run, so nothing may be written.')
   const w = process.env.HARNESS_WORKER ?? ''
   if (!/^[a-z][a-z0-9-]*$/.test(w)) deny('This run has no worker, so it has no workspace to write in.')
+  // the run's own private folder: a private role's, named by the core
+  const ownEnv = process.env.HARNESS_PRIVATE_OWN
+  const ownPrivate = plain(ownEnv) && ownEnv.replace(/\/+$/, '') === `${pr}/${w}`
   let e = {}
   try { e = JSON.parse(input) } catch { deny('Unreadable tool call.') }
   const t = e?.tool_name
@@ -61,11 +77,20 @@ try {
   if (t.startsWith('mcp__')) process.exit(0)   // a server's write tool, no marker: the run's settings decide
   if (t !== 'Write' && t !== 'Edit') deny('Not a write tool.')
   const p = e.tool_input?.file_path
-  const where = `${rootArg.replace(/\/+$/, '')}/${w}/`
+  const where = `${rootArg.replace(/\/+$/, '')}/${w}/${ownPrivate ? ` or ${pr}/${w}/` : ''}`
   if (!plain(p)) deny(`Write only with a plain absolute path (no ..) inside your workspace ${where}`)
   const root = realpathSync(rootArg.replace(/\/+$/, '') || '/')
-  const ws = posix.join(root, w)
-  if (realpathSync(ws) !== ws) deny(`Your workspace ${where} is a link; nothing may be written there.`)
+  const realOr = (x) => { try { return realpathSync(x) } catch { return undefined } }
+  const realPr = realOr(pr)
+  // the workspaces: <root>/<worker>, and a private role's own folder; each that exists may not be a link, and one must exist
+  const wss = []
+  for (const x of [posix.join(root, w), ...(ownPrivate && realPr !== undefined ? [posix.join(realPr, w)] : [])]) {
+    const r = realOr(x)
+    if (r === undefined) continue
+    if (r !== x) deny(`Your workspace ${where} is a link; nothing may be written there.`)
+    wss.push(x)
+  }
+  if (!wss.length) throw new Error('no workspace')
   // the nearest existing ancestor's real path, plus the part that doesn't exist yet
   let q = posix.normalize(p).replace(/\/+$/, '') || '/', rest = ''
   for (;;) {
@@ -76,7 +101,11 @@ try {
     }
   }
   const real = realpathSync(q) + rest
-  if (!real.startsWith(`${ws}/`)) deny(`You may write only inside your workspace ${where}`)
+  // another role's private folder (or, for a role that is not private, any entry there), as given or real
+  const prs = [...new Set([pr, ...(realPr === undefined ? [] : [realPr])])].map(fold)
+  const others = (x) => { const f = fold(x); return prs.some((r) => f.startsWith(`${r}/`) && (!ownPrivate || f.slice(r.length + 1).split('/')[0] !== fold(w))) }
+  if ([posix.normalize(p), real].some(others)) deny(PRIVATE_TEXT)
+  if (!wss.some((x) => real.startsWith(`${x}/`))) deny(`You may write only inside your workspace ${where}`)
   if (!rest) {
     const st = statSync(real)
     if (!st.isFile() || st.nlink !== 1) deny('Only a plain file (one link) in your workspace may be overwritten.')

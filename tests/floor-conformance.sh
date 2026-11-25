@@ -5,9 +5,10 @@
 # decideWeb, grantDocs). This script runs every case tagged hook:<name> through that hook in helm/assistant/files/, so a
 # port and its hook can't drift apart:
 #  - it builds the cases' `tree` in a temp folder T, and runs the hook as harness-start.sh (or claude.yaml) renders it:
-#    read-guard.mjs --by-origin; harness-write-guard.mjs --root <phase root>/<workspace root> (the profile's, Naila/Workspace
-#    in production: vault-mcp's layout of the rendered prod profile); docs-grant.mjs --by-caps
-#    --uploads <uploads> --root <phase root> [--exclude <phase root>/<VAULT_EXCLUDE dir>,…] (real phase); web-guard.mjs
+#    read-guard.mjs --by-origin --private-root <phase root>/Private; harness-write-guard.mjs --root <phase root>/<workspace
+#    root> (the profile's, Naila/Workspace in production: vault-mcp's layout of the rendered prod profile) --private-root
+#    <phase root>/Private; docs-grant.mjs --by-caps --uploads <uploads> --root <phase root> --private-root <phase root>/Private
+#    [--exclude <phase root>/<VAULT_EXCLUDE dir>,…] (real phase); web-guard.mjs
 #    --by-worker. The rendered /vault and /home/claude/.claude/uploads don't exist here, so --root and --uploads name T's
 #    (F14); a path under ~/.claude stays the literal /home/claude/.claude;
 #  - it pipes the Claude Code hook input {tool_name, tool_input, cwd} (cwd: T/work/<role>, also the hook's own) into the hook, with
@@ -42,6 +43,10 @@
 #    gives the same verdict; naila's cases-desk.json (beside cases.json) runs through docs-grant.mjs --desk <T's desk> in
 #    cases.json's tree plus its own desk part, with the core's env for a policy context holding deskRoot, each case agreeing
 #    with its expectation and with the core's port (grantDocs on the same policy, from the built dist);
+#  - workers by plan Task 13: naila's cases-private.json (Task 11: the private folders; its own role fixtures, keeper a
+#    private role) runs every hook case through its hook with --private-root, in cases.json's tree plus its own part, with
+#    the core's env (hookEnv: HARNESS_PRIVATE_OWN for the private role's run alone), each agreeing with its expectation and
+#    with the core's port (floor-model.ts port(), from the built dist), and giving the port's private text word for word;
 #  - it checks that harness-start.sh and claude.yaml still render those hook commands (the web and write hooks with their
 #    30 s timeout and onFailure block), and that web-guard.mjs carries naila's
 #    web-rules block byte for byte (the text between the web-rules:begin and web-rules:end lines, each once in both files, read
@@ -159,11 +164,11 @@ if (typeof LEAD !== 'string') { bad('the role fixtures have no lead'); process.e
 const start = readFileSync(join(FILES, 'harness-start.sh'), 'utf8'), claudeYaml = readFileSync(join(repo, 'helm/assistant/templates/claude.yaml'), 'utf8')
 const WRITE_MATCHER = '^(Write|Edit|MultiEdit|NotebookEdit|mcp__vault__write_inbox|mcp__vault__append_daily|mcp__vault__workers_write|mcp__finance-notes__.*)$'
 for (const [file, text, s] of [
-  ['harness-start.sh', start, 'command: "node /config/read-guard.mjs --by-origin || exit 2"'],
-  ['harness-start.sh', start, 'command: `node ${grant} --by-caps --uploads ${uploads} --root ${root}${docsDesk}${docsExclude} || exit 2`'],
+  ['harness-start.sh', start, 'command: `node /config/read-guard.mjs --by-origin --private-root ${root}/Private || exit 2`'],
+  ['harness-start.sh', start, 'command: `node ${grant} --by-caps --uploads ${uploads} --root ${root} --private-root ${root}/Private${docsDesk}${docsExclude} || exit 2`'],
   ['harness-start.sh', start, 'const docsExclude = excluded.length ? ` --exclude ${excluded.map((x) => `${root}/${x}`).join(",")}` : ""'],
   ['harness-start.sh', start, 'const docsDesk = desk ? ` --desk ${desk}` : ""'],
-  ['harness-start.sh', start, `matcher: "${WRITE_MATCHER}", hooks: [{ type: "command", command: \`node /config/harness-write-guard.mjs --root \${root}/\${workspaces} || exit 2\`, timeout: 30, onFailure: "block" }]`],
+  ['harness-start.sh', start, `matcher: "${WRITE_MATCHER}", hooks: [{ type: "command", command: \`node /config/harness-write-guard.mjs --root \${root}/\${workspaces} --private-root \${root}/Private || exit 2\`, timeout: 30, onFailure: "block" }]`],
   ['harness-start.sh', start, 'matcher: "WebFetch|WebSearch", hooks: [{ type: "command", command: "node /config/web-guard.mjs --by-worker || exit 2", timeout: 30, onFailure: "block" }]'],
   ['claude.yaml', claudeYaml, '"matcher": "WebFetch|WebSearch", "hooks": [{ "type": "command", "command": "node /config/web-guard.mjs" }]'],
 ]) if (!text.includes(s)) bad(`${file} no longer renders ${s}`)
@@ -178,12 +183,15 @@ for (const [f, target] of Object.entries(tree.hardlinks)) linkSync(join(t, targe
 for (const [f, target] of Object.entries(tree.symlinks)) { mkdirSync(dirname(join(t, f)), { recursive: true }); symlinkSync(join(t, target), join(t, f)) }
 const mount = join(t, tree.mount), uploads = join(t, tree.uploads)
 
-const hookArgs = (c, root, exclude, desk) => {
+// workers by plan Task 13: every hook takes --private-root <phase root>/Private (the core's policy default, PolicyContext
+// privateRoot), at harness-start.sh's fixed position: after --by-origin, after --root, after --root and before --desk/--exclude
+const hookArgs = (c, root, exclude, desk, up = uploads) => {
+  const pr = ['--private-root', `${root}/Private`]
   switch (c.claude) {
-    case 'hook:read-guard': return ['read-guard.mjs', '--by-origin']
-    case 'hook:write-guard': return ['harness-write-guard.mjs', '--root', `${root}/${WS}`]
+    case 'hook:read-guard': return ['read-guard.mjs', '--by-origin', ...pr]
+    case 'hook:write-guard': return ['harness-write-guard.mjs', '--root', `${root}/${WS}`, ...pr]
     // file actions: the desk (HARNESS_DESK_ROOT) after --root and before --exclude, as harness-start.sh renders it
-    case 'hook:docs-grant': return ['docs-grant.mjs', '--by-caps', '--uploads', uploads, '--root', root, ...(desk ? ['--desk', desk] : []), ...(exclude.length ? ['--exclude', exclude.map((x) => `${root}/${x}`).join(',')] : [])]
+    case 'hook:docs-grant': return ['docs-grant.mjs', '--by-caps', '--uploads', up, '--root', root, ...pr, ...(desk ? ['--desk', desk] : []), ...(exclude.length ? ['--exclude', exclude.map((x) => `${root}/${x}`).join(',')] : [])]
     case 'hook:web-guard': return ['web-guard.mjs', '--by-worker']
   }
 }
@@ -313,7 +321,7 @@ else {
       policy = policyFor(run.worker, stub, ctx, { ...(run.origin === undefined ? {} : { origin: run.origin }), asked: run.asked })
     } catch (e) { bad(`${c.id} ${c.what}: the core's policy throws: ${e.message}`); continue }
     const port = await grantDocs(policy, input.path)
-    const args = ['--by-caps', '--uploads', duploads, '--root', root, '--desk', desk, ...(exclude.length ? ['--exclude', exclude.map((x) => `${root}/${x}`).join(',')] : [])]
+    const args = ['--by-caps', '--uploads', duploads, '--root', root, '--private-root', `${root}/Private`, '--desk', desk, ...(exclude.length ? ['--exclude', exclude.map((x) => `${root}/${x}`).join(',')] : [])]
     const r = spawnSync(process.execPath, [join(FILES, 'docs-grant.mjs'), ...args], { cwd, input: JSON.stringify({ tool_name: c.tool, tool_input: input, cwd }), env: { PATH: process.env.PATH, ...core }, encoding: 'utf8', timeout: 20000 })
     if (r.status !== 0) { bad(`${c.id} ${c.what}: docs-grant.mjs exited ${r.status}`); continue }
     const hook = /"permissionDecision":"deny"/.test(r.stdout) ? 'deny' : 'allow', theirs = port.ok ? 'allow' : 'deny'
@@ -325,6 +333,83 @@ else {
   }
 }
 console.log(`${dagree}/${dn} desk checks agree (cases.json's docs cases with --desk, and cases-desk.json through the hook and the port)`)
+
+// Workers by plan Task 13: the chart hooks deny every cases-private.json case the port denies. naila Task 11's private folder
+// cases (beside cases.json; its own role fixtures: chief the lead, ledger, and keeper, a private role) run through their hook
+// with --private-root, in cases.json's tree plus their own part (Private/ at the real phase's root), with the core's env for
+// the case's run (hookEnv: HARNESS_PRIVATE_OWN for keeper's alone), each agreeing with its expectation and with the core's
+// port of the hook (decidePath, the search-root rule, grantDocs on the case's policy, as naila's floor-model.ts port runs
+// them); where the port refuses with a private text (PRIVATE_SEARCH_REFUSAL, PRIVATE_REFUSAL) the hook gives it word for word.
+const privFile = join(dirname(casesFile), 'cases-private.json')
+let pn = 0, pagree = 0
+if (!existsSync(privFile)) bad(`no private folder cases at ${privFile}: naila predates workers by plan Task 11`)
+else {
+  const { policyFor } = await import(join(dist, 'floor/policy.js'))
+  const { grantDocs } = await import(join(dist, 'floor/docs-grant.js'))
+  const { NOT_AVAILABLE } = await import(join(dist, 'capabilities.js'))
+  const { decidePath, expandHome, patternRefusal, privateSearchRefusal, searchRootOf, PRIVATE_SEARCH_REFUSAL, PRIVATE_REFUSAL } = await import(join(dist, 'floor/paths.js'))
+  const { uninstallRosterForTests } = await import(join(dist, 'roster.js'))
+  if (typeof PRIVATE_SEARCH_REFUSAL !== 'string' || typeof PRIVATE_REFUSAL !== 'string') { bad(`naila's built ${dist}/floor/paths.js has no private texts: build naila first`); process.exit(1) }
+  const P = JSON.parse(readFileSync(privFile, 'utf8'))
+  uninstallRosterForTests(); installRoster(rosterFrom(parseWorkerSpecs(JSON.stringify(P.roles), () => '')))
+  const tp = realpathSync(mkdtempSync(join(tmpdir(), 'floor-private-')))
+  for (const part of [tree, P.tree]) {
+    for (const d of part.dirs ?? []) mkdirSync(join(tp, d), { recursive: true })
+    for (const [f, text] of Object.entries(part.files ?? {})) { mkdirSync(dirname(join(tp, f)), { recursive: true }); writeFileSync(join(tp, f), text) }
+    for (const [f, target] of Object.entries(part.hardlinks ?? {})) linkSync(join(tp, target), join(tp, f))
+    for (const [f, target] of Object.entries(part.symlinks ?? {})) { mkdirSync(dirname(join(tp, f)), { recursive: true }); symlinkSync(join(tp, target), join(tp, f)) }
+  }
+  const pmount = join(tp, tree.mount), puploads = join(tp, tree.uploads)
+  // naila floor-model.ts port(): the core's decision on a hook case
+  const port = async (c, p, i, cwd) => {
+    switch (c.claude) {
+      case 'hook:read-guard': {
+        if (c.tool === 'Read') return decidePath(p, 'read', String(i.file_path), cwd)
+        const pattern = c.tool === 'Glob' ? i.pattern : i.glob
+        const refused = pattern === undefined ? undefined : patternRefusal(pattern)
+        if (refused) return { ok: false, reason: refused }
+        let at = posix.resolve(cwd, expandHome(i.path ?? cwd))
+        if (c.tool === 'Glob') { const segs = posix.resolve(at, expandHome(i.pattern)).split('/').slice(1), k = segs.findIndex((x) => /[*?]/.test(x)); at = `/${(k < 0 ? segs : segs.slice(0, k)).join('/')}` }
+        const d = await decidePath(p, 'search', at, cwd)
+        if (!d.ok) return d
+        const why = await privateSearchRefusal(p, searchRootOf(c.tool, i, cwd), cwd)
+        return why ? { ok: false, reason: why } : d
+      }
+      case 'hook:write-guard': return decidePath(p, 'write', String(i.file_path))
+      case 'hook:docs-grant': return grantDocs(p, i.path)
+    }
+  }
+  const reasonOf = (r) => { try { return JSON.parse(r.stdout).hookSpecificOutput?.permissionDecisionReason } catch { return undefined } }
+  for (const c of P.cases.filter((x) => x.claude.startsWith('hook:'))) {
+    pn++
+    const ph = tree.phases[c.run.phase], root = join(tp, ph.root), exclude = c.run.phase === 'real' ? ph.exclude : []
+    const cwd = join(tp, tree.work, c.run.role)
+    const tok = { $V: pmount, $U: puploads, $W: posix.join(root, 'Naila', 'Workspace', c.run.role), $H: tree.home, $S: cwd.replace(/[^a-zA-Z0-9]/g, '-') }
+    const input = subst(c.input, tok)
+    if (/\$[A-Za-z]/.test(JSON.stringify(input))) { bad(`${c.id} ${c.what}: a path token is left in ${JSON.stringify(input)}`); continue }
+    const ctx = { phase: c.run.phase, vaultRoot: root, vaultMount: pmount, vaultExclude: ph.exclude, uploadsRoot: puploads, workRoot: join(tp, tree.work), claudeHome: tree.home }
+    const run = { worker: c.run.role, on: c.run.on, ...(c.run.origin === undefined ? {} : { origin: c.run.origin }), asked: c.run.asked }
+    let core, policy
+    try {
+      core = hookEnv(run, ctx)
+      const on = new Set(run.on)
+      const stub = { state: () => Object.fromEntries([...CAPABILITY_IDS.map((x) => [x, on.has(x) ? 'on' : 'off']), ...NOT_AVAILABLE.map((x) => [x, 'unavailable'])]), servers: () => [] }
+      policy = policyFor(run.worker, stub, ctx, { ...(run.origin === undefined ? {} : { origin: run.origin }), asked: run.asked })
+    } catch (e) { bad(`${c.id} ${c.what}: the core's policy throws: ${e.message}`); continue }
+    const theirs = await port(c, policy, input, cwd)
+    const [hook, ...args] = hookArgs(c, root, exclude, undefined, puploads)
+    const r = spawnSync(process.execPath, [join(FILES, hook), ...args], { cwd, input: JSON.stringify({ tool_name: c.tool, tool_input: input, cwd }),
+      env: { PATH: process.env.PATH, ...core, HARNESS_WEB_SLOTS: slotsWith() }, encoding: 'utf8', timeout: 20000 })
+    if (r.status !== 0) { bad(`${c.id} ${c.what}: ${hook} exited ${r.status}: ${(r.stderr ?? '').trim().split('\n').pop()}`); continue }
+    const want = c.hook ?? c.expect, mine = /"permissionDecision":"deny"/.test(r.stdout) ? 'deny' : 'allow', portV = theirs.ok ? 'allow' : 'deny'
+    if (mine !== want || portV !== want) { bad(`${c.id} ${c.what}: ${hook} ${mine}s, the port ${portV}s, want ${want} ${r.stdout.trim()} ${theirs.reason ?? ''}`); continue }
+    if (want === 'deny' && [PRIVATE_SEARCH_REFUSAL, PRIVATE_REFUSAL].includes(theirs.reason) && reasonOf(r) !== theirs.reason) { bad(`${c.id} ${c.what}: ${hook} says ${JSON.stringify(reasonOf(r))}, the port ${JSON.stringify(theirs.reason)}`); continue }
+    pagree++
+  }
+  // the rest of this script runs as cases.json's roles
+  uninstallRosterForTests(); installRoster(rosterFrom(parseWorkerSpecs(JSON.stringify(roles), () => '')))
+}
+console.log(`${pagree}/${pn} private folder cases agree (cases-private.json through the hook and the port)`)
 
 // Homelab-only checks of the web guard (what the shared cases can't state: its flag, its env, its slots folder, its deadline)
 const R = { HARNESS_CAPS: 'web.search,web.open' }
@@ -398,7 +483,7 @@ const deadline = (what, args, env, part) => new Promise((resolve) => {
     resolve()
   })
 })
-const writeDeadline = deadline('harness-write-guard.mjs', [join(FILES, 'harness-write-guard.mjs'), '--root', `/vault/${WS}`],
+const writeDeadline = deadline('harness-write-guard.mjs', [join(FILES, 'harness-write-guard.mjs'), '--root', `/vault/${WS}`, '--private-root', '/vault/Private'],
   { HARNESS_WORKER: LEAD, HARNESS_WEB_SLOTS: slotsWith() }, '{"tool_name":"Wri')
 await deadline('web-guard.mjs', ['--import', stub, join(FILES, 'web-guard.mjs'), '--by-worker'], { ...R, HARNESS_WEB_SLOTS: slotsWith(), STUB_DNS: '{}' }, SEARCH.slice(0, 10))
 await writeDeadline
@@ -415,7 +500,7 @@ if (/file a plan/i.test(RESEARCHED_TEXT ?? '')) bad('the researched write refusa
 const wroot = join(t, tree.phases.real.root)
 const write = (what, tool, toolInput, env, want, reason) => {
   extra++
-  const r = spawnSync(process.execPath, [join(FILES, 'harness-write-guard.mjs'), '--root', `${wroot}/${WS}`],
+  const r = spawnSync(process.execPath, [join(FILES, 'harness-write-guard.mjs'), '--root', `${wroot}/${WS}`, '--private-root', `${wroot}/Private`],
     { cwd: join(t, tree.work, LEAD), input: JSON.stringify({ tool_name: tool, tool_input: toolInput }), env: { PATH: process.env.PATH, HARNESS_WORKER: LEAD, ...env }, encoding: 'utf8', timeout: 20000 })
   const o = out(r), got = r.stdout.trim() === '' ? 'none' : o?.permissionDecision, why = []
   if (r.status !== 0) why.push(`exit ${r.status}`)
@@ -450,6 +535,6 @@ for (const tool of ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'mcp__vault__w
 for (const tool of ['TodoWrite', 'Read', 'mcp__vault__read_note', 'mcp__vault__search', 'mcp__finance__add_transaction', 'mcp__core__ask_worker', 'WebFetch'])
   if (m.test(tool)) bad(`the write guard's matcher also hooks ${tool}`)
 console.log(`${extra} homelab-only web-guard and write-guard checks run`)
-process.exit(fail || agree !== n || dagree !== dn ? 1 : 0)
+process.exit(fail || agree !== n || dagree !== dn || pagree !== pn ? 1 : 0)
 EOF
 node "$priv/run.mjs" "$repo" "$naila" "$cases" "$priv/dns-stub.mjs" "$priv/config"

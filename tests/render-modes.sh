@@ -41,7 +41,8 @@
 #  - HARNESS_VERSION is the naila image tag, harness-start runs the claude-code adapter's prepare.js on the worker spec (its
 #    exit status and an empty dir list fail the start), exports HARNESS_WORKER_SPEC, and its settings check refuses a static
 #    allow outside the mcp__core__ tools;
-#  - phase 2 (provider-neutral core): the runs' vault server gets VAULT_WORKERS_WRITE=0, harness-start dies unless the image's
+#  - phase 2 (provider-neutral core): the runs' vault server (the core's per run since workers by plan Task 13, call 12: no
+#    user-scope vault) gets VAULT_WORKERS_WRITE=0, harness-start dies unless the image's
 #    vault server and notes server log their VAULT_WORKERS_WRITE / NOTES_READONLY phrases (an older image dies, never starts
 #    weaker), its settings check imports the image's CLAUDE_STATIC_LAYER (dist/providers/claude-code/compile.js; missing:
 #    the start fails) and refuses settings without every layer deny or with a layer hook's tools not hooked by exactly one
@@ -192,9 +193,9 @@ export FLOOR_DENY='["Bash","NotebookEdit","Agent","Task","Workflow","TaskStop","
 # The claude-code adapter's static layer, verbatim from naila packages/harness/src/providers/claude-code/compile.ts
 # CLAUDE_STATIC_LAYER (up to naila 8346393; /run/provider-keys since cbbede6; /run/files-token and /run/files-sock since file actions; the researcher's web and write hooks, their 30 s
 # timeout and onFailure block, since the researcher branch; the write guard's root pinned only to end in /Workspace since pure-core
-# phase 4, call 15: the profile names the system folder): the denies and the guard hooks (matcher, command regex source, pins) harness-start's
+# phase 4, call 15: the profile names the system folder; every vault hook's --private-root <root>/Private since workers by plan Task 11): the denies and the guard hooks (matcher, command regex source, pins) harness-start's
 # settings check takes from the image. With NAILA_WORKTREE the built dist export must equal it. A change there changes this.
-export CLAUDE_STATIC_LAYER='{"deny":["Read(//run/docs-token/**)","Edit(//run/docs-token/**)","Write(//run/docs-token/**)","Read(//run/docs-sock/**)","Edit(//run/docs-sock/**)","Write(//run/docs-sock/**)","Read(//run/files-token/**)","Edit(//run/files-token/**)","Write(//run/files-token/**)","Read(//run/files-sock/**)","Edit(//run/files-sock/**)","Write(//run/files-sock/**)","Read(//run/provider-keys/**)","Edit(//run/provider-keys/**)","Write(//run/provider-keys/**)"],"hooks":[{"matcher":"Read|Glob|Grep","command":"^node \\/config\\/read-guard\\.mjs --by-origin \\|\\| exit 2$"},{"matcher":"Write|Edit|MultiEdit|NotebookEdit|mcp__vault__write_inbox|mcp__vault__append_daily|mcp__vault__workers_write|mcp__finance-notes__write_note|mcp__finance-notes__edit_note","command":"harness-write-guard\\.mjs --root \\S+\\/Workspace \\|\\| exit 2$","timeout":30,"onFailure":"block"},{"matcher":"mcp__docs__convert","command":"docs-grant\\.mjs --by-caps "},{"matcher":"WebFetch|WebSearch","command":"^node \\/config\\/web-guard\\.mjs --by-worker \\|\\| exit 2$","timeout":30,"onFailure":"block"}]}'
+export CLAUDE_STATIC_LAYER='{"deny":["Read(//run/docs-token/**)","Edit(//run/docs-token/**)","Write(//run/docs-token/**)","Read(//run/docs-sock/**)","Edit(//run/docs-sock/**)","Write(//run/docs-sock/**)","Read(//run/files-token/**)","Edit(//run/files-token/**)","Write(//run/files-token/**)","Read(//run/files-sock/**)","Edit(//run/files-sock/**)","Write(//run/files-sock/**)","Read(//run/provider-keys/**)","Edit(//run/provider-keys/**)","Write(//run/provider-keys/**)"],"hooks":[{"matcher":"Read|Glob|Grep","command":"^node \\/config\\/read-guard\\.mjs --by-origin --private-root \\/\\S+\\/Private \\|\\| exit 2$"},{"matcher":"Write|Edit|MultiEdit|NotebookEdit|mcp__vault__write_inbox|mcp__vault__append_daily|mcp__vault__workers_write|mcp__finance-notes__write_note|mcp__finance-notes__edit_note","command":"harness-write-guard\\.mjs --root \\S+\\/Workspace --private-root \\/\\S+\\/Private \\|\\| exit 2$","timeout":30,"onFailure":"block"},{"matcher":"mcp__docs__convert","command":"docs-grant\\.mjs --by-caps --uploads \\S+ --root \\S+ --private-root \\/\\S+\\/Private( |$)"},{"matcher":"WebFetch|WebSearch","command":"^node \\/config\\/web-guard\\.mjs --by-worker \\|\\| exit 2$","timeout":30,"onFailure":"block"}]}'
 # The core tools every run has, verbatim from naila packages/harness/src/capabilities.ts CORE_ALWAYS_TOOLS (up to 8346393;
 # capability-ids.ts since, re-exported; plan 7b Tasks 13-14, naila 3ee73ee: standing_save, standing_remove and history_search):
 # harness-start's settings check requires harness-settings.json's allow to be exactly these plus propose_plan and ask_worker
@@ -766,7 +767,11 @@ else:
     open(os.path.join(ws, "naila", "old.md"), "w").write("x")
     os.link(os.path.join(v, "Naila", "Decisions.md"), os.path.join(ws, "naila", "hard.md"))
     W = lambda p, tool="Write": {"tool_name": tool, "tool_input": {"file_path": p, "content": "x"}}
-    R, N = ["--root", ws], {"HARNESS_WORKER": "naila", "HARNESS_WEB_SLOTS": tempfile.mkdtemp()}
+    # workers by plan Task 13: the private roles' folders, as harness-start renders them (--private-root <VAULT_ROOT>/Private)
+    pv = os.path.join(v, "Private")
+    for d in ("keeper", "naila", "other"): os.makedirs(os.path.join(pv, d))
+    R, N = ["--root", ws, "--private-root", pv], {"HARNESS_WORKER": "naila", "HARNESS_WEB_SLOTS": tempfile.mkdtemp()}
+    K = {"HARNESS_WORKER": "keeper", "HARNESS_WEB_SLOTS": tempfile.mkdtemp(), "HARNESS_PRIVATE_OWN": os.path.join(pv, "keeper")}
     marked_ = tempfile.mkdtemp(); open(os.path.join(marked_, "researched"), "w").close()
     M = {**N, "HARNESS_WEB_SLOTS": marked_}
     for what, ev, args, env_, want_ in (
@@ -785,6 +790,15 @@ else:
         ("a newline in the path", W(f"{ws}/naila/x\n.md"), R, N, "deny"),
         ("NotebookEdit, even in its own workspace", {"tool_name": "NotebookEdit", "tool_input": {"notebook_path": f"{ws}/naila/x.ipynb", "new_source": "x"}}, R, N, "deny"),
         ("a call without --root", W(f"{ws}/naila/x.md"), [], N, "deny"),
+        ("a call without --private-root", W(f"{ws}/naila/x.md"), ["--root", ws], N, "deny"),
+        ("a relative --private-root", W(f"{ws}/naila/x.md"), ["--root", ws, "--private-root", "vault/Private"], N, "deny"),
+        ("a dotted --private-root", W(f"{ws}/naila/x.md"), ["--root", ws, "--private-root", f"{v}/../vault/Private"], N, "deny"),
+        ("--private-root with no value", W(f"{ws}/naila/x.md"), ["--root", ws, "--private-root"], N, "deny"),
+        ("the lead in Private/<its own id> (it is not private)", W(f"{pv}/naila/x.md"), R, N, "deny"),
+        ("the lead in a private role's folder", W(f"{pv}/keeper/x.md"), R, N, "deny"),
+        ("a private role in its own folder", W(f"{pv}/keeper/x.md"), R, K, "none"),
+        ("a private role in another entry", W(f"{pv}/other/x.md"), R, K, "deny"),
+        ("a role naming another role's folder as its own", W(f"{pv}/keeper/x.md"), R, {**N, "HARNESS_PRIVATE_OWN": os.path.join(pv, "keeper")}, "deny"),
         ("--root with no value", W(f"{ws}/naila/x.md"), ["--root"], N, "deny"),
         ("a call without HARNESS_WORKER", W(f"{ws}/naila/x.md"), R, {}, "deny"),
         ("a worker with no workspace", W(f"{ws}/ops-oncall/x.md"), R, {"HARNESS_WORKER": "ops-oncall"}, "deny"),
@@ -811,7 +825,7 @@ for d in ("discord", "test"): os.makedirs(os.path.join(up, d))
 for f in ("Daily/x.md", "Finance/s.pdf", "Naila/Workspace/finance-bookkeeper/b.xlsx"): open(os.path.join(v, f), "w").write("x")
 for f in ("discord/u.pdf", "test/t.pdf"): open(os.path.join(up, f), "w").write("x")
 C = lambda p: {"tool_name": "mcp__docs__convert", "tool_input": {"path": p}}
-BC = ["--by-caps", "--uploads", up, "--root", v]
+BC = ["--by-caps", "--uploads", up, "--root", v, "--private-root", os.path.join(v, "Private")]   # workers by plan Task 13: with the private root
 BK = "docs.convert,files.read,messaging.ask,budget.read,budget.write-plans"
 def core_roots(caps, w):
     """HARNESS_DOCS_ROOTS as naila's docsRoots sets it for these switches: the vault with vault.read, a finance worker's
@@ -873,7 +887,7 @@ Rd = lambda p: {"tool_name": "Read", "tool_input": {"file_path": p}}
 Gl = lambda path, pat: {"tool_name": "Glob", "tool_input": {"path": path, "pattern": pat}}
 Gr = lambda path: {"tool_name": "Grep", "tool_input": {"path": path, "pattern": "x"}}
 Ga = lambda pat: {"tool_name": "Glob", "tool_input": {"pattern": pat}}   # an absolute pattern, no path
-BO = ["--by-origin"]
+BO = ["--by-origin", "--private-root", "/vault/Private"]   # workers by plan Task 13: with the private root, as harness-start renders it
 for what, ev, o_, want_ in (
     ("a discord-origin run, its own upload", Rd(f"{cl}/uploads/discord/id1/u.pdf"), "discord", "none"),
     ("a test-origin run, a Discord upload", Rd(f"{cl}/uploads/discord/id1/u.pdf"), "test", "deny"),
@@ -908,6 +922,9 @@ for o_, want_ in (("test", "Under ~/.claude only uploads/test/ (files sent in th
                   (None, "Under ~/.claude only tool-results/ may be read: this run came from no channel, so no uploads are open to it.")):
     got = reason(rg, Rd(f"{cl}/uploads/discord/id1/u.pdf"), BO, {"HARNESS_ORIGIN": o_} if o_ else {}).replace(hc, "/home/claude")
     if got != want_: bad.append(f"{tag}: the deny reason with origin {o_!r} is {got!r}, want {want_!r}")
+# workers by plan Task 13: with --by-origin, a missing, relative or dotted --private-root denies every call
+for args_ in (["--by-origin"], ["--by-origin", "--private-root", "vault/Private"], ["--by-origin", "--private-root", "/vault/../vault/Private"], ["--by-origin", "--private-root"]):
+    if (got := hook(rg, Rd("/etc/hostname"), args_, {"HARNESS_ORIGIN": "discord"})) != "deny": bad.append(f"{tag}: {args_} lets a read of /etc/hostname through: {got}")
 for ev in (Rd(f"{cl}/uploads/discord/id1/u.pdf"), Rd(f"{cl}/uploads/test/id2/t.pdf"), Gl(f"{cl}/uploads", "**"), Gr(f"{cl}/uploads"),
            Rd(f"{cl}/projects/p/s/tool-results/r.txt"), Rd(f"{cl}/.credentials.json"), Rd("/etc/hostname"), Ga(f"{cl}/uploads/disc*/**"), Ga(f"{cl}/uploads/discord/**")):
     for env_ in ({}, {"HARNESS_ORIGIN": "test"}, {"HARNESS_ORIGIN": "Bad"}):
@@ -1108,8 +1125,9 @@ for ph, r in (("test", test), ("real", real)):
     if ph == "real" and "--exclude /vault/Harness-test" not in hook: bad.append(f"real phase: the docs hook does not exclude /vault/Harness-test: {hook}")
     # I1: the docs hook follows each run's switches, rooted at this phase's vault; file actions: with the desk (HARNESS_DESK_ROOT)
     # as --desk, after --root and before --exclude
-    if not re.search(rf" --by-caps --uploads \S+/uploads --root {re.escape(val(ctr(r, 'harness'), 'VAULT_ROOT'))} --desk {re.escape(val(ctr(r, 'harness'), 'HARNESS_DESK_ROOT') or '(unset)')}( --exclude \S+)? \|\| exit 2$", hook) or "--only" in hook:
-        bad.append(f"{ph} phase: the docs hook does not follow the switches (--by-caps --root VAULT_ROOT --desk HARNESS_DESK_ROOT): {hook}")
+    VR_ = val(ctr(r, 'harness'), 'VAULT_ROOT')
+    if not re.search(rf" --by-caps --uploads \S+/uploads --root {re.escape(VR_)} --private-root {re.escape(VR_)}/Private --desk {re.escape(val(ctr(r, 'harness'), 'HARNESS_DESK_ROOT') or '(unset)')}( --exclude \S+)? \|\| exit 2$", hook) or "--only" in hook:
+        bad.append(f"{ph} phase: the docs hook does not follow the switches (--by-caps --root VAULT_ROOT --private-root VAULT_ROOT/Private --desk HARNESS_DESK_ROOT): {hook}")
     if ph == "test" and "--exclude" in hook: bad.append(f"test phase: the docs hook excludes a folder: {hook}")
     want = "Harness-test" if ph == "real" else None
     if val(ctr(r, "harness"), "VAULT_EXCLUDE") != want: bad.append(f"{ph} phase: harness VAULT_EXCLUDE is {val(ctr(r, 'harness'), 'VAULT_EXCLUDE')!r}, want {want!r}")
@@ -1132,11 +1150,23 @@ for ph, r in (("test", test), ("real", real)):
     for tool, guard in (("Read", "read-guard.mjs"), ("Glob", "read-guard.mjs"), ("Grep", "read-guard.mjs"), ("WebSearch", "web-guard.mjs"),
                         ("WebFetch", "web-guard.mjs"), ("mcp__docs__convert", "docs-grant.mjs")):
         if not any(guard in c for c in hooked(tool)): bad.append(f"{tag}: the {guard} hook is missing for {tool}")
+    PRIV_ = f"{val(ctr(r, 'harness'), 'VAULT_ROOT')}/Private"   # workers by plan Task 13: the private roles' folders
     for tool in ("Read", "Glob", "Grep"):   # Ruling 16: the runs read only their own origin channel's uploads
-        if hooked(tool) != ["node /config/read-guard.mjs --by-origin || exit 2"]: bad.append(f"Ruling 16: {tag}: the {tool} hooks are {hooked(tool)}, want the read guard with --by-origin")
+        if hooked(tool) != [f"node /config/read-guard.mjs --by-origin --private-root {PRIV_} || exit 2"]: bad.append(f"Ruling 16: {tag}: the {tool} hooks are {hooked(tool)}, want the read guard with --by-origin --private-root {PRIV_}")
     wroot = f"{val(ctr(r, 'harness'), 'VAULT_ROOT')}/Naila/Workspace"
     for tool in ("Write", "Edit", "NotebookEdit"):   # P18: the root on the command line
-        if hooked(tool) != [f"node /config/harness-write-guard.mjs --root {wroot} || exit 2"]: bad.append(f"P18: {tag}: the {tool} hooks are {hooked(tool)}, want the write guard with --root {wroot}")
+        if hooked(tool) != [f"node /config/harness-write-guard.mjs --root {wroot} --private-root {PRIV_} || exit 2"]: bad.append(f"P18: {tag}: the {tool} hooks are {hooked(tool)}, want the write guard with --root {wroot} --private-root {PRIV_}")
+    # workers by plan Task 13: every hook command carries --private-root in its fixed position (read: right after --by-origin;
+    # write: right after --root; docs: right after --root, before --desk and --exclude), once, as <VAULT_ROOT>/Private
+    tag_p = f"every hook command carries --private-root in its fixed position ({ph} phase)"
+    for tool, before in (("Read", "--by-origin"), ("Write", "--root"), ("mcp__docs__convert", "--root")):
+        for c_ in hooked(tool):
+            tk = c_.split(" ")
+            at_p = [k for k, x in enumerate(tk) if x == "--private-root"]
+            want_at = tk.index(before) + (1 if before == "--by-origin" else 2) if before in tk else -1
+            if at_p != [want_at] or tk[want_at + 1] != PRIV_: bad.append(f"{tag_p}: the {tool} hook is {c_!r}, want --private-root {PRIV_} once, right after {before}{'' if before == '--by-origin' else ' <dir>'}")
+    for c_ in (h["command"] for e in pre for h in e["hooks"]):
+        if "--private-root" in c_ and not re.search(r"/(read-guard|harness-write-guard|docs-grant)\.mjs ", c_): bad.append(f"{tag_p}: {c_!r} carries --private-root, but it is no vault hook")
     # researcher Task 11: WebFetch and WebSearch are hooked once, by the guard deciding by worker; the RC lines' entry (the guard
     # with no flag, which refuses every call) is gone; the web and write hooks carry a 30 s timeout and onFailure block
     for tool in ("WebFetch", "WebSearch"):
@@ -1186,7 +1216,7 @@ for ph, r in (("test", test), ("real", real)):
     # unset (an older chart) it accepts the hook without --desk and refuses one with it
     tag_d = f"harness-start accepts the hook command with --desk, and dies on --desk in another position ({ph} phase)"
     dh = [h["command"] for e in s.get("hooks", {}).get("PreToolUse", []) for h in e["hooks"] if "docs-grant" in h["command"]]
-    if len(dh) != 1 or not re.search(rf" --root \S+ --desk {re.escape(vars_.get('HARNESS_DESK_ROOT') or '(none)')}( --exclude \S+)? \|\| exit 2$", dh[0]): bad.append(f"{tag_d}: the written docs hook is {dh}")
+    if len(dh) != 1 or not re.search(rf" --root \S+ --private-root \S+ --desk {re.escape(vars_.get('HARNESS_DESK_ROOT') or '(none)')}( --exclude \S+)? \|\| exit 2$", dh[0]): bad.append(f"{tag_d}: the written docs hook is {dh}")
     nodesk = json.loads(json.dumps(s))
     for e in nodesk["hooks"]["PreToolUse"]:
         for h in e["hooks"]:
@@ -1214,7 +1244,16 @@ for ph, r in (("test", test), ("real", real)):
                      ("a second docs hook", lambda x: x["hooks"]["PreToolUse"].append({"matcher": "mcp__docs__convert", "hooks": [{"type": "command", "command": "true"}]})),
                      # file actions Task 17: --desk only after --root and before --exclude, and only as HARNESS_DESK_ROOT
                      ("the docs hook with --desk before --uploads", lambda x: [h.__setitem__("command", re.sub(r"--by-caps (.*) --desk (\S+)", r"--by-caps --desk \2 \1", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
-                     ("the docs hook with --desk before --root", lambda x: [h.__setitem__("command", re.sub(r"--root (\S+) --desk (\S+)", r"--desk \2 --root \1", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
+                     ("the docs hook with --desk before --root", lambda x: [h.__setitem__("command", re.sub(r"--root (\S+) --private-root (\S+) --desk (\S+)", r"--desk \3 --root \1 --private-root \2", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
+                     # workers by plan Task 13: every vault hook carries --private-root <VAULT_ROOT>/Private in its fixed position
+                     ("the read guard without --private-root", lambda x: [h.__setitem__("command", re.sub(r" --private-root \S+", "", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "read-guard" in h["command"]]),
+                     ("the read guard with --private-root elsewhere", lambda x: [h.__setitem__("command", re.sub(r" --private-root (\S+)", r" --private-root \1/x", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "read-guard" in h["command"]]),
+                     ("the read guard with --private-root before --by-origin", lambda x: [h.__setitem__("command", re.sub(r"--by-origin --private-root (\S+)", r"--private-root \1 --by-origin", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "read-guard" in h["command"]]),
+                     ("the write guard without --private-root", lambda x: [h.__setitem__("command", re.sub(r" --private-root \S+", "", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "write-guard" in h["command"]]),
+                     ("the write guard with a relative --private-root", lambda x: [h.__setitem__("command", re.sub(r" --private-root /(\S+)", r" --private-root \1", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "write-guard" in h["command"]]),
+                     ("the docs hook without --private-root", lambda x: [h.__setitem__("command", re.sub(r" --private-root \S+", "", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
+                     ("the docs hook with --private-root after --desk", lambda x: [h.__setitem__("command", re.sub(r" --private-root (\S+) --desk (\S+)", r" --desk \2 --private-root \1", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
+                     ("the docs hook with --private-root elsewhere", lambda x: [h.__setitem__("command", re.sub(r" --private-root (\S+)", r" --private-root \1/x", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
                      ("the docs hook with --desk after --exclude", lambda x: [h.__setitem__("command", re.sub(r" --desk (\S+)(.*) \|\| exit 2$", r"\2 --exclude /x --desk \1 || exit 2", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
                      ("the docs hook without --desk (HARNESS_DESK_ROOT set)", lambda x: [h.__setitem__("command", re.sub(r" --desk \S+", "", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
                      ("the docs hook with another desk", lambda x: [h.__setitem__("command", re.sub(r" --desk (\S+)", r" --desk \1/x", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
@@ -1363,17 +1402,18 @@ else:
     if check("old image", "Harness-test") == 0: bad.append("harness-start.sh: starts with VAULT_EXCLUDE set although the vault server lacks support")
     if check("console.error(`vault-mcp: VAULT_EXCLUDE supported; leaving out ${x}`)", "Harness-test") != 0: bad.append("harness-start.sh: refuses a vault server that supports VAULT_EXCLUDE")
     if check("old image", "") != 0: bad.append("harness-start.sh: the test phase (no VAULT_EXCLUDE) needs the support marker")
-if not (re.search(r'^\[ -z "\$\{VAULT_EXCLUDE:-\}" \] \|\| vault_env\+=\(-e VAULT_EXCLUDE="\$VAULT_EXCLUDE"\)', start, re.M) and re.search(r'^claude mcp add vault [^\n]*"\$\{vault_env\[@\]\}"', start, re.M)): bad.append("harness-start.sh: the runs' vault server does not get VAULT_EXCLUDE")
+# workers by plan Task 13 (call 12): the runs' vault server is the core's, per run (VAULT_EXCLUDE, VAULT_WORKERS_WRITE=0,
+# VAULT_PATHS and VAULT_OWNER from naila's coreServerDecls): harness-start adds no user-scope vault server any more, and removes
+# one an older chart added
+if re.search(r'^\s*claude mcp add vault\b', start, re.M) or "vault_env" in start: bad.append("harness-start.sh: it still adds a user-scope vault server (call 12: each run gets its own, the core's)")
+if not re.search(r'^claude mcp remove vault --scope user >/dev/null 2>&1 \|\| true$', start, re.M): bad.append("harness-start.sh: it does not remove the user-scope vault server an older chart added")
 # phase 2: the runs' vault server never registers workers_write (VAULT_WORKERS_WRITE=0, unconditionally, before it is added),
 # and harness-start dies unless the image's vault server and notes server log their support phrases: an older image (the
 # phrases missing, or the notes server absent) dies naming the image as too old, never starts with weaker rules. Run as rendered.
 import shutil
-tag = "phase 2: harness-start.sh gives the runs' vault server VAULT_WORKERS_WRITE=0 and needs the image's phrases"
+tag = "phase 2: harness-start.sh needs the image's phrases (the runs' vault server, the core's per run since workers by plan Task 13, gets VAULT_WORKERS_WRITE=0 from naila's coreServerDecls)"
 sl = start.splitlines()
-vw = [i for i, l in enumerate(sl) if re.fullmatch(r"vault_env\+=\(-e VAULT_WORKERS_WRITE=0\)(\s+#.*)?", l)]
-va = [i for i, l in enumerate(sl) if re.match(r'^claude mcp add vault [^\n]*"\$\{vault_env\[@\]\}"', l)]
-v0 = [i for i, l in enumerate(sl) if l.startswith("vault_env=(")]
-if len(vw) != 1 or len(va) != 1 or len(v0) != 1 or not v0[0] < vw[0] < va[0]: bad.append(f"{tag}: want one unconditional vault_env+=(-e VAULT_WORKERS_WRITE=0) between vault_env=( and claude mcp add vault")
+if any(re.match(r'^\s*claude mcp add vault\b', l) for l in sl): bad.append(f"{tag}: harness-start adds a user-scope vault server (call 12: none)")
 if "NOTES_SERVER=/naila/packages/vault-mcp/dist/notes-server.js" not in sl: bad.append(f"{tag}: harness-start does not set NOTES_SERVER=/naila/packages/vault-mcp/dist/notes-server.js")
 PHRASES = {"VAULT_SERVER": "vault-mcp: VAULT_WORKERS_WRITE supported", "NOTES_SERVER": "finance-notes: NOTES_READONLY supported"}
 pl = [l for l in sl if not l.lstrip().startswith("#") and any(f"'{ph_}'" in l for ph_ in PHRASES.values())]
@@ -2580,7 +2620,9 @@ for label, path in zip(("test", "real", "two channels", "real, RC off"), sys.arg
     sel = [l for l in start.splitlines() if l.startswith("DOCS_BY_CORE=") and "dist/docs-relay.js" in l]
     mc = [x for x in re.finditer(r"^node -e '([^']*)' ([^\n]*)$", start, re.M) if x.group(2).startswith('"$HOME/.claude.json"')]
     if len(sel) != 1 or len(mc) != 1: bad.append(f"{tag}: {len(sel)} DOCS_BY_CORE lines, {len(mc)} ~/.claude.json patches"); continue
-    for has, want in ((True, ["vault"]), (False, ["docs", "vault"])):
+    # workers by plan Task 13 (call 12): no user-scope vault (each run gets its own, the core's): .claude.json lists no user-scope
+    # vault, whatever an older chart left there; an older image's runs keep the user-scope docs entry alone
+    for has, want in ((True, []), (False, ["docs"])):
         d = tempfile.mkdtemp(); nl = os.path.join(d, "naila")
         os.makedirs(f"{nl}/packages/harness/dist")
         if has: open(f"{nl}/packages/harness/dist/docs-relay.js", "w").write("")
@@ -2592,8 +2634,9 @@ for label, path in zip(("test", "real", "two channels", "real, RC off"), sys.arg
         q = subprocess.run(["node", "-e", mc[0].group(1), *args], capture_output=True, text=True)
         got = sorted(json.load(open(cj)).get("mcpServers", {})) if q.returncode == 0 else q.stderr.strip()
         if got != want: bad.append(f"{tag}: with{'' if has else 'out'} dist/docs-relay.js the user-scope servers are {got!r}, want {want!r} (DOCS_BY_CORE={by!r})")
+        if isinstance(got, list) and "vault" in got: bad.append(f".claude.json lists no user-scope vault ({label}): with{'' if has else 'out'} dist/docs-relay.js it lists {got!r}")
         if not has:
-            json.dump({"mcpServers": {"vault": {}}}, open(cj, "w"))
+            json.dump({"mcpServers": {"vault": {}}}, open(cj, "w"))   # a vault entry, no docs one
             if subprocess.run(["node", "-e", mc[0].group(1), *args], capture_output=True, text=True).returncode == 0: bad.append(f"{tag}: on an older image it accepts a ~/.claude.json without the docs entry")
     if not re.search(r'^\s*if \[ "\$DOCS_BY_CORE" = 0 \]; then[^\n]*\n(?:[^\n]*\n)*?\s*claude mcp add --transport http docs --scope user http://127\.0\.0\.1:3002/mcp >/dev/null\n\s*fi$', start, re.M):
         bad.append(f"{tag}: the user-scope docs entry is not added only when DOCS_BY_CORE is 0")
@@ -3057,8 +3100,47 @@ elif pb:
         if q.returncode != 0 or json.loads(q.stdout or "null") != REFUSED: bad.append(f"{tag}: the built naila RESEARCHED_WRITE_REFUSED differs from this file's copy: {(q.stdout or q.stderr)[:300]}")
         if not started(p := parity(REAL_DIST)): bad.append(f"{tag}: refuses the chart's write guard against naila's built dist: {p.stderr.strip()!r}")
 
+# workers by plan Task 13: the chart's read guard keeps the lead out of the private folders: harness-start runs it as the lead
+# (no private folder of its own) with --by-origin --private-root <VAULT_ROOT>/Private, and dies unless it denies a Read under
+# Private/<the lead's id>/ and Private/<a probe>/ with the image's PRIVATE_REFUSAL, and a Grep of the vault root with its
+# PRIVATE_SEARCH_REFUSAL. Run as rendered on the chart's read guard, on weakened copies and on naila's built dist.
+tag = "harness-start dies on a read-guard that lets the lead into Private"
+PRIV_SAYS = "harness-start: read-guard.mjs does not deny the private folders: ship it with the image"
+PRIV_REFUSAL = "That folder is private: only the worker it belongs to may read or write it."
+PRIV_SEARCH = "search a folder: the vault root holds private folders"
+qe = one(lambda l: l.startswith("})().catch(") and l.endswith(" /config/read-guard.mjs /naila/packages/harness/dist/floor/paths.js \"$VAULT_ROOT\" \"$LEAD\""))
+qs = [i for i in range(qe[0], -1, -1) if sl[i].startswith("node -e '")][:1] if len(qe) == 1 else []
+if len(qe) != 1 or not qs: bad.append(f"{tag}: want one private-folder check of the read guard (node -e ... /config/read-guard.mjs /naila/packages/harness/dist/floor/paths.js \"$VAULT_ROOT\" \"$LEAD\"), got {len(qe)}")
+else:
+    if not mkdir_at[0] < qs[0] < qe[0] < spec_export[0]: bad.append(f"{tag}: the check is not after LEAD and its mkdir, and before the core is told the spec")
+    RG = {**test[CMC]["data"], **test[CMH]["data"]}["read-guard.mjs"]
+    old_rg = {**srt[CMC]["data"], **srt[CMH]["data"]}.get("read-guard.mjs", "")   # the SETTINGS_REF chart's, before the private rule
+    PATHS_JS = f"export const PRIVATE_REFUSAL = {json.dumps(PRIV_REFUSAL)}\nexport const PRIVATE_SEARCH_REFUSAL = {json.dumps(PRIV_SEARCH)}\n"
+    def private_check(rguard=RG, paths=PATHS_JS, lead="naila", dist=None):
+        cfg, dd = tempfile.mkdtemp(), dist or tempfile.mkdtemp(); open(f"{cfg}/read-guard.mjs", "w").write(rguard)
+        if dist is None:
+            os.makedirs(f"{dd}/floor"); open(f"{dd}/package.json", "w").write('{"type":"module"}')
+            if paths is not None: open(f"{dd}/floor/paths.js", "w").write(paths)
+        lines = [l.replace("/naila/packages/harness/dist/", dd + "/").replace("/config/", cfg + "/") for l in sl[qs[0]:qe[0] + 1]]
+        p = sh(lines, {}, f"VAULT_ROOT=/vault; LEAD={shlex.quote(lead)}\n")
+        shutil.rmtree(cfg)
+        if dist is None: shutil.rmtree(dd)
+        return p
+    if not started(p := private_check()): bad.append(f"{tag}: refuses the chart's read guard: {p.stderr.strip()!r}")
+    for what, rg_ in (("a read guard without the private rule", RG.replace("deny(PRIVATE_TEXT)", "void 0").replace("deny(PRIVATE_SEARCH)", "void 0")),
+                      ("a read guard that lets a search of the vault root through", RG.replace("deny(PRIVATE_SEARCH)", "void 0")),
+                      ("a read guard that lets a Read in Private through", RG.replace("deny(PRIVATE_TEXT)", "void 0")),
+                      ("a read guard that treats the lead's own id as its folder", RG.replace("=== `${PR}/${worker}` ? fold(worker) : undefined", "!== undefined || true ? fold(worker) : undefined")),
+                      ("a read guard older than the private rule (the ref's)", old_rg)):
+        if rg_ == RG: bad.append(f"{tag}: {what}: the weakened copy is the chart's own (the guard changed: update this check)"); continue
+        if not died(p := private_check(rguard=rg_), PRIV_SAYS): bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {PRIV_SAYS!r}")
+    if not died(p := private_check(paths=PATHS_JS.replace("only the worker", "only the role"))): bad.append(f"{tag}: an image whose PRIVATE_REFUSAL differs: exit {p.returncode} {p.stderr.strip()!r}")
+    if not died(p := private_check(paths=None), "PRIVATE_REFUSAL"): bad.append(f"{tag}: an image without floor/paths.js: exit {p.returncode} {p.stderr.strip()!r}, want 2 naming PRIVATE_REFUSAL")
+    if not died(p := private_check(lead="")): bad.append(f"{tag}: the guard run without a lead passes: exit {p.returncode} {p.stderr.strip()!r}")
+    if HAVE_DIST and not started(p := private_check(dist=REAL_DIST)): bad.append(f"{tag}: refuses the chart's read guard against naila's built dist: {p.stderr.strip()!r}")
+
 # call 9: the settings harness-start writes are byte-identical to the SETTINGS_REF chart's (default aefa661), both phases,
-# but for the static allow's memory tools (plan 7b Task 18)
+# but for the static allow's memory tools (plan 7b Task 18) and every vault hook's --private-root (workers by plan Task 13)
 tag = f"the rendered settings.json is byte-identical to the SETTINGS_REF ({sref}) chart's"
 UNDO_LINE = b'      "mcp__core__self_note_undo"\n'
 MEMORY_LINES = b'      "mcp__core__self_note_undo",\n      "mcp__core__standing_save",\n      "mcp__core__standing_remove",\n      "mcp__core__history_search"\n'
@@ -3092,7 +3174,12 @@ for ph, now_, then_ in (("test", test, srt), ("real", real, srr)):
     if len(at_) != 1 or not desk_: bad.append(f"{tag}: the ref's settings have {len(at_)} docs-sock Write denies, or the render no HARNESS_DESK_ROOT ({ph} phase)"); continue
     ind_ = at_[0][:len(at_[0]) - len(at_[0].lstrip())]
     t_ = t_.replace(at_[0], at_[0] + "".join(f'{ind_}"{x}(//run/{f_}/**)",\n' for f_ in ("files-token", "files-sock") for x in ("Read", "Edit", "Write")))
-    t_, n_ = re.subn(r"(docs-grant\.mjs --by-caps --uploads \S+ --root \S+)( --exclude \S+)? \|\| exit 2", lambda m_: f"{m_.group(1)} --desk {desk_}{m_.group(2) or ''} || exit 2", t_)
+    # workers by plan Task 13: and every vault hook's --private-root <VAULT_ROOT>/Private, at its fixed position
+    pr_ = f"{val(now_, 'VAULT_ROOT')}/Private"
+    t_, n_ = re.subn(r"(docs-grant\.mjs --by-caps --uploads \S+ --root \S+)( --exclude \S+)? \|\| exit 2", lambda m_: f"{m_.group(1)} --private-root {pr_} --desk {desk_}{m_.group(2) or ''} || exit 2", t_)
+    t_, nr_ = re.subn(r"read-guard\.mjs --by-origin \|\| exit 2", f"read-guard.mjs --by-origin --private-root {pr_} || exit 2", t_)
+    t_, nw_ = re.subn(r"(harness-write-guard\.mjs --root \S+) \|\| exit 2", lambda m_: f"{m_.group(1)} --private-root {pr_} || exit 2", t_)
+    if nr_ != 1 or nw_ != 1: bad.append(f"{tag}: the ref's settings have {nr_} read guards and {nw_} write guards ({ph} phase)")
     if n_ != 1: bad.append(f"{tag}: the ref's settings have {n_} docs hooks ({ph} phase)")
     elif t_.count(UNDO_LINE.decode()) != 1 or a != t_.replace(UNDO_LINE.decode(), MEMORY_LINES.decode()).encode(): bad.append(f"{tag}: they differ beyond the files sidecar's six denies, the docs hook's --desk and the allow's memory tools after self_note_undo ({ph} phase): {' | '.join(l for l in __import__('difflib').unified_diff(t_.replace(UNDO_LINE.decode(), MEMORY_LINES.decode()).splitlines(), a.decode().splitlines(), n=0, lineterm='') if l[:1] in '+-')[:600]}")
 
@@ -3416,7 +3503,8 @@ PY
 #    providerSettings, memory or files, a numeric ref); the real phase dies unless
 #    VAULT_EXCLUDE names the profile's test folder; a test folder or workspace root that is no plain path dies;
 #  - the prod render pairs with the built image, printing Harness-test, Finance, Naila/Workspace and an empty VAULT_PATHS;
-#  - a non-default profile (system Home) reaches the user-scope vault server as VAULT_PATHS (prod's adds nothing), and the
+#  - a non-default profile (system Home) reaches the pairing as VAULT_PATHS (prod's adds nothing; no user-scope vault server
+#    takes it since workers by plan Task 13: each run's own, the core's, does), and the
 #    advisor's finance-notes server (its root and VAULT_PATHS); the chart's copy of vault-mcp's DEFAULT_VAULT_PATHS is the
 #    image's (a profile equal to it adds no VAULT_PATHS, one that differs in any key does);
 #  - the test phase's P8 rules, the test-phase allow check and the write guard's root follow the profile (a moved finance,
@@ -3570,8 +3658,10 @@ if HAVE:
     cfg = config(prod, bent); p = pairing(DIST, VDIST, cfg); shutil.rmtree(cfg)
     if not died(p, REFUSES, "profile.paths.inbox", "is or lies under Workers/"): bad.append(f"{tag}: the built image accepts an inbox under Workers/: exit {p.returncode} {p.stderr.strip()!r}")
 
-# a non-default profile reaches the user-scope vault server; production's adds nothing
-tag = "a non-default profile reaches the user-scope vault server"
+# a non-default profile reaches the pairing as VAULT_PATHS; production's adds nothing. Workers by plan Task 13 (call 12): no
+# user-scope vault server takes it any more (each run's own, naila's coreServerDecls, carries the profile's VAULT_PATHS):
+# harness-start removes one an older chart added and adds none
+tag = "a non-default profile reaches the pairing as VAULT_PATHS, and no user-scope vault server is added"
 home = prof(prod); home["profile"]["paths"]["system"] = "Home"
 d_ = stub(); cfg = config(prod, home)
 p = pairing(DIST, VDIST, cfg) if HAVE else pairing(f"{d_}/h", f"{d_}/v", cfg)
@@ -3580,25 +3670,11 @@ vp = shown(p).split("|", 3)[3] if started(p) and shown(p).count("|") >= 3 else N
 if vp is None or shown(p).split("|")[2] != "Home/Workspace": bad.append(f"{tag}: the pairing with system Home: exit {p.returncode} {p.stderr.strip()!r}, printed {shown(p)!r}")
 elif json.loads(vp or "null") != home["profile"]["paths"]: bad.append(f"{tag}: VAULT_PATHS is {vp!r}, want the profile's paths")
 va = one(lambda l: l == "claude mcp remove vault --scope user >/dev/null 2>&1 || true")
-vb = one(lambda l: l.startswith("claude mcp add vault --scope user "))
-if len(va) != 1 or len(vb) != 1 or not va[0] < vb[0]: bad.append(f"{tag}: want one claude mcp remove vault, then one claude mcp add vault")
-elif vp is not None:
-    b_ = tempfile.mkdtemp()
-    open(f"{b_}/claude", "w").write('#!/bin/sh\n[ "$1 $2" = "mcp add" ] && printf "%s\\n" "$@" > "$LOG"\nexit 0\n'); os.chmod(f"{b_}/claude", 0o755)
-    def added(paths):
-        log = f"{b_}/log"
-        if os.path.exists(log): os.remove(log)
-        q = subprocess.run(["bash", "-c", "set -eu\n" + "\n".join(sl[va[0]:vb[0] + 1])], capture_output=True, text=True,
-                           env={"PATH": f"{b_}:{os.environ['PATH']}", "LOG": log, "VAULT_ROOT": "/vault", "TZ": "Asia/Jakarta", "VAULT_SERVER": "/s.js", "SETUP_VAULT_PATHS": paths})
-        return q, (open(log).read().splitlines() if os.path.exists(log) else [])
-    q, args = added(vp)
-    if q.returncode != 0 or f"VAULT_PATHS={vp}" not in args or args[args.index(f"VAULT_PATHS={vp}") - 1] != "-e": bad.append(f"{tag}: the claude mcp add vault line does not carry -e VAULT_PATHS=<the profile's paths>: {args} {q.stderr.strip()!r}")
-    q, args = added("")
-    if q.returncode != 0 or any(a.startswith("VAULT_PATHS") for a in args) or args[-2:] != ["node", "/s.js"]: bad.append(f"{tag}: production's paths (empty VAULT_PATHS) still add one: {args} {q.stderr.strip()!r}")
-    shutil.rmtree(b_)
-    if HAVE:
-        q = subprocess.run(["node", "--input-type=module", "-e", f"const m = await import({json.dumps(VDIST + '/layout.js')}); process.stdout.write(m.layoutFromEnv(process.argv[1]).workspaces)", vp], capture_output=True, text=True)
-        if q.stdout != "Home/Workspace": bad.append(f"{tag}: the built vault server's layoutFromEnv reads VAULT_PATHS as {q.stdout or q.stderr.strip()!r}, want Home/Workspace")
+vb = one(lambda l: re.match(r"^\s*claude mcp add vault\b", l) is not None)
+if len(va) != 1 or vb: bad.append(f"{tag}: want one claude mcp remove vault and no claude mcp add vault (got {len(va)} and {len(vb)})")
+elif vp is not None and HAVE:
+    q = subprocess.run(["node", "--input-type=module", "-e", f"const m = await import({json.dumps(VDIST + '/layout.js')}); process.stdout.write(m.layoutFromEnv(process.argv[1]).workspaces)", vp], capture_output=True, text=True)
+    if q.stdout != "Home/Workspace": bad.append(f"{tag}: the built vault server's layoutFromEnv reads VAULT_PATHS as {q.stdout or q.stderr.strip()!r}, want Home/Workspace")
 
 # the advisor's finance-notes server follows the profile; the chart's copy of DEFAULT_VAULT_PATHS is the image's
 tag = "the advisor's finance-notes server takes its root and VAULT_PATHS from the profile"
@@ -3660,7 +3736,7 @@ if r is not None:
             dn = s["permissions"]["deny"]
             if "Read(//vault/Money/**)" not in dn or "Read(//vault/Finance/**)" in dn: bad.append(f"{tag}: the test phase denies {[x for x in dn if x.startswith('Read(//vault/')]}, want Read(//vault/Money/**) and not Finance")
             wg = [h["command"] for e in s["hooks"]["PreToolUse"] for h in e["hooks"] if "write-guard" in h["command"]]
-            want = f"node /config/harness-write-guard.mjs --root {val(r, 'VAULT_ROOT')}/Home/Workspace || exit 2"
+            want = f"node /config/harness-write-guard.mjs --root {val(r, 'VAULT_ROOT')}/Home/Workspace --private-root {val(r, 'VAULT_ROOT')}/Private || exit 2"   # workers by plan Task 13
             if wg != [want] or val(r, "VAULT_ROOT") != "/vault/Probe-x": bad.append(f"{tag}: the write guard is {wg}, want [{want!r}] (VAULT_ROOT {val(r, 'VAULT_ROOT')!r})")
             if HAVE:
                 def check(settings):
@@ -4646,6 +4722,31 @@ def undo_files(r, now):
                     for e in c_["env"]:
                         if e["name"] == "DOCS_ROOTS" and e["value"].endswith(":/desk"): e["value"] = e["value"][:-len(":/desk")]
     return r
+# workers by plan Task 13's harness-start.sh change (every vault hook's --private-root <VAULT_ROOT>/Private, its checks, the
+# read guard's private-folder check after the write guard's, and no user-scope vault server), undone text for text: each text
+# it wrote, as often as it wrote it, back to what it replaced; its read-guard check block as a whole
+PRIVATE_START = [
+    ('// workers by plan Task 13: every vault hook takes the private folders of the roles, <VAULT_ROOT>/Private, at a fixed position\n', '', 1),
+    ('command: `node /config/read-guard.mjs --by-origin --private-root ${root}/Private || exit 2` }', 'command: "node /config/read-guard.mjs --by-origin || exit 2" }', 1),
+    ('--root ${root} --private-root ${root}/Private${docsDesk}', '--root ${root}${docsDesk}', 1),
+    ('${root}/${workspaces} --private-root ${root}/Private || exit 2`', '${root}/${workspaces} || exit 2`', 2),
+    ('--root ${esc(root)} --private-root ${esc(root)}/Private( --desk', '--root ${esc(root)}( --desk', 1),
+    ('(docs-grant.mjs --by-caps --root VAULT_ROOT --private-root VAULT_ROOT/Private)', '(docs-grant.mjs --by-caps --root VAULT_ROOT)', 1),
+    ('const rguard = `node /config/read-guard.mjs --by-origin --private-root ${root}/Private || exit 2`', 'const rguard = "node /config/read-guard.mjs --by-origin || exit 2"', 1),
+    ('origin and kept out of the private folders (read-guard.mjs --by-origin --private-root ${root}/Private)`)', 'origin (read-guard.mjs --by-origin)`)', 1),
+    ('[guard, "--root", `${root}/${workspaces}`, "--private-root", `${root}/Private`]', '[guard, "--root", `${root}/${workspaces}`]', 1),
+    ('claude mcp remove vault --scope user >/dev/null 2>&1 || true\nclaude mcp remove docs', 'claude mcp remove vault --scope user >/dev/null 2>&1 || true\nvault_env=(-e VAULT_ROOT="$VAULT_ROOT" -e TZ="$TZ")\n[ -z "${VAULT_EXCLUDE:-}" ] || vault_env+=(-e VAULT_EXCLUDE="$VAULT_EXCLUDE")   # real phase: the test folder stays out\nvault_env+=(-e VAULT_WORKERS_WRITE=0)   # the runs never get workers_write (the floor denies it too); checked supported above\n[ -z "$SETUP_VAULT_PATHS" ] || vault_env+=(-e VAULT_PATHS="$SETUP_VAULT_PATHS")   # the profile\'s paths, when not production\'s\nclaude mcp add vault --scope user "${vault_env[@]}" -- node "$VAULT_SERVER" >/dev/null\nclaude mcp remove docs', 1),
+    ('const want = byCore === "1" ? [] : ["docs"]', 'const want = byCore === "1" ? ["vault"] : ["vault", "docs"]', 1),
+]
+PRIVATE_CHECK = re.compile(r"^node -e '\nconst \{ spawnSync \} = require\(\"child_process\"\)\nconst \[guard, paths, root, lead\] = process\.argv\.slice\(1\)\n.*?^\}\)\(\)\.catch\([^\n]*' /config/read-guard\.mjs /naila/packages/harness/dist/floor/paths\.js \"\$VAULT_ROOT\" \"\$LEAD\"\n", re.M | re.S)
+def without_private(t):
+    """`t` (a harness-start.sh) without workers by plan Task 13's lines, and the problem when one is not there as it wrote them."""
+    t, n_ = PRIVATE_CHECK.subn("", t)
+    if n_ != 1: return t, f"harness-start.sh holds the read guard's private-folder check {n_} times, workers by plan Task 13 wrote it once"
+    for new_, old_, k_ in PRIVATE_START:
+        if t.count(new_) != k_: return t, f"harness-start.sh holds {new_[:60]!r}… {t.count(new_)} times, workers by plan Task 13 wrote it {k_}"
+        t = t.replace(new_, old_)
+    return t, None
 # file actions' harness-start.sh change (its Task 17: the desk, HARNESS_DESK_ROOT, as the docs hook's --desk), undone text for
 # text: each text it wrote, as often as it wrote it, back to what it replaced (plan 7b's rebase onto file actions)
 DESK_START = [
@@ -4683,6 +4784,9 @@ def strip(r, now):
         s = spec(r)
         if s is not None and now: s["version"] = 4; s.get("summary", {}).pop("maxChars", None)
         if s is not None: r[HC]["data"]["harness-workers.json"] = s
+    # workers by plan Task 13: the read and write guards take --private-root (tests/floor-conformance.sh and the checks above run them)
+    if CC in r:
+        for k_ in ("read-guard.mjs", "harness-write-guard.mjs"): r[CC]["data"].pop(k_, None)
     if H in r: r[H]["spec"]["template"]["metadata"].get("annotations", {}).pop("checksum/config", None)
     return r
 diffs = (("prod", prod, prod_ref, True), ("test phase", test, test_ref, True), ("harness off", off, off_ref, False), ("staging", staging, staging_ref, False))
@@ -4696,7 +4800,8 @@ for label, a, b, moved in diffs:
         if (spec(a) or {}).get("version") != 5: bad.append(f"{tag}: its harness-workers.json is not version 5")
         if "maxChars" in (spec(b) or {}).get("summary", {}): bad.append(f"{tag}: the ref's summary already has a maxChars")
         if checksum(a) is None or checksum(a) == checksum(b): bad.append(f"{tag}: the harness checksum is {checksum(a)!r}, the ref's {checksum(b)!r}: want a new one")
-        start_a, why_ = without_desk(a[HC]["data"]["harness-start.sh"]) if setup3 else (a[HC]["data"]["harness-start.sh"], None)   # file actions' desk lines, composed
+        start_a, why_ = without_private(a[HC]["data"]["harness-start.sh"])
+        if not why_: start_a, why_ = without_desk(start_a) if setup3 else (start_a, None)   # file actions' desk lines, composed
         if why_: bad.append(f"{tag}: {why_}")
         bad += [f"{tag}: {g}" for g in start_gaps(start_a, b[HC]["data"]["harness-start.sh"])]
         sa, sb = strip(a, True), strip(b, False)
@@ -5255,6 +5360,31 @@ for label, r in (("prod", prod), ("test phase", test)):
     if any(x in rp for x in ("standing_save", "standing_remove", "history_search", "standing fact")): bad.append(f"{tag}: the {label} researcher's instructions name the memory")
 
 # the whole render, as at <git-ref> but for Task 18's change and file actions' (and Task 8's while <git-ref> renders roles spec 4)
+# workers by plan Task 13's harness-start.sh change (every vault hook's --private-root <VAULT_ROOT>/Private, its checks, the
+# read guard's private-folder check after the write guard's, and no user-scope vault server), undone text for text: each text
+# it wrote, as often as it wrote it, back to what it replaced; its read-guard check block as a whole
+PRIVATE_START = [
+    ('// workers by plan Task 13: every vault hook takes the private folders of the roles, <VAULT_ROOT>/Private, at a fixed position\n', '', 1),
+    ('command: `node /config/read-guard.mjs --by-origin --private-root ${root}/Private || exit 2` }', 'command: "node /config/read-guard.mjs --by-origin || exit 2" }', 1),
+    ('--root ${root} --private-root ${root}/Private${docsDesk}', '--root ${root}${docsDesk}', 1),
+    ('${root}/${workspaces} --private-root ${root}/Private || exit 2`', '${root}/${workspaces} || exit 2`', 2),
+    ('--root ${esc(root)} --private-root ${esc(root)}/Private( --desk', '--root ${esc(root)}( --desk', 1),
+    ('(docs-grant.mjs --by-caps --root VAULT_ROOT --private-root VAULT_ROOT/Private)', '(docs-grant.mjs --by-caps --root VAULT_ROOT)', 1),
+    ('const rguard = `node /config/read-guard.mjs --by-origin --private-root ${root}/Private || exit 2`', 'const rguard = "node /config/read-guard.mjs --by-origin || exit 2"', 1),
+    ('origin and kept out of the private folders (read-guard.mjs --by-origin --private-root ${root}/Private)`)', 'origin (read-guard.mjs --by-origin)`)', 1),
+    ('[guard, "--root", `${root}/${workspaces}`, "--private-root", `${root}/Private`]', '[guard, "--root", `${root}/${workspaces}`]', 1),
+    ('claude mcp remove vault --scope user >/dev/null 2>&1 || true\nclaude mcp remove docs', 'claude mcp remove vault --scope user >/dev/null 2>&1 || true\nvault_env=(-e VAULT_ROOT="$VAULT_ROOT" -e TZ="$TZ")\n[ -z "${VAULT_EXCLUDE:-}" ] || vault_env+=(-e VAULT_EXCLUDE="$VAULT_EXCLUDE")   # real phase: the test folder stays out\nvault_env+=(-e VAULT_WORKERS_WRITE=0)   # the runs never get workers_write (the floor denies it too); checked supported above\n[ -z "$SETUP_VAULT_PATHS" ] || vault_env+=(-e VAULT_PATHS="$SETUP_VAULT_PATHS")   # the profile\'s paths, when not production\'s\nclaude mcp add vault --scope user "${vault_env[@]}" -- node "$VAULT_SERVER" >/dev/null\nclaude mcp remove docs', 1),
+    ('const want = byCore === "1" ? [] : ["docs"]', 'const want = byCore === "1" ? ["vault"] : ["vault", "docs"]', 1),
+]
+PRIVATE_CHECK = re.compile(r"^node -e '\nconst \{ spawnSync \} = require\(\"child_process\"\)\nconst \[guard, paths, root, lead\] = process\.argv\.slice\(1\)\n.*?^\}\)\(\)\.catch\([^\n]*' /config/read-guard\.mjs /naila/packages/harness/dist/floor/paths\.js \"\$VAULT_ROOT\" \"\$LEAD\"\n", re.M | re.S)
+def without_private(t):
+    """`t` (a harness-start.sh) without workers by plan Task 13's lines, and the problem when one is not there as it wrote them."""
+    t, n_ = PRIVATE_CHECK.subn("", t)
+    if n_ != 1: return t, f"harness-start.sh holds the read guard's private-folder check {n_} times, workers by plan Task 13 wrote it once"
+    for new_, old_, k_ in PRIVATE_START:
+        if t.count(new_) != k_: return t, f"harness-start.sh holds {new_[:60]!r}… {t.count(new_)} times, workers by plan Task 13 wrote it {k_}"
+        t = t.replace(new_, old_)
+    return t, None
 # file actions' harness-start.sh change (its Task 17: the desk, HARNESS_DESK_ROOT, as the docs hook's --desk), undone text for
 # text: each text it wrote, as often as it wrote it, back to what it replaced (plan 7b's rebase onto file actions)
 DESK_START = [
@@ -5359,6 +5489,8 @@ def strip(r, now, roles4, files_ref=False):
     if CC in r:
         d = r[CC]["data"]
         d.pop("docs-grant.mjs", None)
+        # workers by plan Task 13: the read and write guards take --private-root (tests/floor-conformance.sh and the checks above run them)
+        for k_ in ("read-guard.mjs", "harness-write-guard.mjs"): d.pop(k_, None)
         if "harness-settings.json" in d:
             st = json.loads(d["harness-settings.json"])
             if now:
@@ -5395,9 +5527,10 @@ for label, a, b, on in diffs:
         if (setup(b) or {}).get("version") != (4 if files_ref else 3): bad.append(f"{tag}: the ref's harness-setup.json is not version {4 if files_ref else 3}"); continue
         if (setup(a) or {}).get("version") != 5: bad.append(f"{tag}: its harness-setup.json is not version 5")
         if checksum(a) is None or checksum(a) == checksum(b): bad.append(f"{tag}: the harness checksum is {checksum(a)!r}, the ref's {checksum(b)!r}: want a new one")
-        # harness-start.sh: Task 18's setup guard (and Task 8's roles guard) and comments, once file actions' desk lines are
-        # undone (unless the ref has them too)
-        start_a, why_ = (a[HC]["data"]["harness-start.sh"], None) if files_ref else without_desk(a[HC]["data"]["harness-start.sh"])
+        # harness-start.sh: Task 18's setup guard (and Task 8's roles guard) and comments, once workers by plan Task 13's
+        # private-root lines and file actions' desk lines are undone (the desk lines unless the ref has them too)
+        start_a, why_ = without_private(a[HC]["data"]["harness-start.sh"])
+        if not why_ and not files_ref: start_a, why_ = without_desk(start_a)
         if why_: bad.append(f"{tag}: {why_}")
         bad += [f"{tag}: {g}" for g in start_gaps(start_a, b[HC]["data"]["harness-start.sh"], roles4)]
     # the RC lines restart only for an RC key file actions changed (docs-grant.mjs), never for a harness-only change

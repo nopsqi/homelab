@@ -8,7 +8,7 @@
 # image's setup.js below): Harness-test, Finance and Naila/Workspace in production.
 # The runs' CLAUDE_CONFIG_DIR is ~/.claude itself: the login page (the login sidecar, naila.nopsqi.dev/harness) logs in
 # there, and a run that renews the token writes it back to the same file, so the pod has one login. Under ~/.claude only
-# uploads/<the run's origin channel>/ and tool-results/ are open to the runs (read-guard.mjs --by-origin, Ruling 16): the
+# uploads/<the run's origin channel>/ and its own session's tool-results/ are open to the runs (read-guard.mjs --by-origin, Ruling 16): the
 # login, the agent files with the bearers, harness.db (HARNESS_HOME) and other channels' uploads are not. Only the core keeps the write credentials
 # (the image's WRITE_CREDENTIALS: the finance write bearer); the workers get the read-only one.
 set -eu

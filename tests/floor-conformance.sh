@@ -195,7 +195,7 @@ const hookArgs = (c, root, exclude, desk, up = uploads) => {
     case 'hook:web-guard': return ['web-guard.mjs', '--by-worker']
   }
 }
-const subst = (v, tok) => typeof v === 'string' ? v.replace(/\$[VUWHSD]/g, (m) => tok[m] ?? m)
+const subst = (v, tok) => typeof v === 'string' ? v.replace(/\$[VUWHSDK]/g, (m) => tok[m] ?? m)
   : Array.isArray(v) ? v.map((x) => subst(x, tok)) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, subst(x, tok)])) : v
 // a fresh slots folder holding `used` slots ({search?, open?}), plus the researched marker when asked
 const slotsWith = (used = {}, researched = false) => {
@@ -358,6 +358,17 @@ else {
   const want = ['Glob:chief:deny', 'Read:chief:deny', 'Read:keeper:allow', 'Read:ledger:deny', 'mcp__docs__convert:chief:deny', 'mcp__docs__convert:keeper:allow']
   if (JSON.stringify(upl.map((c) => `${c.tool}:${c.run.role}:${c.expect}`).sort()) !== JSON.stringify(want)) bad(`${privFile}: the private upload cases are ${JSON.stringify(upl.map((c) => c.id))}, want ${want.join(', ')}`)
   if (!P.cases.some((c) => c.claude === 'hook:write-guard' && c.run.role === 'keeper' && c.expect === 'deny' && /^\$W\//.test(c.input.file_path ?? ''))) bad(`${privFile}: no case of the private role writing into the shared workspace under its id (hook:write-guard, deny)`)
+  // fix round 2 of batch D: (1) an upload waits for its turn in <uploads root>/_pending/<channel>/<id>/, which no hook opens
+  // to any role (the private one's included); (2) a run reads only its own session's tool-results, so chief and ledger can't
+  // read keeper's ($K: the project slug of keeper's cwd)
+  const pend = P.cases.filter((c) => c.claude.startsWith('hook:') && JSON.stringify(c.input).includes('/_pending'))
+  const wantPend = ['Glob:chief:deny', 'Grep:chief:deny', 'Read:chief:deny', 'Read:keeper:deny', 'mcp__docs__convert:chief:deny', 'mcp__docs__convert:keeper:deny']
+  if (JSON.stringify(pend.map((c) => `${c.tool}:${c.run.role}:${c.expect}`).sort()) !== JSON.stringify(wantPend)) bad(`${privFile}: the pending upload hook cases are ${JSON.stringify(pend.map((c) => c.id))}, want ${wantPend.join(', ')}`)
+  const tr = P.cases.filter((c) => JSON.stringify(c.input).includes('tool-results'))
+  if (JSON.stringify(tr.map((c) => `${c.tool}:${c.run.role}:${c.expect}:${c.claude}:${c.input.file_path}`).sort()) !== JSON.stringify(['chief', 'ledger'].map((w) => `Read:${w}:deny:hook:read-guard:$H/projects/$K/s1/tool-results/t.txt`)))
+    bad(`${privFile}: the tool-results cases are ${JSON.stringify(tr.map((c) => c.id))}, want chief's and ledger's Read of keeper's (hook:read-guard, deny)`)
+  const privRole = (P.roles.roles ?? []).find((r) => r.private === true)?.id
+  if (privRole !== 'keeper') bad(`${privFile}: the private role is ${privRole}, want keeper`)
   uninstallRosterForTests(); installRoster(rosterFrom(parseWorkerSpecs(JSON.stringify(P.roles), () => '')))
   const tp = realpathSync(mkdtempSync(join(tmpdir(), 'floor-private-')))
   for (const part of [tree, P.tree]) {
@@ -367,6 +378,13 @@ else {
     for (const [f, target] of Object.entries(part.symlinks ?? {})) { mkdirSync(dirname(join(tp, f)), { recursive: true }); symlinkSync(join(tp, target), join(tp, f)) }
   }
   const pmount = join(tp, tree.mount), puploads = join(tp, tree.uploads)
+  // fix round 2 of batch D: read-guard judges ~/.claude by real paths, and /home may be a link on the machine running this
+  // (as render-modes.sh does): the private cases run a copy of it with a real temp folder in place of /home/claude, and the
+  // core's claude home there too
+  const hc = realpathSync(mkdtempSync(join(tmpdir(), 'floor-home-'))), phome = `${hc}/.claude`
+  const rgDir = mkdtempSync(join(tmpdir(), 'floor-rg-'))
+  writeFileSync(join(rgDir, 'read-guard.mjs'), readFileSync(join(FILES, 'read-guard.mjs'), 'utf8').replaceAll('\\/home\\/claude', hc.replaceAll('/', '\\/')).replaceAll('/home/claude', hc))
+  const hookFile = (hook) => hook === 'read-guard.mjs' ? join(rgDir, hook) : join(FILES, hook)
   // naila floor-model.ts port(): the core's decision on a hook case
   const port = async (c, p, i, cwd) => {
     switch (c.claude) {
@@ -387,14 +405,16 @@ else {
     }
   }
   const reasonOf = (r) => { try { return JSON.parse(r.stdout).hookSpecificOutput?.permissionDecisionReason } catch { return undefined } }
+  const session = (slug, id = 's1') => ({ session_id: id, transcript_path: `${phome}/projects/${slug}/${id}.jsonl` })
   for (const c of P.cases.filter((x) => x.claude.startsWith('hook:'))) {
     pn++
     const ph = tree.phases[c.run.phase], root = join(tp, ph.root), exclude = c.run.phase === 'real' ? ph.exclude : []
     const cwd = join(tp, tree.work, c.run.role)
-    const tok = { $V: pmount, $U: puploads, $W: posix.join(root, 'Naila', 'Workspace', c.run.role), $H: tree.home, $S: cwd.replace(/[^a-zA-Z0-9]/g, '-') }
+    const tok = { $V: pmount, $U: puploads, $W: posix.join(root, 'Naila', 'Workspace', c.run.role), $H: phome, $S: cwd.replace(/[^a-zA-Z0-9]/g, '-'),
+      $K: join(tp, tree.work, 'keeper').replace(/[^a-zA-Z0-9]/g, '-') }
     const input = subst(c.input, tok)
     if (/\$[A-Za-z]/.test(JSON.stringify(input))) { bad(`${c.id} ${c.what}: a path token is left in ${JSON.stringify(input)}`); continue }
-    const ctx = { phase: c.run.phase, vaultRoot: root, vaultMount: pmount, vaultExclude: ph.exclude, uploadsRoot: puploads, workRoot: join(tp, tree.work), claudeHome: tree.home }
+    const ctx = { phase: c.run.phase, vaultRoot: root, vaultMount: pmount, vaultExclude: ph.exclude, uploadsRoot: puploads, workRoot: join(tp, tree.work), claudeHome: phome }
     const run = { worker: c.run.role, on: c.run.on, ...(c.run.origin === undefined ? {} : { origin: c.run.origin }), asked: c.run.asked }
     let core, policy
     try {
@@ -405,13 +425,38 @@ else {
     } catch (e) { bad(`${c.id} ${c.what}: the core's policy throws: ${e.message}`); continue }
     const theirs = await port(c, policy, input, cwd)
     const [hook, ...args] = hookArgs(c, root, exclude, undefined, puploads)
-    const r = spawnSync(process.execPath, [join(FILES, hook), ...args], { cwd, input: JSON.stringify({ tool_name: c.tool, tool_input: input, cwd }),
+    // the hook input as Claude Code gives it: the session's id and transcript (~/.claude/projects/<cwd's slug>/<id>.jsonl)
+    const r = spawnSync(process.execPath, [hookFile(hook), ...args], { cwd, input: JSON.stringify({ tool_name: c.tool, tool_input: input, cwd, ...session(tok.$S) }),
       env: { PATH: process.env.PATH, ...core, HARNESS_WEB_SLOTS: slotsWith() }, encoding: 'utf8', timeout: 20000 })
     if (r.status !== 0) { bad(`${c.id} ${c.what}: ${hook} exited ${r.status}: ${(r.stderr ?? '').trim().split('\n').pop()}`); continue }
     const want = c.hook ?? c.expect, mine = /"permissionDecision":"deny"/.test(r.stdout) ? 'deny' : 'allow', portV = theirs.ok ? 'allow' : 'deny'
     if (mine !== want || portV !== want) { bad(`${c.id} ${c.what}: ${hook} ${mine}s, the port ${portV}s, want ${want} ${r.stdout.trim()} ${theirs.reason ?? ''}`); continue }
     if (want === 'deny' && [PRIVATE_SEARCH_REFUSAL, PRIVATE_REFUSAL].includes(theirs.reason) && reasonOf(r) !== theirs.reason) { bad(`${c.id} ${c.what}: ${hook} says ${JSON.stringify(reasonOf(r))}, the port ${JSON.stringify(theirs.reason)}`); continue }
     pagree++
+  }
+  // fix round 2 of batch D (homelab only: the core's port never opens tool-results, so the shared cases hold denials alone):
+  // read-guard opens a run's own session's tool-results and nothing else, judged by Claude Code's hook input
+  {
+    const c = P.cases.find((x) => x.run.role === 'keeper' && x.claude === 'hook:read-guard'), ph = tree.phases[c.run.phase], root = join(tp, ph.root)
+    const cwd = join(tp, tree.work, 'keeper'), slug = cwd.replace(/[^a-zA-Z0-9]/g, '-'), other = join(tp, tree.work, 'chief').replace(/[^a-zA-Z0-9]/g, '-')
+    const ctx = { phase: c.run.phase, vaultRoot: root, vaultMount: pmount, vaultExclude: ph.exclude, uploadsRoot: puploads, workRoot: join(tp, tree.work), claudeHome: phome }
+    const core = hookEnv({ worker: 'keeper', on: c.run.on, origin: c.run.origin, asked: false }, ctx)
+    const [hook, ...args] = hookArgs(c, root, ph.exclude, undefined, puploads)
+    for (const [what, file, sess, want] of [
+      ["its own session's saved output", `${phome}/projects/${slug}/s1/tool-results/t.txt`, session(slug), 'allow'],
+      ["another session's of its own project", `${phome}/projects/${slug}/s2/tool-results/t.txt`, session(slug), 'deny'],
+      ["the lead's", `${phome}/projects/${other}/s1/tool-results/t.txt`, session(slug), 'deny'],
+      ['its own, without the session in the hook input', `${phome}/projects/${slug}/s1/tool-results/t.txt`, {}, 'deny'],
+      ['its own, the transcript of another session', `${phome}/projects/${slug}/s1/tool-results/t.txt`, { session_id: 's1', transcript_path: `${phome}/projects/${slug}/s2.jsonl` }, 'deny'],
+      ['its own, a transcript outside projects/', `${phome}/projects/${slug}/s1/tool-results/t.txt`, { session_id: 's1', transcript_path: `/tmp/${slug}/s1.jsonl` }, 'deny'],
+      ['its own, a session id that is a path', `${phome}/projects/${slug}/s1/tool-results/t.txt`, { session_id: '../s1', transcript_path: `${phome}/projects/${slug}/../s1.jsonl` }, 'deny']]) {
+      pn++
+      const r = spawnSync(process.execPath, [hookFile(hook), ...args], { cwd, input: JSON.stringify({ tool_name: 'Read', tool_input: { file_path: file }, cwd, ...sess }),
+        env: { PATH: process.env.PATH, ...core }, encoding: 'utf8', timeout: 20000 })
+      const mine = r.status !== 0 ? `exit ${r.status}` : /"permissionDecision":"deny"/.test(r.stdout) ? 'deny' : 'allow'
+      if (mine !== want) bad(`read-guard, keeper reads ${what}: ${mine}, want ${want}`)
+      else pagree++
+    }
   }
   // the rest of this script runs as cases.json's roles
   uninstallRosterForTests(); installRoster(rosterFrom(parseWorkerSpecs(JSON.stringify(roles), () => '')))

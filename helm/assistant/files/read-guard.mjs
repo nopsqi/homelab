@@ -15,6 +15,11 @@
 // absolute Glob pattern's literal folders (up to its first wildcard segment), else its `path`, else the cwd. Names compare
 // case-insensitively (NFC, lower case), DIR as named and as its real path. A missing, empty, relative or dotted DIR denies
 // every call.
+// Fix round 2 of batch D: with --by-origin (or --private-root) a run reads only its own session's tool-results:
+// ~/.claude/projects/<P>/<session_id>/tool-results/, where <P> is the folder of its transcript and both come from Claude
+// Code's own hook input (transcript_path ~/.claude/projects/<P>/<session_id>.jsonl, session_id), never from the model. Each
+// role runs in its own folder, so <P> is the role's: no run reads another session's saved outputs, another role's (a private
+// role's) above all. Hook input without them, or not of that shape, opens no tool-results. Without flags as before.
 import { realpathSync } from 'node:fs'
 import { dirname, isAbsolute, resolve } from 'node:path'
 
@@ -23,7 +28,6 @@ const byOrigin = process.argv.includes('--by-origin')
 const o = process.env.HARNESS_ORIGIN
 const origin = typeof o === 'string' && /^[a-z][a-z0-9-]{0,31}$/.test(o) ? o : undefined   // as the core's CHANNEL_NAME
 const UPLOADS = !byOrigin ? /^\/home\/claude\/\.claude\/uploads(\/|$)/ : origin ? new RegExp(`^/home/claude/\\.claude/uploads/${origin}(/|$)`) : undefined
-const OK = [UPLOADS, /^\/home\/claude\/\.claude\/projects\/[^/]+\/[^/]+\/tool-results\//].filter(Boolean)
 const why = !byOrigin ? 'Under ~/.claude only uploads/ (files the user sent) and tool-results/ may be read.'
   : origin ? `Under ~/.claude only uploads/${origin}/ (files sent in this conversation's channel) and tool-results/ may be read.`
   : 'Under ~/.claude only tool-results/ may be read: this run came from no channel, so no uploads are open to it.'
@@ -51,6 +55,12 @@ for await (const chunk of process.stdin) input += chunk
 let e = {}
 try { e = JSON.parse(input) } catch { /* unreadable: fall through to the deny below */ }
 const i = e.tool_input ?? {}
+const sid = typeof e.session_id === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(e.session_id) ? e.session_id : undefined
+const proj = sid === undefined || typeof e.transcript_path !== 'string' ? undefined
+  : new RegExp(`^/home/claude/\\.claude/projects/([A-Za-z0-9-]{1,255})/${sid}\\.jsonl$`).exec(e.transcript_path)?.[1]
+const RESULTS = !needPrivate ? /^\/home\/claude\/\.claude\/projects\/[^/]+\/[^/]+\/tool-results\//
+  : proj === undefined ? undefined : new RegExp(`^/home/claude/\\.claude/projects/${proj}/${sid}/tool-results/`)
+const OK = [UPLOADS, RESULTS].filter(Boolean)
 const home = (p) => p.replace(/^~(?=\/|$)/, '/home/claude')
 // Glob's pattern is a path (relative ones start at its `path` or the cwd); Grep's pattern is a regex, not a path.
 const globPath = e.tool_name === 'Glob' && typeof i.pattern === 'string' ? resolve(home(i.path ?? e.cwd ?? '/'), home(i.pattern)) : undefined

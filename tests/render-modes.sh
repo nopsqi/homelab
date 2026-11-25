@@ -871,7 +871,8 @@ for p in (f"{v}/Daily/x.md", f"{up}/discord/u.pdf", "/etc/hostname"):
     for env_ in ({}, {"HARNESS_CAPS": "docs.convert", "HARNESS_WORKER": "ops-oncall"}, {"HARNESS_CAPS": "docs.convert", "HARNESS_WORKER": "ops-oncall", "HARNESS_ORIGIN": "test"}):
         if hook(dg, C(p), [], env_) != hook(dg_old, C(p), [], env_): bad.append(f"{tag}: without flags, {p} with {env_}: {hook(dg, C(p), [], env_)}, at the ref {hook(dg_old, C(p), [], env_)}")
 # read-guard (Ruling 16): with --by-origin (the harness runs) the only uploads readable are uploads/<HARNESS_ORIGIN>/, none
-# without a well-formed origin, judged by real paths; tool-results/ and the rest as before. Without flags (the RC lines) it
+# without a well-formed origin, judged by real paths; of tool-results/ only its own session's (fix round 2 of batch D:
+# projects/<P>/<session_id>/, from the hook input's session_id and transcript_path), none without them. Without flags (the RC lines) it
 # behaves as at the ref, whatever HARNESS_ORIGIN says. The hook's paths are literal (/home/claude) and /home may be a link on
 # the machine running this, so both keys run with a temp dir in its place.
 tag = "read-guard --by-origin opens only the run's own channel's uploads, and without flags behaves as at the ref"
@@ -887,6 +888,7 @@ Rd = lambda p: {"tool_name": "Read", "tool_input": {"file_path": p}}
 Gl = lambda path, pat: {"tool_name": "Glob", "tool_input": {"path": path, "pattern": pat}}
 Gr = lambda path: {"tool_name": "Grep", "tool_input": {"path": path, "pattern": "x"}}
 Ga = lambda pat: {"tool_name": "Glob", "tool_input": {"pattern": pat}}   # an absolute pattern, no path
+S = {"session_id": "s", "transcript_path": f"{cl}/projects/p/s.jsonl"}   # Claude Code's hook input: the run's session
 BO = ["--by-origin", "--private-root", "/vault/Private"]   # workers by plan Task 13: with the private root, as harness-start renders it
 for what, ev, o_, want_ in (
     ("a discord-origin run, its own upload", Rd(f"{cl}/uploads/discord/id1/u.pdf"), "discord", "none"),
@@ -906,8 +908,12 @@ for what, ev, o_, want_ in (
     ("a Glob of its own folder by absolute pattern", Ga(f"{cl}/uploads/discord/**"), "discord", "none"),
     ("a Grep over all uploads", Gr(f"{cl}/uploads"), "discord", "deny"),
     ("a Grep in its own folder", Gr(f"{cl}/uploads/discord"), "discord", "none"),
-    ("tool-results with an origin", Rd(f"{cl}/projects/p/s/tool-results/r.txt"), "discord", "none"),
-    ("tool-results without an origin", Rd(f"{cl}/projects/p/s/tool-results/r.txt"), None, "none"),
+    ("its own session's tool-results, with an origin", {**Rd(f"{cl}/projects/p/s/tool-results/r.txt"), **S}, "discord", "none"),
+    ("its own session's tool-results, without an origin", {**Rd(f"{cl}/projects/p/s/tool-results/r.txt"), **S}, None, "none"),
+    ("another session's tool-results of its project", {**Rd(f"{cl}/projects/p/s2/tool-results/r.txt"), **S}, "discord", "deny"),
+    ("another project's tool-results (another role's)", {**Rd(f"{cl}/projects/q/s/tool-results/r.txt"), **S}, "discord", "deny"),
+    ("tool-results without the session in the hook input", Rd(f"{cl}/projects/p/s/tool-results/r.txt"), "discord", "deny"),
+    ("tool-results, a transcript of another session", {**Rd(f"{cl}/projects/p/s/tool-results/r.txt"), "session_id": "s", "transcript_path": f"{cl}/projects/p/s2.jsonl"}, "discord", "deny"),
     ("the login", Rd(f"{cl}/.credentials.json"), "discord", "deny"),
     ("a file outside ~/.claude", Rd("/etc/hostname"), None, "none")):
     got = hook(rg, ev, BO, {"HARNESS_ORIGIN": o_} if o_ is not None else {})

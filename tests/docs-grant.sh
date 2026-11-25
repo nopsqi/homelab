@@ -33,7 +33,7 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 v="$tmp/vault" up="$tmp/uploads"
 mkdir -p "$v/Daily" "$v/Finance" "$v/Naila/Workspace/naila" "$v/Naila/Workspace/finance-bookkeeper" "$v/Naila/Workspace/ops-oncall" \
-  "$v/Harness-test/Naila" "$up/discord" "$up/test" "$tmp/outside"
+  "$v/Harness-test/Naila" "$up/discord" "$up/test" "$tmp/outside" "$up/_pending/discord/u1"
 echo a > "$v/Daily/x.md"
 echo a > "$v/Finance/statement.pdf"
 echo a > "$v/Naila/Workspace/naila/n.docx"
@@ -41,6 +41,7 @@ echo a > "$v/Naila/Workspace/finance-bookkeeper/b.xlsx"
 echo a > "$v/Naila/Workspace/ops-oncall/o.docx"
 echo a > "$up/discord/sent.pdf"
 echo a > "$up/test/fixture.pdf"
+echo a > "$up/_pending/discord/u1/waiting.pdf"   # fix round 2 of batch D: an upload whose turn is not accepted yet
 ln -s "$up/discord/sent.pdf" "$up/test/into-discord.pdf"   # a link from the test channel's folder to a Discord upload
 ln -s discord "$up/evil"                                   # a channel folder that is a link to another channel's
 ln -s "$up/discord/sent.pdf" "$v/Daily/into-uploads.pdf"   # a vault note that is a link to a Discord upload
@@ -148,6 +149,12 @@ O="a$(printf '%031d' 0)" expect deny "$NA" naila "$up/discord/sent.pdf"   # well
 O=test expect deny  "$NA" naila "$up/test/into-discord.pdf"                # a link from its own folder into another channel's
 O=evil expect deny  "$NA" naila "$up/evil/sent.pdf"                        # its channel folder is a link to Discord's
 O=evil expect deny  "$NA" naila "$up/discord/sent.pdf"
+# fix round 2 of batch D: an upload waits for its turn in uploads/_pending/<channel>/<id>/, which no run converts, the private
+# role's included (its folder opens only once the turn moved the file into Private/<id>/Uploads/)
+expect deny  "$NA" naila "$up/_pending/discord/u1/waiting.pdf"
+expect deny  "$BK" finance-bookkeeper "$up/_pending/discord/u1/waiting.pdf"
+P="$v/Private/keeper" R="$v,$v/Private/keeper" expect deny "$NA" keeper "$up/_pending/discord/u1/waiting.pdf"   # the private role too
+for o in _pending pending; do O="$o" expect deny "$NA" naila "$up/_pending/discord/u1/waiting.pdf"; done
 O=test expect deny  "$NA" naila "$v/Daily/into-uploads.pdf"                # a vault link to a Discord upload (vault.read on)
 expect allow "$NA" naila "$v/Daily/into-uploads.pdf"                       # ... which a discord-origin run converts
 O=test expect deny  "$NA" naila "$up/discord/sent.pdf" --by-caps --uploads "$up" --root "$tmp" --private-root "$tmp/Private"   # a deny, not a missing grant:

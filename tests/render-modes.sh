@@ -3180,7 +3180,7 @@ FILES_DIRS = ("Naila/Workspace", "Finance")
 # plan 7b Task 18: setup spec 4 adds the memory's limits (under the core's ceilings) and views.memory; the summaries' re-make
 # (Task 3's 8 runs per role) is production's alone: values.prod.yaml sets it, staging never
 MEMORY = {"standing": {"maxLines": 20, "maxQuoteChars": 600, "maxMeaningChars": 200, "maxChangesPerRun": 3}, "search": {"maxHits": 10, "maxHitChars": 600, "maxScanTurns": 20000}}
-MEMORY_PROD = {**MEMORY, "remake": {"maxRunsPerRole": 8}}
+MEMORY_PROD = {**MEMORY, "remake": {"maxRunsPerRole": 9}}
 tag = "the profile equals today's literals"
 for label, r in (("prod", prod), ("test phase", test), ("real phase", real), ("staging (harness on)", staging_on)):
     s = setup(r)
@@ -5090,7 +5090,7 @@ PY
 #    values.yaml holds it (standing and search, under the core's ceilings) plus values.prod.yaml's remake (Task 3's 8 runs
 #    per role): the re-make is production's alone, so the staging (harness on) render's memory is values.yaml's, without
 #    remake, and neither values.yaml nor values.staging.yaml sets one; naila's built parseSetup parses each (its memoryText:
-#    remake 8 runs per role in production, off in staging) and refuses a limit above its ceiling;
+#    remake 9 runs per role in production, off in staging) and refuses a limit above its ceiling;
 #  - a memory that is no map, or a standing, search or remake that is no map, fails the render;
 #  - every permanent role's tools.md lists the three memory tools right after self_note_undo, and the researcher's lists none;
 #    with NAILA_WORKTREE every permanent role's ceiling holds the built image's CORE_ALWAYS_TOOLS (a ceiling left without one
@@ -5135,7 +5135,7 @@ bad = []
 
 # the setups: version 4, the memory view, and the memory's limits (the re-make production's alone)
 MEMORY = {"standing": {"maxLines": 20, "maxQuoteChars": 600, "maxMeaningChars": 200, "maxChangesPerRun": 3}, "search": {"maxHits": 10, "maxHitChars": 600, "maxScanTurns": 20000}}
-REMAKE = {"maxRunsPerRole": 8}   # Task 3's ruling: the most chunks a role's history needs (finance-advisor 6) plus 2
+REMAKE = {"maxRunsPerRole": 9}   # Task 19: the most chunks a role's history needs (finance-advisor 7, 2026-11-26) plus 2
 tag = "the prod render's memory equals values.yaml's, with values.prod.yaml's re-make"
 vm = (VALUES["values.yaml"].get("harness") or {}).get("memory")
 if vm != MEMORY: bad.append(f"{tag}: values.yaml's harness.memory is {vm!r}, want {MEMORY!r} (no remake: production's alone)")
@@ -5173,7 +5173,7 @@ def why(p):
 LIMITS = "memory: standing 20 lines (quote 600, meaning 200, 3 a message); search 10 hits of 600 characters over 20000 turns; "
 if HAVE:
     tag = "the built image parses the rendered memory"
-    for label, r, rm in (("prod", prod, "remake 8 runs per role"), ("test phase", test, "remake 8 runs per role"), ("staging (harness on)", staging_on, "remake off")):
+    for label, r, rm in (("prod", prod, "remake 9 runs per role"), ("test phase", test, "remake 9 runs per role"), ("staging (harness on)", staging_on, "remake off")):
         p = naila(r)
         if p.returncode != 0: bad.append(f"{tag}: the {label} setup is refused: {why(p)}"); continue
         o = json.loads(p.stdout)

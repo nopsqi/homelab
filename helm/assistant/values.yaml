@@ -99,9 +99,9 @@ harness:
     files: { enabled: true, writeCredentials: [] }
     calc: { enabled: true, writeCredentials: [] }
   # The owner's profile (pure-core phase 4; naila packages/harness/src/setup.ts): templates/harness.yaml renders it, with the
-  # schedules, the budgets, the provider settings and the files settings below and the places above, as harness-setup.json
-  # (setup spec 4: {"version":4,"profile":…,"schedules":{"jobs":[…]},"places":[…],"budgets":{…},"providerSettings":{…},
-  # "files":{…}}) in ConfigMap assistant-harness;
+  # schedules, the budgets, the provider settings, the files settings and the memory below and the places above, as
+  # harness-setup.json (setup spec 5: {"version":5,"profile":…,"schedules":{"jobs":[…]},"places":[…],"budgets":{…},
+  # "providerSettings":{…},"files":{…},"memory":{…}}) in ConfigMap assistant-harness;
   # the core refuses a setup it can't parse. timeZone is the top-level tz (one source: TZ is rendered from it too). paths: the
   # vault folders (the core's own `system` folder with its views, trash and workspaces; the finance notes; the inbox and daily
   # notes; the test phase's folder), each a plain relative path, system and testFolder one folder name of letters, digits and
@@ -117,7 +117,7 @@ harness:
       inbox: Inbox
       daily: Daily
       testFolder: Harness-test
-      views: { decisions: Decisions.md, usage: Usage.md, selfChanges: Self-changes.md, vaultChanges: Vault changes.md, changelog: Engine changelog.md, places: Places.md }
+      views: { decisions: Decisions.md, usage: Usage.md, selfChanges: Self-changes.md, vaultChanges: Vault changes.md, changelog: Engine changelog.md, memory: Memory.md, places: Places.md }
   # The jobs the core starts on its own (pure-core phase 4; naila packages/harness/src/schedules-file.ts), rendered into
   # harness-setup.json in this order. Ids are permanent: a job's sent marks are keyed by its id, so a renamed job runs its
   # current period again. `enabled` is required (true or false). A job with a `request` (run and ask jobs) has its text in
@@ -190,6 +190,19 @@ harness:
   providerSettings:
     claude-subscription:
       resume: { roles: [naila, finance-bookkeeper, finance-advisor, ops-oncall], maxInputTokens: 100000, maxIdleMinutes: 55 }
+  # The memory's limits (plan 7b, setup spec 5; naila packages/harness/src/memory-config.ts), rendered into harness-setup.json
+  # as they stand here; the core logs them at start (memory: …). Each number lies under the core's compiled ceiling
+  # (MEMORY_CEILINGS): the setup may only lower it, and a raise is a code change, so the core refuses one at start.
+  #  - standing: a permanent role's standing lines, the owner's facts and plans each quoted from one whole message of theirs:
+  #    the most lines a conversation holds, the longest quote and meaning, and the most lines one message saves or removes;
+  #  - search: history_search over the role's own past conversation: the most hits, the longest each, the most turns scanned;
+  #  - remake: { maxRunsPerRole: <n> }, the summaries' re-make at start, once per role (its meta mark summary-remake:<role>),
+  #    at most n runs each. Production's alone: values.prod.yaml sets it (Task 3's 8), so staging and a test instance never
+  #    re-make. Left out, no re-make runs.
+  # The render fails on a memory, standing, search or remake that is no map; the core checks the numbers.
+  memory:
+    standing: { maxLines: 20, maxQuoteChars: 600, maxMeaningChars: 200, maxChangesPerRun: 3 }   # under the core's ceilings (plan 7b)
+    search: { maxHits: 10, maxHitChars: 600, maxScanTurns: 20000 }
   # The files settings (file actions, setup spec 4; naila packages/harness/src/files/config.ts), rendered into
   # harness-setup.json as they stand here. Every key is required (the core holds no default), each a whole number from 1 to
   # its ceiling in the image's compiled files rules (packages/files-sidecar/rules.json: the ceiling named on each line), but

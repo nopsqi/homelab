@@ -110,20 +110,22 @@
 #  writeCredentials differ from the image's; the prod render pairs with the built image (NAILA_WORKTREE); the bearers are the
 #  roles' plus the enabled services' write credentials (a finance-less chart starts), the leak check covers every declared write
 #  credential, and the settings check and a write-guard parity check take the image's WRITE_GUARD_TOOLS (the rendered matcher
-#  unchanged); the settings harness-start writes are byte-identical to the SETTINGS_REF chart's (default aefa661).
+#  unchanged); the settings harness-start writes are byte-identical to the SETTINGS_REF chart's (default aefa661), but for
+#  the static allow's memory tools (plan 7b Task 18).
 # Then the setup (pure core phase 4 Task 12): harness-setup.json (the owner's profile, today's literals, and the three jobs,
 #  the Monday review off; since phase 6 Task 13 spec 2, with views.places and production's places: five, two since Task 16,
-#  the other three engine-managed) and the job request keys in ConfigMap assistant-harness; naila's parseSetup and start checks
+#  the other three engine-managed; since plan 7b Task 18 spec 4, with views.memory and the memory, its re-make in the
+#  production values alone) and the job request keys in ConfigMap assistant-harness; naila's parseSetup and start checks
 #  (NAILA_WORKTREE's built dist) accept the prod, test-phase and staging setups, and the requests expand to b5f5bbf's texts;
 #  TZ, the test phase's vault root and VAULT_EXCLUDE follow it, VIEW_FILE and FINANCE_NOTES_ROOT are gone; bad profile paths,
 #  request files, job ids (the core's shape) and uses, a profile that is no map, and an enabled job's disabled service, fail
 #  the render; the render is <git-ref>'s but for those
 #  (skipped with a notice once <git-ref> renders harness-setup.json itself).
 # Then the setup pairing (pure core phase 4 Task 13): harness-start dies on an image without setup.js or whose
-#  SETUP_SPEC_VERSION is not 4 (3 until file actions Task 17, 2 until plan 7a Task 17, 1 until phase 6 Task 13; printing the
-#  import error; one above 4 says the image is the newer side), without vault-mcp's layout.js, and when the image's parseSetup
-#  refuses the chart's setup (the built image refuses a setup 1, 2 and 3, naming the chart, and one without budgets,
-#  providerSettings or files); the
+#  SETUP_SPEC_VERSION is not 5 (4 until plan 7b's rebase onto file actions, 3 until file actions Task 17 and plan 7b Task 18, 2
+#  until plan 7a Task 17, 1 until phase 6 Task 13; printing the import error; one above 5 says the image is the newer side),
+#  without vault-mcp's layout.js, and when the image's parseSetup refuses the chart's setup (the built image refuses a setup
+#  1, 2, 3 and 4, naming the chart, a setup 6, and one without budgets, providerSettings, memory or files); the
 #  real phase needs VAULT_EXCLUDE to name the profile's test folder; the prod render pairs with the built image (Harness-test,
 #  Finance, Naila/Workspace, no VAULT_PATHS); the web-rules check judges both copies with the profile's figure words (and the
 #  same FIGURE_WORDS); a non-default profile reaches the user-scope vault server and the advisor's finance-notes server as
@@ -159,10 +161,24 @@
 #  prod, test-phase and staging (harness on) specs and refuses a trigger outside its range (the range is the image's); a
 #  maxChars that is no number fails the render; the prod render's roles guard pairs with the built image; and the render is
 #  <git-ref>'s but for harness-workers.json (version, maxChars), harness-start.sh's roles guard (and comments) and the
-#  harness checksum, and the built core refuses <git-ref>'s spec 4 naming the chart (skipped with a notice once <git-ref>
-#  renders version 5).
-# Then file actions (Task 17, setup spec 4): the files sidecar, its venv, tokens and desk, the files settings, and the roles'
-#  file actions and instruction lines (the block's own comment lists each check); the render is <git-ref>'s but for those.
+#  harness checksum (with Task 18's and file actions' changes composed while <git-ref> renders setup 3), and the built core
+#  refuses <git-ref>'s spec 4 naming the chart (skipped with a notice once <git-ref> renders version 5).
+# Then file actions (Task 17, setup spec 4; 5 since plan 7b's rebase onto file actions): the files sidecar, its venv, tokens and
+#  desk, the files settings, and the roles' file actions and instruction lines (the block's own comment lists each check);
+#  the render is <git-ref>'s but for those (checked in the memory block's union check below).
+# Then the memory (plan 7b Task 18, setup spec 4): harness.memory (standing and search in values.yaml, the re-make, 8 runs per
+#  role, in values.prod.yaml alone) and views.memory (Memory.md) render into the setup, naila's built parseSetup accepts the
+#  prod, test-phase and staging setups (remake off in staging) and refuses a raise above its ceilings; a memory, standing,
+#  search or remake that is no map fails the render; the static allow (above), every permanent role's ceiling (its tools.md)
+#  and the b68dc7e oracle's tools: lines gain standing_save, standing_remove and history_search right after self_note_undo,
+#  each ceiling holds the built image's CORE_ALWAYS_TOOLS, the researcher's none; each permanent role's instructions carry
+#  the standing-fact paragraph after the self-note one (the user's whole message quoted, a long one restated short);
+#  harness-start's setup guard pairs with SETUP_SPEC_VERSION 5 (above; 4 until plan 7b's rebase onto file actions); and the
+#  render is <git-ref>'s but for the setup, the static allow, the three ceilings, the four instructions files,
+#  harness-start.sh's setup guard and the harness checksum, and file actions' change while <git-ref> renders setup 3 (the
+#  rebase: one check over the union of both lists; Task 8's block composes both changes too), and Task 8's change while
+#  <git-ref> renders roles spec 4, and the built core refuses <git-ref>'s setup 3 or 4 naming the chart (skipped with a
+#  notice once <git-ref> renders setup 5).
 set -euo pipefail
 ref="${1:-origin/master}"
 root="$(git rev-parse --show-toplevel)"
@@ -179,10 +195,11 @@ export FLOOR_DENY='["Bash","NotebookEdit","Agent","Task","Workflow","TaskStop","
 # phase 4, call 15: the profile names the system folder): the denies and the guard hooks (matcher, command regex source, pins) harness-start's
 # settings check takes from the image. With NAILA_WORKTREE the built dist export must equal it. A change there changes this.
 export CLAUDE_STATIC_LAYER='{"deny":["Read(//run/docs-token/**)","Edit(//run/docs-token/**)","Write(//run/docs-token/**)","Read(//run/docs-sock/**)","Edit(//run/docs-sock/**)","Write(//run/docs-sock/**)","Read(//run/files-token/**)","Edit(//run/files-token/**)","Write(//run/files-token/**)","Read(//run/files-sock/**)","Edit(//run/files-sock/**)","Write(//run/files-sock/**)","Read(//run/provider-keys/**)","Edit(//run/provider-keys/**)","Write(//run/provider-keys/**)"],"hooks":[{"matcher":"Read|Glob|Grep","command":"^node \\/config\\/read-guard\\.mjs --by-origin \\|\\| exit 2$"},{"matcher":"Write|Edit|MultiEdit|NotebookEdit|mcp__vault__write_inbox|mcp__vault__append_daily|mcp__vault__workers_write|mcp__finance-notes__write_note|mcp__finance-notes__edit_note","command":"harness-write-guard\\.mjs --root \\S+\\/Workspace \\|\\| exit 2$","timeout":30,"onFailure":"block"},{"matcher":"mcp__docs__convert","command":"docs-grant\\.mjs --by-caps "},{"matcher":"WebFetch|WebSearch","command":"^node \\/config\\/web-guard\\.mjs --by-worker \\|\\| exit 2$","timeout":30,"onFailure":"block"}]}'
-# The core tools every run has, verbatim from naila packages/harness/src/capabilities.ts CORE_ALWAYS_TOOLS (up to 8346393):
+# The core tools every run has, verbatim from naila packages/harness/src/capabilities.ts CORE_ALWAYS_TOOLS (up to 8346393;
+# capability-ids.ts since, re-exported; plan 7b Tasks 13-14, naila 3ee73ee: standing_save, standing_remove and history_search):
 # harness-start's settings check requires harness-settings.json's allow to be exactly these plus propose_plan and ask_worker
 # when the image exports them. With NAILA_WORKTREE the built dist export must equal it. A change there changes this.
-export CORE_ALWAYS_TOOLS='["mcp__core__decision_status","mcp__core__propose_capability_change","mcp__core__self_note_history","mcp__core__self_note_set","mcp__core__self_note_undo"]'
+export CORE_ALWAYS_TOOLS='["mcp__core__decision_status","mcp__core__propose_capability_change","mcp__core__self_note_history","mcp__core__self_note_set","mcp__core__self_note_undo","mcp__core__standing_save","mcp__core__standing_remove","mcp__core__history_search"]'
 # The tools the write guard stops, verbatim from naila packages/harness/src/services/registry.ts WRITE_GUARD_TOOLS (generated
 # from the service declarations since pure-core phase 3, naila 4b65364): harness-start's settings check and its write-guard
 # parity check take them from the image. With NAILA_WORKTREE the built dist export must equal it. A change there changes this.
@@ -320,7 +337,9 @@ import json
 FLOOR_DENY = json.loads(os.environ["FLOOR_DENY"])
 # P1 (plan 4 Task 16): the self-note tools (every worker) and engine_info (naila only; the core lists it to her runs alone)
 SELF_NOTES = {"mcp__core__self_note_set", "mcp__core__self_note_history", "mcp__core__self_note_undo"}
-STATIC_ALLOW = {"mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change"} | SELF_NOTES
+# plan 7b Task 18: the standing lines and the history search (naila CORE_ALWAYS_TOOLS since Tasks 13-14), always on
+MEMORY_TOOLS = {"mcp__core__standing_save", "mcp__core__standing_remove", "mcp__core__history_search"}
+STATIC_ALLOW = {"mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change"} | SELF_NOTES | MEMORY_TOOLS
 # plan 6 Task 4 (security review): naila's own core tools are allowed per run in her runs alone (naila capabilities.ts
 # NAILA_CORE_TOOLS), never in the static settings every worker's run gets
 NAILA_CORE = {"mcp__core__engine_info", "mcp__core__undo_vault_change"}
@@ -362,7 +381,7 @@ SERVERS = {w: {"core", "vault", "docs"} | {x.get("name") for x in SPEC.get(w, {}
 if SERVERS != {"finance-bookkeeper": {"core", "vault", "docs", "finance"}, "finance-advisor": {"core", "vault", "docs", "finance-read", "finance-notes"},
                "ops-oncall": {"core", "vault", "docs", "ops"}}:
     bad.append(f"harness-workers.json: the workers' servers are {SERVERS}")
-CEILING_CORE = {"mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change"} | SELF_NOTES
+CEILING_CORE = {"mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change"} | SELF_NOTES | MEMORY_TOOLS   # memory: plan 7b Task 18
 def server(t): return t.split("__")[1] if t.startswith("mcp__") else None
 for w, srv in SERVERS.items():
     f = f"helm/assistant/files/modes/harness/{w}.tools.md"
@@ -447,7 +466,7 @@ for t in ("For anything on the web, ask the researcher. Never put the user's fig
           "(the researcher's refusals are handled below)", "a second request, even one sent side by side, is refused", "wait for the user's next message",
           "`undo_vault_change`, `workspace_delete`", "too deep", "`decision_status` shows `researched: true`",
           # final fix M5: a settled decision's line has no approval wording
-          '"⚠️ This plan was made after a web search."',
+          '"⚠️ This plan was made after the worker read web or forwarded text (a web search, or a history search that returned such text)."',
           # pure core phase 6 Task 13 (pre-flight M8): propose_place_change waits after a search too, and engine_info has places
           "File no `propose_capability_change`, `propose_brain_change` or `propose_place_change` in that message (the core refuses all three): offer them for the user's next message.",
           "answer from `engine_info(section)` (read-only; section workers, decisions, usage, channels, places or version)"):
@@ -464,7 +483,7 @@ for w in ("finance-bookkeeper", "finance-advisor", "ops-oncall"):
     k = f"harness-agent-{w}.md"
     s_ = new.get(k, "")
     for t in ("For web facts, ask Naila.", "without the user's figures or account numbers", "name the web facts you need in your answer", "⚠️", "`decision_status` shows `researched: true`",
-              '"⚠️ This plan was made after a web search."'):
+              '"⚠️ This plan was made after the worker read web or forwarded text (a web search, or a history search that returned such text)."'):
         if t not in s_: bad.append(f"{tag}: {k} lacks {t!r}")
     for t in ("WebSearch", "WebFetch", "such as the web or files"):
         if t in s_: bad.append(f"{tag}: {k} names {t!r}")
@@ -907,7 +926,8 @@ bad = []
 import os, json
 FLOOR_DENY = json.loads(os.environ["FLOOR_DENY"])
 STATIC_ALLOW = {"mcp__core__propose_plan", "mcp__core__ask_worker", "mcp__core__decision_status", "mcp__core__propose_capability_change",
-                "mcp__core__self_note_set", "mcp__core__self_note_history", "mcp__core__self_note_undo"}   # plan 6: engine_info and the undo are per run
+                "mcp__core__self_note_set", "mcp__core__self_note_history", "mcp__core__self_note_undo",   # plan 6: engine_info and the undo are per run
+                "mcp__core__standing_save", "mcp__core__standing_remove", "mcp__core__history_search"}   # plan 7b Task 18: always on
 H = ("Deployment", "assistant-harness")
 
 # harness pod renders only when enabled
@@ -1661,6 +1681,12 @@ HIREABLE = {"researcher": True}
 # agent file's); the three agents of the ref lose WebSearch and WebFetch from their ceilings (their tools: lines)
 OLD_AGENTS = AGENTS[:3]
 WEB_IN_TOOLS = "WebSearch, WebFetch, "
+# plan 7b Task 18: and the three gain the memory tools (naila CORE_ALWAYS_TOOLS since Tasks 13-14) right after self_note_undo
+NOTE_UNDO, WITH_MEMORY = ", mcp__core__self_note_undo", ", mcp__core__self_note_undo, mcp__core__standing_save, mcp__core__standing_remove, mcp__core__history_search"
+def ceiling_now(t):
+    """A ref's tools: line as this chart's ceiling has it: without WebSearch and WebFetch, with the memory tools."""
+    t = t.replace(WEB_IN_TOOLS, "")
+    return t if WITH_MEMORY in t else t.replace(NOTE_UNDO, WITH_MEMORY, 1)
 ENV = {"MCP_FINANCE_READ_TOKEN": "placeholder-read-bearer", "MCP_OPS_TOKEN": "placeholder-ops-bearer"}
 FIN = {"test": "assistant-finance-test", "real": "assistant-finance"}
 NOTES = {"test": "/vault/Harness-test/Finance/", "real": "/vault/Finance/"}
@@ -1750,11 +1776,12 @@ def file_actions(w, line):
     return line.rstrip("\n").replace(WS_DELETE, WS_DELETE + WS_NEW) + "".join(f", {t}" for t in CEILING_ADDS[w]) + end
 def no_web(text, w):
     """The file with its tools: line minus WebSearch and WebFetch (researcher Task 12), which the ref's line must hold, plus
-    file actions' additions."""
+    the memory tools after self_note_undo (plan 7b Task 18), which it must hold once, and file actions' additions."""
     lines = text.splitlines(keepends=True)
     at = [i for i, l in enumerate(lines) if l.startswith("tools: ")]
     if len(at) != 1 or lines[at[0]].count(WEB_IN_TOOLS) != 1: raise ValueError(f"the ref's file has no single tools: line holding {WEB_IN_TOOLS!r}")
-    lines[at[0]] = file_actions(w, lines[at[0]].replace(WEB_IN_TOOLS, ""))
+    if lines[at[0]].count(NOTE_UNDO) != 1: raise ValueError(f"the ref's file has no single tools: line holding {NOTE_UNDO!r}")
+    lines[at[0]] = file_actions(w, ceiling_now(lines[at[0]]))
     return "".join(lines)
 def phase2(files):
     """The ref's agent files as this chart must write them: each tools: line loses WebSearch and WebFetch (researcher Task
@@ -1768,10 +1795,10 @@ def phase2(files):
     out["finance-advisor"] = "".join(lines[:at[0]] + [NOTES_RO + "\n"] + lines[at[0]:])
     return out
 def only_allowed(w, ref, now):
-    """The file differs from the ref's in exactly its tools: line losing WebSearch and WebFetch, plus, in the advisor's, the
-    extra NOTES_RO line (unless the ref has it already); nothing else."""
+    """The file differs from the ref's in exactly its tools: line losing WebSearch and WebFetch (and gaining the memory tools,
+    plan 7b Task 18), plus, in the advisor's, the extra NOTES_RO line (unless the ref has it already); nothing else."""
     old_t = next((l for l in ref.splitlines() if l.startswith("tools: ")), "")
-    want_ = ["- " + old_t, "+ " + file_actions(w, old_t.replace(WEB_IN_TOOLS, ""))]
+    want_ = ["- " + old_t, "+ " + file_actions(w, ceiling_now(old_t))]
     if w == "finance-advisor" and NOTES_RO not in ref.splitlines(): want_.append("+ " + NOTES_RO)
     return WEB_IN_TOOLS in old_t and [l for l in difflib.ndiff(ref.splitlines(), now.splitlines()) if l[:1] in "+-"] == want_
 # The researcher's agent file: its frontmatter (naila's golden, claude-agents/<phase>/researcher.frontmatter.txt: the web and
@@ -3030,8 +3057,11 @@ elif pb:
         if q.returncode != 0 or json.loads(q.stdout or "null") != REFUSED: bad.append(f"{tag}: the built naila RESEARCHED_WRITE_REFUSED differs from this file's copy: {(q.stdout or q.stderr)[:300]}")
         if not started(p := parity(REAL_DIST)): bad.append(f"{tag}: refuses the chart's write guard against naila's built dist: {p.stderr.strip()!r}")
 
-# call 9: the settings harness-start writes are byte-identical to the SETTINGS_REF chart's (default aefa661), both phases
+# call 9: the settings harness-start writes are byte-identical to the SETTINGS_REF chart's (default aefa661), both phases,
+# but for the static allow's memory tools (plan 7b Task 18)
 tag = f"the rendered settings.json is byte-identical to the SETTINGS_REF ({sref}) chart's"
+UNDO_LINE = b'      "mcp__core__self_note_undo"\n'
+MEMORY_LINES = b'      "mcp__core__self_note_undo",\n      "mcp__core__standing_save",\n      "mcp__core__standing_remove",\n      "mcp__core__history_search"\n'
 def written(r, ph, d):
     data = {**r[CMC]["data"], **r[CMH]["data"]}
     m = re.search(r"^# Settings:.*?^node -e '(.*?)' (/config/settings\.json[^\n]*)$", data["harness-start.sh"], re.M | re.S)
@@ -3054,7 +3084,8 @@ for ph, now_, then_ in (("test", test, srt), ("real", real, srr)):
     shutil.rmtree(d)
     if a is None or b is None: bad.append(f"{tag}: the settings patch failed ({ph} phase)"); continue
     # file actions Task 17: but for the six files-token and files-sock denies right after the docs-sock ones, and the desk
-    # (HARNESS_DESK_ROOT) as --desk in the docs hook right after --root; byte for byte otherwise
+    # (HARNESS_DESK_ROOT) as --desk in the docs hook right after --root; plan 7b Task 18: and the allow's three memory tools,
+    # right after self_note_undo (the image's CORE_ALWAYS_TOOLS, which harness-start's check pairs with); byte for byte otherwise
     t_ = b.decode()
     at_ = [l for l in t_.splitlines(keepends=True) if l.strip() == '"Write(//run/docs-sock/**)",']
     desk_ = val(now_, "HARNESS_DESK_ROOT")
@@ -3063,7 +3094,7 @@ for ph, now_, then_ in (("test", test, srt), ("real", real, srr)):
     t_ = t_.replace(at_[0], at_[0] + "".join(f'{ind_}"{x}(//run/{f_}/**)",\n' for f_ in ("files-token", "files-sock") for x in ("Read", "Edit", "Write")))
     t_, n_ = re.subn(r"(docs-grant\.mjs --by-caps --uploads \S+ --root \S+)( --exclude \S+)? \|\| exit 2", lambda m_: f"{m_.group(1)} --desk {desk_}{m_.group(2) or ''} || exit 2", t_)
     if n_ != 1: bad.append(f"{tag}: the ref's settings have {n_} docs hooks ({ph} phase)")
-    elif a != t_.encode(): bad.append(f"{tag}: they differ beyond the files sidecar's six denies and the docs hook's --desk ({ph} phase): {' | '.join(l for l in __import__('difflib').unified_diff(t_.splitlines(), a.decode().splitlines(), n=0, lineterm='') if l[:1] in '+-')[:600]}")
+    elif t_.count(UNDO_LINE.decode()) != 1 or a != t_.replace(UNDO_LINE.decode(), MEMORY_LINES.decode()).encode(): bad.append(f"{tag}: they differ beyond the files sidecar's six denies, the docs hook's --desk and the allow's memory tools after self_note_undo ({ph} phase): {' | '.join(l for l in __import__('difflib').unified_diff(t_.replace(UNDO_LINE.decode(), MEMORY_LINES.decode()).splitlines(), a.decode().splitlines(), n=0, lineterm='') if l[:1] in '+-')[:600]}")
 
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
@@ -3125,7 +3156,7 @@ PROFILE = {"timeZone": "Asia/Jakarta", "quietUntil": "07:00", "currency": {"code
            "figureWords": {"markers": ["rp", "idr"], "magnitudes": ["juta", "jt", "ribu", "rb", "miliar", "milyar", "triliun", "rupiah"]},
            "paths": {"system": "Naila", "finance": "Finance", "inbox": "Inbox", "daily": "Daily", "testFolder": "Harness-test",
                      "views": {"decisions": "Decisions.md", "usage": "Usage.md", "selfChanges": "Self-changes.md", "vaultChanges": "Vault changes.md",
-                               "changelog": "Engine changelog.md", "places": "Places.md"}}}   # places: pure core phase 6 Task 13
+                               "changelog": "Engine changelog.md", "memory": "Memory.md", "places": "Places.md"}}}   # places: pure core phase 6 Task 13; memory: plan 7b Task 18
 # pure core phase 6 Task 13: setup spec 2 adds the Git base of places, production's Discord channels (pool: the decision pool):
 # two since Task 16, naila and pool (finance-bookkeeper, finance-advisor and ops-oncall left Git: the engine manages them)
 PLACES = [{"conversation": c, "channel": "discord", "ref": r} for c, r in (("naila", "1566334318752567368"), ("pool", "1566334486054961293"))]
@@ -3146,13 +3177,19 @@ _fx = os.path.join(os.environ.get("NAILA_WORKTREE", ""), "packages/harness/test/
 if os.environ.get("NAILA_WORKTREE") and json.load(open(_fx)).get("files") != FILES: bad.append(f"the chart's files defaults are naila Task 3's fixture: {_fx}'s files differ from this file's FILES")
 # the workspaces and finance folders of the profile (vault-mcp layout.ts: <system>/Workspace), as the files sidecar mounts them
 FILES_DIRS = ("Naila/Workspace", "Finance")
+# plan 7b Task 18: setup spec 4 adds the memory's limits (under the core's ceilings) and views.memory; the summaries' re-make
+# (Task 3's 8 runs per role) is production's alone: values.prod.yaml sets it, staging never
+MEMORY = {"standing": {"maxLines": 20, "maxQuoteChars": 600, "maxMeaningChars": 200, "maxChangesPerRun": 3}, "search": {"maxHits": 10, "maxHitChars": 600, "maxScanTurns": 20000}}
+MEMORY_PROD = {**MEMORY, "remake": {"maxRunsPerRole": 9}}
 tag = "the profile equals today's literals"
 for label, r in (("prod", prod), ("test phase", test), ("real phase", real), ("staging (harness on)", staging_on)):
     s = setup(r)
-    if not isinstance(s, dict) or sorted(s) != ["budgets", "files", "places", "profile", "providerSettings", "schedules", "version"] or s["version"] != 4: bad.append(f"{tag}: the {label} setup file is {s!r}"); continue
+    if not isinstance(s, dict) or sorted(s) != ["budgets", "files", "memory", "places", "profile", "providerSettings", "schedules", "version"] or s["version"] != 5: bad.append(f"{tag}: the {label} setup file is {s!r}"); continue
     if s["budgets"] != BUDGETS: bad.append(f"{tag}: the {label} budgets are {s['budgets']!r}, want {BUDGETS!r}")
     if s["files"] != FILES: bad.append(f"{tag}: the {label} files settings are {s['files']!r}, want {FILES!r}")
     if s["providerSettings"] != PSETTINGS: bad.append(f"{tag}: the {label} provider settings are {s['providerSettings']!r}, want {PSETTINGS!r}")
+    want_m = MEMORY if label.startswith("staging") else MEMORY_PROD
+    if s["memory"] != want_m: bad.append(f"{tag}: the {label} memory is {s['memory']!r}, want {want_m!r}")
     if label.startswith("staging"): continue   # staging's own profile and places are not production's
     if s["profile"] != PROFILE: bad.append(f"{tag}: the {label} profile is {s['profile']!r}, want {PROFILE!r}")
     if s["places"] != PLACES: bad.append(f"{tag}: the {label} places are {s['places']!r}, want {PLACES!r}")
@@ -3367,15 +3404,16 @@ print("setup: harness-setup.json is the owner's profile (today's literals) and t
       + "; the test folder, TZ and views follow it, VIEW_FILE and FINANCE_NOTES_ROOT are gone; bad config fails"
       + (f"; the render is {ref}'s but for those" if diffs else ""))
 PY
-# Pure core phase 4 Task 13: harness-start pairs with the image's setup (dist/setup.js: SETUP_SPEC_VERSION 4 since file
-# actions Task 17, 3 since plan 7a Task 17, 2 since phase 6 Task 13, 1 before; parseSetup on
+# Pure core phase 4 Task 13: harness-start pairs with the image's setup (dist/setup.js: SETUP_SPEC_VERSION 5 since plan
+# 7b's rebase onto file actions (file actions' files settings and plan 7b's memory), 4 since file actions Task 17 or plan
+# 7b Task 18, 3 since plan 7a Task 17, 2 since phase 6 Task 13, 1 before; parseSetup on
 # /config/harness-setup.json with the requests read beside it) and takes the profile's paths from it (vault-mcp's layout.js),
 # run as rendered on stand-in images and on naila's built dist (NAILA_WORKTREE):
 #  - the pairing block (marker `# PAIRING: the image's setup`, after the services pairing, before the vault server checks and
 #    the settings) dies on an image without setup.js (printing the import error), without layout.js, or whose
-#    SETUP_SPEC_VERSION is not 4 (an image above 4 says it is the newer side), and when the image's parseSetup refuses the
-#    chart's setup (the built image: a setup 1, 2 and 3 naming the chart, 5, none without places, budgets, providerSettings
-#    or files, a numeric ref); the real phase dies unless
+#    SETUP_SPEC_VERSION is not 5 (an image above 5 says it is the newer side), and when the image's parseSetup refuses the
+#    chart's setup (the built image: a setup 1, 2, 3 and 4 naming the chart, 6, none without places, budgets,
+#    providerSettings, memory or files, a numeric ref); the real phase dies unless
 #    VAULT_EXCLUDE names the profile's test folder; a test folder or workspace root that is no plain path dies;
 #  - the prod render pairs with the built image, printing Harness-test, Finance, Naila/Workspace and an empty VAULT_PATHS;
 #  - a non-default profile (system Home) reaches the user-scope vault server as VAULT_PATHS (prod's adds nothing), and the
@@ -3393,8 +3431,8 @@ def ctr(r, n): return next((c for c in r[H]["spec"]["template"]["spec"]["contain
 def val(r, k): return next((e.get("value") for e in (ctr(r, "harness") or {}).get("env", []) if e["name"] == k), None)
 bad = []
 sl = test[CMH]["data"]["harness-start.sh"].splitlines()
-OLD = "this naila image predates file actions (the files settings): deploy the image that ships with this chart, or roll both back (revert the promote merge)"   # plan 7a's text before file actions Task 17
-NEWER = "this naila image reads setup spec 5, newer than this chart's 4: deploy the chart that ships with this image, or roll the image back (revert the promote merge)"   # plan 7a Task 17: worded both ways
+OLD = "this naila image predates plan 7b (memory limits and the memory view): deploy the image that ships with this chart, or roll both back (revert the promote merge)"   # file actions' text (the files settings) before plan 7b's rebase onto file actions
+NEWER = "this naila image reads setup spec 6, newer than this chart's 5: deploy the chart that ships with this image, or roll the image back (revert the promote merge)"   # plan 7a Task 17: worded both ways
 REFUSES = "the image refuses this chart's setup: "
 NW = os.environ.get("NAILA_WORKTREE", "")
 DIST, VDIST = f"{NW}/packages/harness/dist", f"{NW}/packages/vault-mcp/dist"
@@ -3408,7 +3446,7 @@ def started(p): return p.returncode == 0 and p.stdout.strip().endswith("started"
 def one(pred): return [i for i, l in enumerate(sl) if pred(l)]
 
 # where the block is
-tag = "harness-start dies on an image whose SETUP_SPEC_VERSION is not 4"   # 3 before file actions Task 17, 2 before plan 7a Task 17, 1 before pure core phase 6 Task 13
+tag = "harness-start dies on an image whose SETUP_SPEC_VERSION is not 5"   # 4 before plan 7b's rebase onto file actions, 3 before file actions Task 17 and plan 7b Task 18, 2 before plan 7a Task 17, 1 before pure core phase 6 Task 13
 mk = one(lambda l: l == "# PAIRING: the image's setup")
 end = [j for j in range(mk[0], len(sl)) if sl[j] == "fi"][:1] if len(mk) == 1 else []
 svc_end = one(lambda l: l.startswith("})().catch(") and l.endswith(' "$SERVICES_JS"'))
@@ -3438,8 +3476,8 @@ def config(r, setup=None):
     if setup is not None: open(os.path.join(d, "harness-setup.json"), "w").write(setup if isinstance(setup, str) else json.dumps(setup))
     return d
 def prof(r): return json.loads(r[CMH]["data"]["harness-setup.json"])
-SETUP_OK = ("export const SETUP_SPEC_VERSION = 4\n"
-            "export function parseSetup(raw, file, read) { const s = JSON.parse(raw); for (const j of s.schedules.jobs) if (j.request) read(j.request); return { profile: s.profile, jobs: [], places: s.places, budgets: s.budgets, providerSettings: s.providerSettings, files: s.files } }\n")
+SETUP_OK = ("export const SETUP_SPEC_VERSION = 5\n"
+            "export function parseSetup(raw, file, read) { const s = JSON.parse(raw); for (const j of s.schedules.jobs) if (j.request) read(j.request); return { profile: s.profile, jobs: [], places: s.places, budgets: s.budgets, providerSettings: s.providerSettings, memory: s.memory, files: s.files } }\n")
 LAYOUT_OK = ("const D = JSON.stringify({ system: 'Naila', finance: 'Finance', inbox: 'Inbox', daily: 'Daily', testFolder: 'Harness-test' })\n"
              "export const vaultLayout = (p) => ({ workspaces: `${p.system}/Workspace` })\n"
              "export const vaultPathsEnv = (p) => JSON.stringify({ system: p.system, finance: p.finance, inbox: p.inbox, daily: p.daily, testFolder: p.testFolder }) === D ? {} : { VAULT_PATHS: JSON.stringify(p) }\n")
@@ -3453,18 +3491,18 @@ def stub_pairing(setup_js=SETUP_OK, layout_js=LAYOUT_OK, r=test, setup=None, **k
     d, cfg = stub(setup_js, layout_js), config(r, setup)
     p = pairing(f"{d}/h", f"{d}/v", cfg, **kw); shutil.rmtree(d); shutil.rmtree(cfg); return p, d
 
-if not started(p := stub_pairing()[0]) or shown(p) != "Harness-test|Finance|Naila/Workspace|": bad.append(f"{tag}: refuses (or misreads) an image with SETUP_SPEC_VERSION 4: exit {p.returncode} {p.stderr.strip()!r} {p.stdout!r}")
+if not started(p := stub_pairing()[0]) or shown(p) != "Harness-test|Finance|Naila/Workspace|": bad.append(f"{tag}: refuses (or misreads) an image with SETUP_SPEC_VERSION 5: exit {p.returncode} {p.stderr.strip()!r} {p.stdout!r}")
 p, d = stub_pairing(None)
 if not died(p, OLD, f"cannot load {d}/h/setup.js: ", "Cannot find module"): bad.append(f"{tag}: an image without setup.js: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying cannot load <path>: <the import error>: {OLD}")
 p, d = stub_pairing("throw new Error('setup boom')\n")
 if not died(p, OLD, f"cannot load {d}/h/setup.js: setup boom"): bad.append(f"{tag}: a setup.js that throws: exit {p.returncode} {p.stderr.strip()!r}")
-for what, v in (("SETUP_SPEC_VERSION 3 (plan 7a: no files settings)", "3"), ("SETUP_SPEC_VERSION 2 (pure-core phase 6: no budgets or provider settings)", "2"), ("SETUP_SPEC_VERSION 1 (phase 4: no places)", "1"), ("SETUP_SPEC_VERSION 0", "0"),
-                ('SETUP_SPEC_VERSION "4"', '"4"'), ("no SETUP_SPEC_VERSION", None)):
-    js = SETUP_OK.replace("export const SETUP_SPEC_VERSION = 4\n", "" if v is None else f"export const SETUP_SPEC_VERSION = {v}\n")
+for what, v in (("SETUP_SPEC_VERSION 4 (file actions: no memory)", "4"), ("SETUP_SPEC_VERSION 3 (plan 7a: no files settings or memory)", "3"), ("SETUP_SPEC_VERSION 2 (pure-core phase 6: no budgets or provider settings)", "2"),
+                ("SETUP_SPEC_VERSION 1 (phase 4: no places)", "1"), ("SETUP_SPEC_VERSION 0", "0"), ('SETUP_SPEC_VERSION "5"', '"5"'), ("no SETUP_SPEC_VERSION", None)):
+    js = SETUP_OK.replace("export const SETUP_SPEC_VERSION = 5\n", "" if v is None else f"export const SETUP_SPEC_VERSION = {v}\n")
     if not died(p := stub_pairing(js)[0], OLD): bad.append(f"{tag}: an image with {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {OLD!r}")
 # plan 7a Task 17 (worded both ways): an image newer than the chart says so, and names the chart as the older side
-js = SETUP_OK.replace("export const SETUP_SPEC_VERSION = 4\n", "export const SETUP_SPEC_VERSION = 5\n")
-if not died(p := stub_pairing(js)[0], NEWER) or OLD in p.stderr: bad.append(f"{tag}: an image with SETUP_SPEC_VERSION 5: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {NEWER!r} (and not that the image predates the chart)")
+js = SETUP_OK.replace("export const SETUP_SPEC_VERSION = 5\n", "export const SETUP_SPEC_VERSION = 6\n")
+if not died(p := stub_pairing(js)[0], NEWER) or OLD in p.stderr: bad.append(f"{tag}: an image with SETUP_SPEC_VERSION 6: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {NEWER!r} (and not that the image predates the chart)")
 p, d = stub_pairing(layout_js=None)
 if not died(p, OLD, f"cannot load {d}/v/layout.js: "): bad.append(f"{tag}: an image without vault-mcp's layout.js: exit {p.returncode} {p.stderr.strip()!r}")
 tag = "harness-start dies when the image refuses the chart's setup"
@@ -3496,21 +3534,26 @@ if HAVE:
     # refusal carries the setup's own `setup: <file>:` prefix, so it is matched by substring
     bent = prof(prod); bent["version"] = 1; bent.pop("places", None); bent["profile"]["paths"]["views"].pop("places", None)
     cfg = config(prod, bent); p = pairing(DIST, VDIST, cfg); shutil.rmtree(cfg)
-    if not died(p, REFUSES + "setup: ", "harness-setup.json: version must be 4 (got 1): the chart predates pure-core phase 6 (places)"): bad.append(f"{tag}: the built image accepts a setup of version 1: exit {p.returncode} {p.stderr.strip()!r}")
+    if not died(p, REFUSES + "setup: ", "harness-setup.json: version must be 5 (got 1): the chart predates pure-core phase 6 (places)"): bad.append(f"{tag}: the built image accepts a setup of version 1: exit {p.returncode} {p.stderr.strip()!r}")
     # plan 7a Task 17: the built image refuses promote 1's chart's setup (version 2, no budgets or provider settings), with
     # naila Task 10's text naming the chart as the older side
     bent = prof(prod); bent["version"] = 2; bent.pop("budgets", None); bent.pop("providerSettings", None)
     cfg = config(prod, bent); p = pairing(DIST, VDIST, cfg); shutil.rmtree(cfg)
-    if not died(p, REFUSES + "setup: ", "harness-setup.json: version must be 4 (got 2): the chart predates plan 7a (budgets and provider settings)"): bad.append(f"{tag}: the built image accepts a setup of version 2: exit {p.returncode} {p.stderr.strip()!r}")
-    # file actions Task 17: the built image refuses b991dd4's setup (version 3, no files settings), with naila Task 3's text
-    # naming the chart as the older side
-    bent = prof(prod); bent["version"] = 3; bent.pop("files", None)
+    if not died(p, REFUSES + "setup: ", "harness-setup.json: version must be 5 (got 2): the chart predates plan 7a (budgets and provider settings)"): bad.append(f"{tag}: the built image accepts a setup of version 2: exit {p.returncode} {p.stderr.strip()!r}")
+    # file actions Task 17: the built image refuses b991dd4's setup (version 3, no files settings, nor plan 7b's memory), with
+    # naila Task 3's text naming the chart as the older side
+    bent = prof(prod); bent["version"] = 3; bent.pop("files", None); bent.pop("memory", None); bent["profile"]["paths"]["views"].pop("memory", None)
     cfg = config(prod, bent); p = pairing(DIST, VDIST, cfg); shutil.rmtree(cfg)
-    if not died(p, REFUSES + "setup: ", "harness-setup.json: version must be 4 (got 3): the chart predates file actions (the files settings)"): bad.append(f"{tag}: the built image accepts a setup of version 3: exit {p.returncode} {p.stderr.strip()!r}")
-    bent = prof(prod); bent["version"] = 5
+    if not died(p, REFUSES + "setup: ", "harness-setup.json: version must be 5 (got 3): the chart predates file actions (the files settings)"): bad.append(f"{tag}: the built image accepts a setup of version 3: exit {p.returncode} {p.stderr.strip()!r}")
+    # plan 7b Task 18: the built image refuses a file actions chart's setup (version 4, no memory or memory view), with naila
+    # Task 10's text naming the chart as the older side
+    bent = prof(prod); bent["version"] = 4; bent.pop("memory", None); bent["profile"]["paths"]["views"].pop("memory", None)
     cfg = config(prod, bent); p = pairing(DIST, VDIST, cfg); shutil.rmtree(cfg)
-    if not died(p, REFUSES + "setup: ", "version must be 4 (got 5)"): bad.append(f"{tag}: the built image accepts a setup of version 5: exit {p.returncode} {p.stderr.strip()!r}")
-    for k in ("budgets", "providerSettings", "files"):
+    if not died(p, REFUSES + "setup: ", "harness-setup.json: version must be 5 (got 4): the chart predates plan 7b (memory limits and the memory view)"): bad.append(f"{tag}: the built image accepts a setup of version 4: exit {p.returncode} {p.stderr.strip()!r}")
+    bent = prof(prod); bent["version"] = 6
+    cfg = config(prod, bent); p = pairing(DIST, VDIST, cfg); shutil.rmtree(cfg)
+    if not died(p, REFUSES + "setup: ", "version must be 5 (got 6)"): bad.append(f"{tag}: the built image accepts a setup of version 6: exit {p.returncode} {p.stderr.strip()!r}")
+    for k in ("budgets", "providerSettings", "memory", "files"):
         bent = prof(prod); bent.pop(k, None)
         cfg = config(prod, bent); p = pairing(DIST, VDIST, cfg); shutil.rmtree(cfg)
         if not died(p, REFUSES + "setup: ", f"{k} is missing"): bad.append(f"{tag}: the built image accepts a setup without {k}: exit {p.returncode} {p.stderr.strip()!r}")
@@ -3635,7 +3678,7 @@ if r is not None:
 
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
-print("setup pairing: harness-start pairs with the image's setup (spec version 3, parseSetup" + (", the built image" if HAVE else "")
+print("setup pairing: harness-start pairs with the image's setup (spec version 5, parseSetup" + (", the built image" if HAVE else "")
       + "), VAULT_EXCLUDE names the profile's test folder; the vault servers get VAULT_PATHS only for a non-default profile; P8, the allow check and the write guard's root follow the profile")
 PY
 # Pure core phase 5 Task 9: the roles spec 4 (every role's lifecycle; hireable on a temporary role alone), both sides:
@@ -4130,7 +4173,8 @@ if not HAVE: print("NOTICE: NAILA_WORKTREE has no built dist: the setup's econom
 VALUES = yaml.safe_load(open("helm/assistant/values.yaml"))
 bad = []
 
-# the setups are version 4 (3 until file actions Task 17) with the budgets and the provider settings production ships
+# the setups are version 5 (3 until file actions Task 17 and plan 7b Task 18, 4 until plan 7b's rebase onto file actions: the
+# files settings and the memory, each checked in its own block) with the budgets and the provider settings production ships
 API = {"anthropic-api": {"monthlyUsd": 100, "runCapUsd": 5}}
 OWNER = ["naila", "finance-bookkeeper", "finance-advisor", "ops-oncall"]
 BUDGETS = {"providers": API, "roles": {}, "liveChecks": {}}
@@ -4138,7 +4182,7 @@ PSETTINGS = {"claude-subscription": {"resume": {"roles": OWNER, "maxInputTokens"
 tag = 'the prod render\'s budgets.providers equal {"anthropic-api": {"monthlyUsd": 100, "runCapUsd": 5}}, its provider settings resume the owner roles'
 for label, r in (("prod", prod), ("test phase", test), ("real phase", real), ("staging (harness on)", staging_on)):
     s = setup(r) or {}
-    if s.get("version") != 4: bad.append(f"{tag}: the {label} setup's version is {s.get('version')!r}, want 4 (3 until file actions Task 17)")
+    if s.get("version") != 5: bad.append(f"{tag}: the {label} setup's version is {s.get('version')!r}, want 5")   # 3 until file actions Task 17 and plan 7b Task 18, 4 until the rebase
     if s.get("budgets") != BUDGETS: bad.append(f"{tag}: the {label} budgets are {s.get('budgets')!r}, want {BUDGETS!r}")
     if s.get("providerSettings") != PSETTINGS: bad.append(f"{tag}: the {label} provider settings are {s.get('providerSettings')!r}, want {PSETTINGS!r}")
     if "cacheTtl" in json.dumps(s.get("providerSettings")): bad.append(f"{tag}: the {label} provider settings set a cacheTtl (the 1h default stays until the verdict)")
@@ -4495,12 +4539,138 @@ def guard(lines):
     i = next((n for n, l in enumerate(lines) if l == "SPEC_JS=/naila/packages/harness/dist/workers-spec.js"), None)
     j = next((n for n in range(i, len(lines)) if ' "$SPEC_JS"' in lines[n] and (lines[n].endswith(' "$SPEC_JS"') or ' "$SPEC_JS" || die ' in lines[n])), None) if i is not None else None
     return range(i, j + 1) if j is not None else None
+# plan 7b Task 18 (composed while <git-ref> renders setup 3: promote 2's chart is not on it): Task 18's change, declared and
+# checked in its own block below (setup spec 4: its version, views.memory and memory; the memory tools in harness-settings.json's
+# allow and the three ceilings; the standing-fact paragraphs; harness-start.sh's setup guard), is undone before the comparison,
+# so this diff still holds Task 8's change alone
+MEMORY_TOOLS = ["mcp__core__standing_save", "mcp__core__standing_remove", "mcp__core__history_search"]
+STANDING_KEYS = ("harness-CLAUDE.md", "harness-agent-finance-bookkeeper.md", "harness-agent-finance-advisor.md", "harness-agent-ops-oncall.md")
+STANDING_HEAD = "Facts and plans the user states about themselves or their life ("
+def setup_of(r):
+    try: return json.loads(r[HC]["data"]["harness-setup.json"])
+    except (KeyError, ValueError): return None
+setup3 = ((setup_of(prod_ref) or {}).get("version") or 0) < 4
+def setup_guard(lines):
+    i = next((n for n, l in enumerate(lines) if l == "# PAIRING: the image's setup"), None)
+    j = next((n for n in range(i, len(lines)) if lines[n].startswith("})().catch(") and '"$SETUP_JS"' in lines[n]), None) if i is not None else None
+    return range(i, j + 1) if j is not None else range(0)
+def without_standing(t):
+    # plan 7b final fix I2: the researched lines the workers quote say "read web or forwarded text", not "a web search"
+    for new_, old_ in (("⚠️ This plan was made after the worker read web or forwarded text (a web search, or a history search that returned such text); check it before approving.", "⚠️ This plan was made after a web search; check it before approving."),
+                       ("⚠️ This plan was made after the worker read web or forwarded text (a web search, or a history search that returned such text).", "⚠️ This plan was made after a web search."),
+                       ("For a decision filed after a worker read web or forwarded text,", "For a decision filed after a web search,")): t = t.replace(new_, old_)
+    ls = t.split("\n")
+    i = next((n for n, l in enumerate(ls) if l.removeprefix("- ").startswith(STANDING_HEAD)), None)
+    if i is None: return t
+    if not ls.pop(i).startswith("- ") and i >= 1 and ls[i - 1] == "": del ls[i - 1]
+    return "\n".join(ls)
+def undo18(r, now):
+    """`r` with harness-settings.json parsed, and `now` (this chart's render) with Task 18's change undone."""
+    r = copy.deepcopy(r)
+    if HC in r and now:
+        s = setup_of(r)
+        if s is not None: s["version"] = 3; s.pop("memory", None); ((s.get("profile") or {}).get("paths") or {}).get("views", {}).pop("memory", None); r[HC]["data"]["harness-setup.json"] = s
+        w = r[HC]["data"].get("harness-workers.json")
+        w = json.loads(w) if isinstance(w, str) else w
+        if w is not None:
+            for x in w.get("roles", []):
+                if "ceiling" in x: x["ceiling"] = [t for t in x["ceiling"] if t not in MEMORY_TOOLS]
+            r[HC]["data"]["harness-workers.json"] = w
+    elif HC in r and isinstance(setup_of(r), dict): r[HC]["data"]["harness-setup.json"] = setup_of(r)
+    if HC in r and isinstance(r[HC]["data"].get("harness-workers.json"), str): r[HC]["data"]["harness-workers.json"] = json.loads(r[HC]["data"]["harness-workers.json"])
+    if CC in r:
+        d = r[CC]["data"]
+        if "harness-settings.json" in d:
+            st = json.loads(d["harness-settings.json"])
+            if now:
+                st["permissions"]["allow"] = [t for t in st["permissions"]["allow"] if t not in MEMORY_TOOLS]
+                st["_comment"] = st.get("_comment", "").replace("(decision_status, propose_capability_change, the self_note tools, the standing tools and history_search)",
+                                                                "(decision_status, propose_capability_change and the self_note tools)")   # the allow's tools, named
+            d["harness-settings.json"] = st
+        if now:
+            for k in STANDING_KEYS:
+                if k in d: d[k] = without_standing(d[k])
+    return r
+# file actions Task 17 (composed while <git-ref> renders setup 3, as Task 18's is: file actions' chart is not on it either,
+# plan 7b's rebase onto file actions): its change, checked in its own block below and in plan 7b's union check, is undone
+# before the comparison too (harness-start.sh's desk lines by without_desk)
+import re
+RC = ("Deployment", "assistant-claude")
+def rc_checksum(r): return r[RC]["spec"]["template"]["metadata"].get("annotations", {}).get("checksum/config") if RC in r else None
+FILE_SEEDS = ("files.process", "files.send", "calc.use")
+FILE_CEILING = ("mcp__core__workspace_move", "mcp__core__workspace_copy", "mcp__core__file_unzip", "mcp__core__file_zip", "mcp__core__image_convert", "mcp__core__csv_query", "mcp__core__attach_file", "mcp__core__calculate")
+CALC = "Any sum, split or percentage of money: use calculate, never mental arithmetic."
+DESK = 'What your file actions make sits on your desk for a day (gone after a restart); when the user says "keep it", copy it into your workspace with workspace_copy (ask once for files.write with propose_capability_change if it is off).'
+FILE_LINES = {"harness-CLAUDE.md": (f"- {DESK}\n", f"- {CALC}\n"), "harness-agent-finance-bookkeeper.md": (f"\n{CALC}\n",), "harness-agent-finance-advisor.md": (f"{CALC}\n\n",)}
+FILES_COMMENT = ("(Rulings 19, 22), the files sidecar's /run/files-token and /run/files-sock (file actions; the image's STATIC_NO_ACCESS)", "(Rulings 19, 22)")
+def undo_files(r, now):
+    """`r` (undo18's) with docs-grant.mjs and the RC lines' checksum left out (an RC key file actions changed), and `now`
+    (this chart's render) with file actions' change undone: the setup's files, the seeds and ceilings, the settings' six
+    denies and comment, the instruction lines and the harness pod's files parts; the ref's loses its docs-token init."""
+    r = copy.deepcopy(r)
+    if CC in r: r[CC]["data"].pop("docs-grant.mjs", None)
+    if RC in r: r[RC]["spec"]["template"]["metadata"].get("annotations", {}).pop("checksum/config", None)
+    if HC in r and now:
+        s_ = r[HC]["data"].get("harness-setup.json")
+        if isinstance(s_, dict): s_.pop("files", None)
+        w_ = r[HC]["data"].get("harness-workers.json")
+        if isinstance(w_, dict):
+            for x in w_.get("roles", []):
+                if "ceiling" in x: x["ceiling"] = [t for t in x["ceiling"] if t not in FILE_CEILING]
+                if "seed" in x: x["seed"] = [c_ for c_ in x["seed"] if c_ not in FILE_SEEDS]
+    if CC in r and now:
+        d = r[CC]["data"]
+        st = d.get("harness-settings.json")
+        if isinstance(st, dict):
+            st["permissions"]["deny"] = [x for x in st["permissions"]["deny"] if not re.fullmatch(r"(Read|Edit|Write)\(//run/files-(token|sock)/\*\*\)", x)]
+            st["_comment"] = st.get("_comment", "").replace(*FILES_COMMENT)
+        for k, lines in FILE_LINES.items():
+            if k in d:
+                for l_ in lines: d[k] = d[k].replace(l_, "", 1)
+    if H in r:
+        p_ = r[H]["spec"]["template"]["spec"]
+        if not now: p_["initContainers"] = [c_ for c_ in p_.get("initContainers", []) if c_["name"] != "docs-token"]
+        else:
+            p_["containers"] = [c_ for c_ in p_["containers"] if c_["name"] != "files"]
+            p_["initContainers"] = [c_ for c_ in p_.get("initContainers", []) if c_["name"] not in ("files-venv", "sidecar-tokens")]
+            p_["volumes"] = [v_ for v_ in p_.get("volumes", []) if v_["name"] not in ("files-venv", "files-tmp", "files-token", "files-sock", "files-desk")]
+            for c_ in p_["containers"]:
+                if c_["name"] == "harness":
+                    c_["env"] = [e for e in c_["env"] if e["name"] not in ("HARNESS_DESK_ROOT", "FILES_TOKEN_FILE", "FILES_SOCKET")]
+                    c_["volumeMounts"] = [m for m in c_["volumeMounts"] if m["name"] not in ("files-token", "files-sock", "files-desk")]
+                    for e in c_["env"]:
+                        if e["name"] == "HARNESS_SERVICES":
+                            sv = json.loads(e["value"]); sv["services"].pop("files", None); sv["services"].pop("calc", None); e["value"] = json.dumps(sv, separators=(",", ":"))
+                if c_["name"] == "docs":
+                    c_["volumeMounts"] = [m for m in c_["volumeMounts"] if m["name"] != "files-desk"]
+                    for e in c_["env"]:
+                        if e["name"] == "DOCS_ROOTS" and e["value"].endswith(":/desk"): e["value"] = e["value"][:-len(":/desk")]
+    return r
+# file actions' harness-start.sh change (its Task 17: the desk, HARNESS_DESK_ROOT, as the docs hook's --desk), undone text for
+# text: each text it wrote, as often as it wrote it, back to what it replaced (plan 7b's rebase onto file actions)
+DESK_START = [
+    ('# File actions: the desk (HARNESS_DESK_ROOT, the files sidecar\'s emptyDir) is a docs root of each run\'s own desk folder, so the\n# docs hook takes it as --desk, after --root and before --exclude. Unset (an older chart): no --desk, no desk docs root.\nif [ -n "${HARNESS_DESK_ROOT:-}" ]; then\n  printf \'%s\' "$HARNESS_DESK_ROOT" | grep -qE \'^(/[A-Za-z0-9_-][A-Za-z0-9._-]*)+$\' || die "HARNESS_DESK_ROOT must be a plain absolute path of letters, digits and ._- (it goes into a hook command), got \'$HARNESS_DESK_ROOT\'"\nfi\n', '', 1),
+    ('const fs = require("fs"), [src, patch, dst, phase, root, grant, uploads, exclude, testFolder, finance, workspaces, desk] = process.argv.slice(1)\n', 'const fs = require("fs"), [src, patch, dst, phase, root, grant, uploads, exclude, testFolder, finance, workspaces] = process.argv.slice(1)\n', 1),
+    ('const docsDesk = desk ? ` --desk ${desk}` : ""\n', '', 1),
+    ('${root}${docsDesk}${docsExclude}', '${root}${docsExclude}', 1),
+    ('"$WORKSPACES" "${HARNESS_DESK_ROOT:-}"', '"$WORKSPACES"', 2),
+    ('const fs = require("fs"), [f, phase, root, patch, capsjs, layerjs, regjs, testFolder, workspaces, desk] = process.argv.slice(1)\n', 'const fs = require("fs"), [f, phase, root, patch, capsjs, layerjs, regjs, testFolder, workspaces] = process.argv.slice(1)\n', 1),
+    ('( --desk /\\\\S+)?', '', 1),
+    ('// file actions: the desk is a docs root exactly when the pod has one (HARNESS_DESK_ROOT), and then as itself\nconst hasDesk = / --desk (\\S+)( --exclude \\S+)? \\|\\| exit 2$/.exec(docs[0])\nif ((hasDesk?.[1] ?? "") !== (desk ?? "")) fail(`mcp__docs__convert takes the desk ${hasDesk?.[1] ?? "(none)"}, HARNESS_DESK_ROOT is ${desk || "(unset)"}`)\n', '', 1),
+]
+def without_desk(t):
+    """`t` (a harness-start.sh) without file actions' desk lines, and the problem when one is not there as file actions wrote it."""
+    for new_, old_, n_ in DESK_START:
+        if t.count(new_) != n_: return t, f"harness-start.sh holds {new_[:60]!r}… {t.count(new_)} times, file actions wrote it {n_}"
+        t = t.replace(new_, old_)
+    return t, None
 def start_gaps(a, b):
     la, lb = a.splitlines(), b.splitlines()
     ga, gb = guard(la), guard(lb)
     if ga is None or gb is None: return [f"harness-start.sh lacks the roles guard ({'here' if ga is None else 'at the ref'})"]
-    ok_a = lambda n: la[n].lstrip().startswith("#") or n in ga
-    ok_b = lambda n: lb[n].lstrip().startswith("#") or n in gb
+    sa_, sb_ = (setup_guard(la), setup_guard(lb)) if setup3 else (range(0), range(0))   # Task 18's setup guard, composed
+    ok_a = lambda n: la[n].lstrip().startswith("#") or n in ga or n in sa_
+    ok_b = lambda n: lb[n].lstrip().startswith("#") or n in gb or n in sb_
     out = []
     for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, lb, la, autojunk=False).get_opcodes():
         if op == "equal": continue
@@ -4526,9 +4696,16 @@ for label, a, b, moved in diffs:
         if (spec(a) or {}).get("version") != 5: bad.append(f"{tag}: its harness-workers.json is not version 5")
         if "maxChars" in (spec(b) or {}).get("summary", {}): bad.append(f"{tag}: the ref's summary already has a maxChars")
         if checksum(a) is None or checksum(a) == checksum(b): bad.append(f"{tag}: the harness checksum is {checksum(a)!r}, the ref's {checksum(b)!r}: want a new one")
-        bad += [f"{tag}: {g}" for g in start_gaps(a[HC]["data"]["harness-start.sh"], b[HC]["data"]["harness-start.sh"])]
+        start_a, why_ = without_desk(a[HC]["data"]["harness-start.sh"]) if setup3 else (a[HC]["data"]["harness-start.sh"], None)   # file actions' desk lines, composed
+        if why_: bad.append(f"{tag}: {why_}")
+        bad += [f"{tag}: {g}" for g in start_gaps(start_a, b[HC]["data"]["harness-start.sh"])]
         sa, sb = strip(a, True), strip(b, False)
     else: sa, sb = a, b
+    if setup3: sa, sb = undo18(sa, True), undo18(sb, False)   # Task 18's change, composed (its own block checks it)
+    if setup3:   # file actions' change, composed (its own block and plan 7b's union check check it); the RC lines move only with docs-grant.mjs
+        grant_a, grant_b = ((x.get(CC) or {}).get("data", {}).get("docs-grant.mjs") for x in (a, b))
+        if grant_a == grant_b and rc_checksum(a) != rc_checksum(b): bad.append(f"{tag}: the RC lines' checksum moved (a harness-only change restarts no RC line)")
+        sa, sb = undo_files(sa, True), undo_files(sb, False)
     for k in sorted(set(sa) | set(sb)):
         if sa.get(k) != sb.get(k): bad.append(f"{tag}: {k[0]}/{k[1]} differs{'' if k in sa and k in sb else ' (on one side only)'}")
 if diffs and HAVE:
@@ -4564,10 +4741,10 @@ PY
 #  - harness-start dies on a HARNESS_DESK_ROOT that is no plain absolute path, run as rendered;
 #  - the roles: the seeds as the roles spec check above pins them, every tool the seeds' capabilities grant (the image's
 #    CAPABILITY_TOOLS, for the role's own servers and the core) is in its ceiling, and the instruction lines each once;
-#  - the prod render differs from <git-ref>'s only in the setup file (version 4 and files), the services JSON (files and
-#    calc), the harness and docs mounts and env, the files container and its volumes, the init containers (docs-token became
-#    sidecar-tokens, files-venv), the seeds and the ceilings (harness-workers.json), the instruction files, harness-settings.json,
-#    harness-start.sh, docs-grant.mjs and the checksums (the RC pod's follows docs-grant.mjs, an RC key too).
+#  - the whole-render diff against <git-ref> (the setup file, the services JSON, the harness and docs mounts and env, the files
+#    container and its volumes, the init containers, the seeds and the ceilings, the instruction files, harness-settings.json,
+#    harness-start.sh, docs-grant.mjs and the checksums) is one check with plan 7b's, in the block after this one (plan
+#    7b's rebase onto file actions: the union of both lists).
 helm template helm/assistant -f helm/assistant/values.yaml -f helm/assistant/values.prod.yaml --set harness.files.jobs.memoryMiB=512 > "$tmp/files-512.yaml"
 python3 - "$ref" "$tmp/prod.yaml" "$tmp/prod-ref.yaml" "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/files-512.yaml" "$tmp/staging-on.yaml" "$tmp/two.yaml" <<'PY'
 import sys, yaml, json, os, re, subprocess, tempfile, shutil, socket, copy, stat, shlex
@@ -4902,38 +5079,255 @@ for k, lines in (("harness-CLAUDE.md", (CALC, DESK)), ("harness-agent-finance-bo
         n = cm.get(k, "").count(t)
         if n != (1 if t in lines else 0): bad.append(f"{tag}: {k} holds {t[:40]!r}… {n} times")
 
-tag = f"the prod render differs from {ref} only in the setup file, the services JSON, the harness and docs mounts and env, the new container and volumes, the init container, the seeds, the ceiling and instruction files, harness-settings.json, harness-start.sh, docs-grant.mjs and the checksum"
-new_, old_ = copy.deepcopy(prod), copy.deepcopy(prod_ref)
-if (json.loads(old_[CMH]["data"]["harness-setup.json"]) or {}).get("version") != 3: print(f"NOTICE: the {ref} render has no setup spec 3: the whole-render diff against it (file actions Task 17's change alone) was skipped")
-else:
-    # the setup: version 3 -> 4 and files, nothing else
-    s_ = json.loads(new_[CMH]["data"]["harness-setup.json"]); s_["version"] = 3; s_.pop("files", None)
-    if s_ != json.loads(old_[CMH]["data"]["harness-setup.json"]): bad.append(f"{tag}: harness-setup.json differs beyond its version and files")
-    # the roles: the seeds and ceilings, back to the ref's, give the ref's spec
-    w_ = json.loads(new_[CMH]["data"]["harness-workers.json"])
-    for r_ in w_["roles"]:
-        r_["seed"] = [x for x in r_["seed"] if x not in ("files.process", "files.send", "calc.use")]
-        if "ceiling" in r_: r_["ceiling"] = [x for x in r_["ceiling"] if x not in ("mcp__core__workspace_move", "mcp__core__workspace_copy", "mcp__core__file_unzip", "mcp__core__file_zip", "mcp__core__image_convert", "mcp__core__csv_query", "mcp__core__attach_file", "mcp__core__calculate")]
-    if w_ != json.loads(old_[CMH]["data"]["harness-workers.json"]): bad.append(f"{tag}: harness-workers.json differs beyond the seeds and ceilings")
-    for k in ("harness-setup.json", "harness-workers.json", "harness-start.sh"): new_[CMH]["data"].pop(k); old_[CMH]["data"].pop(k)
-    # the instruction files lose exactly their new lines; harness-settings.json its six denies (and its comment); docs-grant.mjs
-    for k, lines in (("harness-CLAUDE.md", (f"- {DESK}\n", f"- {CALC}\n")), ("harness-agent-finance-bookkeeper.md", (f"\n{CALC}\n",)), ("harness-agent-finance-advisor.md", (f"{CALC}\n\n",))):
-        t = new_[CMC]["data"][k]
-        for l_ in lines: t = t.replace(l_, "", 1)
-        if t != old_[CMC]["data"][k]: bad.append(f"{tag}: {k} differs beyond its new lines")
-        new_[CMC]["data"].pop(k); old_[CMC]["data"].pop(k)
-    hn, ho = json.loads(new_[CMC]["data"]["harness-settings.json"]), json.loads(old_[CMC]["data"]["harness-settings.json"])
-    hn["permissions"]["deny"] = [x for x in hn["permissions"]["deny"] if not re.fullmatch(r"(Read|Edit|Write)\(//run/files-(token|sock)/\*\*\)", x)]
-    hn.pop("_comment"); ho.pop("_comment")
-    if hn != ho: bad.append(f"{tag}: harness-settings.json differs beyond the six files-token and files-sock denies")
-    for k in ("harness-settings.json", "docs-grant.mjs"): new_[CMC]["data"].pop(k); old_[CMC]["data"].pop(k)
-    # the harness pod: the files container, its init container and volumes, the harness and docs additions, the token init
-    pn, po = new_[H]["spec"]["template"]["spec"], old_[H]["spec"]["template"]["spec"]
-    pn["containers"] = [c_ for c_ in pn["containers"] if c_["name"] != "files"]
-    pn["initContainers"] = [c_ for c_ in pn["initContainers"] if c_["name"] not in ("files-venv", "sidecar-tokens")]
-    po["initContainers"] = [c_ for c_ in po["initContainers"] if c_["name"] != "docs-token"]
-    pn["volumes"] = [v_ for v_ in pn["volumes"] if v_["name"] not in ("files-venv", "files-tmp", "files-token", "files-sock", "files-desk")]
-    for c_ in pn["containers"]:
+if bad:
+    print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
+print("file actions: the files sidecar (uid 1003, 128Mi + a limit of memoryMiB + 128 MiB, venv read-only from files-venv, only uploads, the workspaces and finance folders and the desk), the desk rw only in files"
+      + ", setup spec 5 with the files settings (bad ones fail the render" + (", ceilings the built image's" if HAVE else "") + "), two tokens, the roles' file actions and instruction lines (the whole render: the memory block's union check)")
+PY
+
+# Plan 7b Task 18 (promote 2): setup spec 4, the memory tools and the workers' standing-fact instructions, both sides:
+#  - the prod, test-phase and real-phase renders' harness-setup.json is version 4 with views.memory Memory.md and memory as
+#    values.yaml holds it (standing and search, under the core's ceilings) plus values.prod.yaml's remake (Task 3's 8 runs
+#    per role): the re-make is production's alone, so the staging (harness on) render's memory is values.yaml's, without
+#    remake, and neither values.yaml nor values.staging.yaml sets one; naila's built parseSetup parses each (its memoryText:
+#    remake 9 runs per role in production, off in staging) and refuses a limit above its ceiling;
+#  - a memory that is no map, or a standing, search or remake that is no map, fails the render;
+#  - every permanent role's tools.md lists the three memory tools right after self_note_undo, and the researcher's lists none;
+#    with NAILA_WORKTREE every permanent role's ceiling holds the built image's CORE_ALWAYS_TOOLS (a ceiling left without one
+#    would silently take that tool from the role: Task 13 review M3);
+#  - each permanent role's instructions carry the standing-fact paragraph right after its self-note paragraph (the whole
+#    message quoted, the 600-character sentence, "noted", history_search after saving, and no "move it out of your notes"
+#    sentence until promote 2's 7-day watch closes; the finance roles keep account data in the finance notes; ops-oncall's examples are alerts and quiet
+#    times), and no file says "quoting their words exactly"; the researcher's names no memory tool;
+#  - plan 7b's rebase onto file actions: one whole-render check over the union of this block's list and file actions' (the block
+#    above): prod, test phase, harness off and staging render as at <git-ref> but for harness-setup.json (version, views.memory,
+#    memory, files), harness-settings.json's allow (the memory tools), its six files-token and files-sock denies and its
+#    comment's two additions, the seeds and the three ceilings in harness-workers.json (the memory tools and file actions'),
+#    the four instructions files (the standing-fact paragraphs, the calculator and desk lines), the services JSON, the harness
+#    and docs mounts and env, the files container, its volumes and init containers (docs-token became sidecar-tokens,
+#    files-venv), docs-grant.mjs, harness-start.sh's setup guard (and comments) and file actions' desk lines (each as file
+#    actions wrote it) and the harness checksum (the RC lines' moves only with docs-grant.mjs, an RC key); while <git-ref>
+#    renders roles spec 4 (promote 1 not on it yet), Task 8's change too; and the built core refuses <git-ref>'s setup 3
+#    naming the chart (skipped with a notice once <git-ref> renders setup 4).
+python3 - "$ref" "$tmp/prod.yaml" "$tmp/prod-ref.yaml" "$tmp/new.yaml" "$tmp/old-harness.yaml" "$tmp/off.yaml" "$tmp/old.yaml" "$tmp/staging.yaml" "$tmp/staging-ref.yaml" "$tmp/real.yaml" "$tmp/staging-on.yaml" <<'PY'
+import sys, yaml, json, os, re, subprocess, copy, tempfile, shutil, difflib
+ref = sys.argv[1]
+def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
+def loads(s): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(s) if d}
+prod, prod_ref, test, test_ref, off, off_ref, staging, staging_ref, real, staging_on = (load(p) for p in sys.argv[2:12])
+H, HC, CC, RC = ("Deployment", "assistant-harness"), ("ConfigMap", "assistant-harness"), ("ConfigMap", "assistant-claude"), ("Deployment", "assistant-claude")
+def setup(r):
+    try: return json.loads(r[HC]["data"]["harness-setup.json"])
+    except (KeyError, ValueError): return None
+def spec(r):
+    try: return json.loads(r[HC]["data"]["harness-workers.json"])
+    except (KeyError, ValueError): return None
+def checksum(r, d=H): return r[d]["spec"]["template"]["metadata"].get("annotations", {}).get("checksum/config") if d in r else None
+BASE = ["helm", "template", "helm/assistant", "-f", "helm/assistant/values.yaml", "-f", "helm/assistant/values.prod.yaml"]
+def render(*a): return subprocess.run(BASE + list(a), capture_output=True, text=True)
+NW = os.environ.get("NAILA_WORKTREE", "")
+DIST = f"{NW}/packages/harness/dist"
+HAVE = bool(NW) and all(os.path.isfile(f"{DIST}/{f}") for f in ("setup.js", "memory-config.js", "capability-ids.js"))
+if not HAVE: print("NOTICE: NAILA_WORKTREE has no built dist: the memory was not run through naila's parseSetup, nor the ceilings checked against its CORE_ALWAYS_TOOLS")
+VALUES = {f: yaml.safe_load(open(f"helm/assistant/{f}")) or {} for f in ("values.yaml", "values.prod.yaml", "values.staging.yaml")}
+MEMORY_TOOLS = ["mcp__core__standing_save", "mcp__core__standing_remove", "mcp__core__history_search"]
+bad = []
+
+# the setups: version 4, the memory view, and the memory's limits (the re-make production's alone)
+MEMORY = {"standing": {"maxLines": 20, "maxQuoteChars": 600, "maxMeaningChars": 200, "maxChangesPerRun": 3}, "search": {"maxHits": 10, "maxHitChars": 600, "maxScanTurns": 20000}}
+REMAKE = {"maxRunsPerRole": 9}   # Task 19: the most chunks a role's history needs (finance-advisor 7, 2026-11-26) plus 2
+tag = "the prod render's memory equals values.yaml's, with values.prod.yaml's re-make"
+vm = (VALUES["values.yaml"].get("harness") or {}).get("memory")
+if vm != MEMORY: bad.append(f"{tag}: values.yaml's harness.memory is {vm!r}, want {MEMORY!r} (no remake: production's alone)")
+pm = (VALUES["values.prod.yaml"].get("harness") or {}).get("memory")
+if pm != {"remake": REMAKE}: bad.append(f"{tag}: values.prod.yaml's harness.memory is {pm!r}, want only the re-make {{'remake': {REMAKE!r}}}")
+if "memory" in (VALUES["values.staging.yaml"].get("harness") or {}): bad.append(f"{tag}: values.staging.yaml sets harness.memory (staging never re-makes)")
+for label, r, want in (("prod", prod, {**MEMORY, "remake": REMAKE}), ("test phase", test, {**MEMORY, "remake": REMAKE}), ("real phase", real, {**MEMORY, "remake": REMAKE}),
+                       ("staging (harness on)", staging_on, MEMORY)):
+    s = setup(r) or {}
+    if s.get("version") != 5: bad.append(f"{tag}: the {label} setup's version is {s.get('version')!r}, want 5 (4 until plan 7b's rebase onto file actions)")
+    if s.get("memory") != want: bad.append(f"{tag}: the {label} memory is {s.get('memory')!r}, want {want!r}")
+    if ((s.get("profile") or {}).get("paths") or {}).get("views", {}).get("memory") != "Memory.md": bad.append(f"{tag}: the {label} views.memory is not Memory.md")
+    if list(s)[-1:] != ["memory"]: bad.append(f"{tag}: the {label} setup's keys are {list(s)}, want memory last (the core's TOP_KEYS order)")
+# naila's parser, as main.ts runs it: the memory it installs, as its start line names it
+MEM_JS = r"""
+const [dist, dir, mutate] = process.argv.slice(1)
+const { readFileSync } = await import('node:fs')
+const { join } = await import('node:path')
+const { parseSetup } = await import(`${dist}/setup.js`)
+const { memoryText } = await import(`${dist}/memory-config.js`)
+const file = join(dir, 'harness-setup.json')
+const raw = JSON.parse(readFileSync(file, 'utf8')); if (mutate) new Function('s', mutate)(raw)
+const s = parseSetup(JSON.stringify(raw), file, (name) => readFileSync(join(dir, name), 'utf8'))
+process.stdout.write(JSON.stringify({ text: memoryText(s.memory), memory: s.memory, view: s.profile.paths.views.memory }))
+"""
+def naila(r, mutate=""):
+    d = tempfile.mkdtemp()
+    try:
+        for k, v in r[HC]["data"].items(): open(os.path.join(d, k), "w").write(v)
+        return subprocess.run(["node", "--input-type=module", "-e", MEM_JS, DIST, d, mutate], capture_output=True, text=True)
+    finally: shutil.rmtree(d)
+def why(p):
+    err = (p.stderr or p.stdout).strip()
+    return next((l for l in err.splitlines() if l.startswith("Error: ")), err[-300:])
+LIMITS = "memory: standing 20 lines (quote 600, meaning 200, 3 a message); search 10 hits of 600 characters over 20000 turns; "
+if HAVE:
+    tag = "the built image parses the rendered memory"
+    for label, r, rm in (("prod", prod, "remake 9 runs per role"), ("test phase", test, "remake 9 runs per role"), ("staging (harness on)", staging_on, "remake off")):
+        p = naila(r)
+        if p.returncode != 0: bad.append(f"{tag}: the {label} setup is refused: {why(p)}"); continue
+        o = json.loads(p.stdout)
+        if o["text"] != LIMITS + rm or o["memory"] != setup(r)["memory"] or o["view"] != "Memory.md": bad.append(f"{tag}: the {label} setup parses as {o!r}, want {LIMITS + rm!r}")
+    # the ceilings are the image's: the chart renders a raise, the image refuses it
+    for what, mutate, says in (("31 standing lines", "s.memory.standing.maxLines = 31", "memory.standing.maxLines must be a whole number from 1 to 30"),
+                               ("a 601-character quote", "s.memory.standing.maxQuoteChars = 601", "memory.standing.maxQuoteChars must be a whole number from 20 to 600"),
+                               ("21 hits", "s.memory.search.maxHits = 21", "memory.search.maxHits must be a whole number from 1 to 20"),
+                               ("21 re-make runs", "s.memory.remake.maxRunsPerRole = 21", "memory.remake.maxRunsPerRole must be a whole number from 1 to 20"),
+                               ("no memory", "delete s.memory", "memory is missing"),
+                               ("no memory view", "delete s.profile.paths.views.memory", "views.memory is missing")):
+        p = naila(prod, mutate)
+        if p.returncode == 0 or says not in p.stderr: bad.append(f"{tag}: the built image accepts {what}: exit {p.returncode} {why(p)!r}, want {says!r}")
+# the chart checks the shape it renders (the numbers are the core's)
+tag = "a memory, standing, search or remake that is no map fails the render"
+for what, args, says in (("memory a list", ["--set-json", "harness.memory=[1]"], "harness.memory must be a map with standing and search (remake optional)"),
+                         ("memory null", ["--set-json", "harness.memory=null"], "harness.memory must be a map with standing and search (remake optional)"),
+                         ("standing a number", ["--set-json", "harness.memory.standing=20"], "harness.memory must be a map with standing and search (remake optional)"),
+                         ("search null", ["--set-json", "harness.memory.search=null"], "harness.memory must be a map with standing and search (remake optional)"),
+                         ("remake a number", ["--set-json", "harness.memory.remake=8"], "harness.memory must be a map with standing and search (remake optional)")):
+    p = render(*args)
+    if p.returncode == 0 or says not in p.stderr: bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()[-300:]!r}, want the render to fail saying {says!r}")
+p = render("--set-json", "harness.memory.remake=null")
+if p.returncode != 0 or "remake" in ((setup(loads(p.stdout)) or {}).get("memory") or {"remake": 1}): bad.append(f"{tag}: the re-make left out does not render a memory without remake: exit {p.returncode} {p.stderr.strip()[-300:]!r}")
+
+# the ceilings: every permanent role's tools.md lists the memory tools after self_note_undo; the researcher's none
+ROLES = VALUES["values.yaml"]["harness"]["roleSpec"]["roles"]
+PERM = [x["id"] for x in ROLES if x.get("lifecycle") == "permanent" and x.get("ceiling")]
+tag = "every permanent role's tools.md lists the three memory tools; the researcher's lists none"
+if PERM != ["finance-bookkeeper", "finance-advisor", "ops-oncall"]: bad.append(f"{tag}: the permanent roles with a ceiling are {PERM}")
+for w in PERM:
+    ts = open(f"helm/assistant/files/modes/harness/{w}.tools.md").read().strip().split(", ")
+    i = ts.index("mcp__core__self_note_undo") if "mcp__core__self_note_undo" in ts else -1
+    if i < 0 or ts[i + 1:i + 4] != MEMORY_TOOLS or any(ts.count(t) != 1 for t in MEMORY_TOOLS): bad.append(f"{tag}: {w}.tools.md lists {[t for t in ts if t in MEMORY_TOOLS]} after self_note_undo, want {MEMORY_TOOLS} right after it, once each")
+    for label, r in (("prod", prod), ("test phase", test)):
+        c = ((spec(r) or {}).get("roles") and next((x for x in spec(r)["roles"] if x["id"] == w), {}) or {}).get("ceiling")
+        if c != ts: bad.append(f"{tag}: the {label} harness-workers.json ceiling of {w} is not its tools.md")
+rt = open("helm/assistant/files/modes/harness/researcher.tools.md").read()
+if any(t in rt for t in MEMORY_TOOLS) or "mcp__core__" in rt: bad.append(f"{tag}: researcher.tools.md names a core tool: {rt!r}")
+if HAVE:
+    q = subprocess.run(["node", "--input-type=module", "-e", "process.stdout.write(JSON.stringify((await import(process.argv[1])).CORE_ALWAYS_TOOLS))", f"{DIST}/capability-ids.js"], capture_output=True, text=True)
+    always = json.loads(q.stdout or "null")
+    if not isinstance(always, list) or not set(MEMORY_TOOLS) <= set(always): bad.append(f"{tag}: the built image's CORE_ALWAYS_TOOLS is {always!r}, without the memory tools")
+    else:
+        for w in PERM:
+            c = next((x for x in spec(prod)["roles"] if x["id"] == w), {}).get("ceiling") or []
+            if [t for t in always if t not in c]: bad.append(f"{tag}: {w}'s ceiling lacks the built image's always-on {[t for t in always if t not in c]} (the role would lose them, silently)")
+
+# the instructions: one standing-fact paragraph right after the self-note paragraph, in every permanent role's file
+KEYS = {"naila": "harness-CLAUDE.md", "finance-bookkeeper": "harness-agent-finance-bookkeeper.md", "finance-advisor": "harness-agent-finance-advisor.md", "ops-oncall": "harness-agent-ops-oncall.md"}
+HEAD = "Facts and plans the user states about themselves or their life ("
+SAYS = ["are standing facts: save each with standing_save the moment the user says it in your conversation, quoting their whole message exactly, with one line on what it changes; replace an older line it contradicts (replaces) and remove one they say no longer holds.",
+        "If the fact sits inside a long message (over 600 characters), ask the user to say it in a short message of its own.",
+        'Say at most "noted". Your own conventions stay in your notes. To find what was said before, use history_search, after saving.']
+FINANCE = "Account data stays in the finance notes; standing facts are what the user intends or tells you about themselves."
+def standing_at(lines):
+    """The index of the standing-fact paragraph's line in `lines` (a bullet in naila's), or None."""
+    return next((i for i, l in enumerate(lines) if l.removeprefix("- ").startswith(HEAD)), None)
+tag = "each permanent role's instructions say when to save a standing fact, right after the self-note paragraph"
+for label, r in (("prod", prod), ("test phase", test)):
+    for w, k in KEYS.items():
+        t = r[CC]["data"].get(k, "")
+        if "quoting their words exactly" in t: bad.append(f"{tag}: the {label} {k} still says 'quoting their words exactly' (a standing quote is the user's whole message)")
+        if "sits in your own notes moves" in t: bad.append(f"{tag}: the {label} {k} tells the worker to move facts out of its notes (held until promote 2's 7-day watch closes)")
+        ls = t.splitlines()
+        i = standing_at(ls)
+        if i is None or sum(1 for l in ls if l.removeprefix("- ").startswith(HEAD)) != 1: bad.append(f"{tag}: the {label} {k} has no standing-fact paragraph, or more than one"); continue
+        line = ls[i]
+        note = next((j for j, l in enumerate(ls) if l.removeprefix("- ").startswith("Your own notes (`self_note_set`, `self_note_history`, `self_note_undo`)")), None)
+        if note is None or i != note + (1 if w == "naila" else 2) or (w != "naila" and ls[note + 1] != ""): bad.append(f"{tag}: the {label} {k}'s paragraph is not right after the self-note paragraph (line {i}, the note's {note})")
+        if (w == "naila") != line.startswith("- "): bad.append(f"{tag}: the {label} {k}'s paragraph is {'not ' if w == 'naila' else ''}a bullet, as its neighbours are{'' if w == 'naila' else ' not'}")
+        for x in SAYS:
+            if x not in line: bad.append(f"{tag}: the {label} {k}'s paragraph does not say {x!r}")
+        if (FINANCE in line) != w.startswith("finance-"): bad.append(f"{tag}: the {label} {k}'s paragraph {'lacks' if w.startswith('finance-') else 'has'} {FINANCE!r}")
+        ex = line.removeprefix("- ")[len(HEAD):].split(")", 1)[0]
+        if w == "ops-oncall" and not ("alert" in ex and "quiet" in ex): bad.append(f"{tag}: ops-oncall's examples ({ex!r}) are not about alerts and quiet times")
+        if w == "naila" and ex != "a payday, a move, a rule they keep": bad.append(f"{tag}: naila's examples are {ex!r}")
+    rp = r[CC]["data"].get("harness-agent-researcher.md", "")
+    if any(x in rp for x in ("standing_save", "standing_remove", "history_search", "standing fact")): bad.append(f"{tag}: the {label} researcher's instructions name the memory")
+
+# the whole render, as at <git-ref> but for Task 18's change and file actions' (and Task 8's while <git-ref> renders roles spec 4)
+# file actions' harness-start.sh change (its Task 17: the desk, HARNESS_DESK_ROOT, as the docs hook's --desk), undone text for
+# text: each text it wrote, as often as it wrote it, back to what it replaced (plan 7b's rebase onto file actions)
+DESK_START = [
+    ('# File actions: the desk (HARNESS_DESK_ROOT, the files sidecar\'s emptyDir) is a docs root of each run\'s own desk folder, so the\n# docs hook takes it as --desk, after --root and before --exclude. Unset (an older chart): no --desk, no desk docs root.\nif [ -n "${HARNESS_DESK_ROOT:-}" ]; then\n  printf \'%s\' "$HARNESS_DESK_ROOT" | grep -qE \'^(/[A-Za-z0-9_-][A-Za-z0-9._-]*)+$\' || die "HARNESS_DESK_ROOT must be a plain absolute path of letters, digits and ._- (it goes into a hook command), got \'$HARNESS_DESK_ROOT\'"\nfi\n', '', 1),
+    ('const fs = require("fs"), [src, patch, dst, phase, root, grant, uploads, exclude, testFolder, finance, workspaces, desk] = process.argv.slice(1)\n', 'const fs = require("fs"), [src, patch, dst, phase, root, grant, uploads, exclude, testFolder, finance, workspaces] = process.argv.slice(1)\n', 1),
+    ('const docsDesk = desk ? ` --desk ${desk}` : ""\n', '', 1),
+    ('${root}${docsDesk}${docsExclude}', '${root}${docsExclude}', 1),
+    ('"$WORKSPACES" "${HARNESS_DESK_ROOT:-}"', '"$WORKSPACES"', 2),
+    ('const fs = require("fs"), [f, phase, root, patch, capsjs, layerjs, regjs, testFolder, workspaces, desk] = process.argv.slice(1)\n', 'const fs = require("fs"), [f, phase, root, patch, capsjs, layerjs, regjs, testFolder, workspaces] = process.argv.slice(1)\n', 1),
+    ('( --desk /\\\\S+)?', '', 1),
+    ('// file actions: the desk is a docs root exactly when the pod has one (HARNESS_DESK_ROOT), and then as itself\nconst hasDesk = / --desk (\\S+)( --exclude \\S+)? \\|\\| exit 2$/.exec(docs[0])\nif ((hasDesk?.[1] ?? "") !== (desk ?? "")) fail(`mcp__docs__convert takes the desk ${hasDesk?.[1] ?? "(none)"}, HARNESS_DESK_ROOT is ${desk || "(unset)"}`)\n', '', 1),
+]
+def without_desk(t):
+    """`t` (a harness-start.sh) without file actions' desk lines, and the problem when one is not there as file actions wrote it."""
+    for new_, old_, n_ in DESK_START:
+        if t.count(new_) != n_: return t, f"harness-start.sh holds {new_[:60]!r}… {t.count(new_)} times, file actions wrote it {n_}"
+        t = t.replace(new_, old_)
+    return t, None
+def blocks(lines, roles):
+    """The setup guard's (and with `roles` the roles guard's) line ranges in harness-start.sh `lines`."""
+    out = []
+    i = next((n for n, l in enumerate(lines) if l == "# PAIRING: the image's setup"), None)
+    j = next((n for n in range(i, len(lines)) if lines[n].startswith("})().catch(") and '"$SETUP_JS"' in lines[n]), None) if i is not None else None
+    if j is not None: out.append(range(i, j + 1))
+    if roles:
+        i = next((n for n, l in enumerate(lines) if l == "SPEC_JS=/naila/packages/harness/dist/workers-spec.js"), None)
+        j = next((n for n in range(i, len(lines)) if ' "$SPEC_JS"' in lines[n] and (lines[n].endswith(' "$SPEC_JS"') or ' "$SPEC_JS" || die ' in lines[n])), None) if i is not None else None
+        if j is not None: out.append(range(i, j + 1))
+    return out
+def start_gaps(a, b, roles):
+    la, lb = a.splitlines(), b.splitlines()
+    ba, bb = blocks(la, roles), blocks(lb, roles)
+    if len(ba) != 1 + roles or len(bb) != 1 + roles: return [f"harness-start.sh lacks the setup guard{' or the roles guard' if roles else ''} ({len(ba)} here, {len(bb)} at the ref)"]
+    ok_a = lambda n: la[n].lstrip().startswith("#") or any(n in x for x in ba)
+    ok_b = lambda n: lb[n].lstrip().startswith("#") or any(n in x for x in bb)
+    out = []
+    for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, lb, la, autojunk=False).get_opcodes():
+        if op == "equal": continue
+        if not all(ok_b(n) for n in range(i1, i2)) or not all(ok_a(n) for n in range(j1, j2)): out.append(f"harness-start.sh changes {lb[i1:i2]!r} to {la[j1:j2]!r} outside the setup guard{', the roles guard' if roles else ''} and comments")
+    return out
+# harness-settings.json's _comment names the allow's tools: the memory ones joined them
+COMMENT = ("(decision_status, propose_capability_change, the self_note tools, the standing tools and history_search)", "(decision_status, propose_capability_change and the self_note tools)")
+def without_standing(t):
+    """`t` without its standing-fact paragraph (and the blank line before it, outside naila's bullets)."""
+    # plan 7b final fix I2: the researched lines the workers quote say "read web or forwarded text", not "a web search"
+    for new_, old_ in (("⚠️ This plan was made after the worker read web or forwarded text (a web search, or a history search that returned such text); check it before approving.", "⚠️ This plan was made after a web search; check it before approving."),
+                       ("⚠️ This plan was made after the worker read web or forwarded text (a web search, or a history search that returned such text).", "⚠️ This plan was made after a web search."),
+                       ("For a decision filed after a worker read web or forwarded text,", "For a decision filed after a web search,")): t = t.replace(new_, old_)
+    ls = t.split("\n")
+    i = standing_at(ls)
+    if i is None: return t
+    bullet = ls.pop(i).startswith("- ")
+    if not bullet and i >= 1 and ls[i - 1] == "": del ls[i - 1]
+    return "\n".join(ls)
+# plan 7b's rebase onto file actions: file actions' change (its Task 17 block above), undone beside Task 18's
+FILE_SEEDS = ("files.process", "files.send", "calc.use")
+FILE_CEILING = ("mcp__core__workspace_move", "mcp__core__workspace_copy", "mcp__core__file_unzip", "mcp__core__file_zip", "mcp__core__image_convert", "mcp__core__csv_query", "mcp__core__attach_file", "mcp__core__calculate")
+CALC = "Any sum, split or percentage of money: use calculate, never mental arithmetic."
+DESK = 'What your file actions make sits on your desk for a day (gone after a restart); when the user says "keep it", copy it into your workspace with workspace_copy (ask once for files.write with propose_capability_change if it is off).'
+FILE_LINES = {"harness-CLAUDE.md": (f"- {DESK}\n", f"- {CALC}\n"), "harness-agent-finance-bookkeeper.md": (f"\n{CALC}\n",), "harness-agent-finance-advisor.md": (f"{CALC}\n\n",)}
+FILES_COMMENT = ("(Rulings 19, 22), the files sidecar's /run/files-token and /run/files-sock (file actions; the image's STATIC_NO_ACCESS)", "(Rulings 19, 22)")
+def without_files_pod(r, now):
+    """The harness pod of `r` without file actions' parts: in this chart's render (`now`) the files container, its init
+    containers and volumes, the harness and docs additions and the services JSON's files and calc; in the ref's, the
+    docs-token init container that sidecar-tokens replaced."""
+    p_ = r[H]["spec"]["template"]["spec"]
+    if not now:
+        p_["initContainers"] = [c_ for c_ in p_.get("initContainers", []) if c_["name"] != "docs-token"]
+        return
+    p_["containers"] = [c_ for c_ in p_["containers"] if c_["name"] != "files"]
+    p_["initContainers"] = [c_ for c_ in p_.get("initContainers", []) if c_["name"] not in ("files-venv", "sidecar-tokens")]
+    p_["volumes"] = [v_ for v_ in p_.get("volumes", []) if v_["name"] not in ("files-venv", "files-tmp", "files-token", "files-sock", "files-desk")]
+    for c_ in p_["containers"]:
         if c_["name"] == "harness":
             c_["env"] = [e for e in c_["env"] if e["name"] not in ("HARNESS_DESK_ROOT", "FILES_TOKEN_FILE", "FILES_SOCKET")]
             c_["volumeMounts"] = [m for m in c_["volumeMounts"] if m["name"] not in ("files-token", "files-sock", "files-desk")]
@@ -4944,13 +5338,87 @@ else:
             c_["volumeMounts"] = [m for m in c_["volumeMounts"] if m["name"] != "files-desk"]
             for e in c_["env"]:
                 if e["name"] == "DOCS_ROOTS" and e["value"].endswith(":/desk"): e["value"] = e["value"][:-len(":/desk")]
-    for k in (H, RC):
-        new_[k]["spec"]["template"]["metadata"]["annotations"].pop("checksum/config"); old_[k]["spec"]["template"]["metadata"]["annotations"].pop("checksum/config")
-    for k in sorted(set(new_) | set(old_)):
-        if new_.get(k) != old_.get(k): bad.append(f"{tag}: {k[0]}/{k[1]} differs beyond those")
-
+def strip(r, now, roles4, files_ref=False):
+    """`r` with its checksums, harness-start.sh, docs-grant.mjs and the settings parsed; `now` (this chart's render) also with
+    Task 18's change and, unless `files_ref` (<git-ref> renders file actions' setup 4 already), file actions' undone (and
+    Task 8's, with `roles4`)."""
+    r = copy.deepcopy(r)
+    if HC in r:
+        r[HC]["data"].pop("harness-start.sh", None)
+        s, w = setup(r), spec(r)
+        if s is not None and now:
+            s["version"] = 4 if files_ref else 3; s.pop("memory", None); ((s.get("profile") or {}).get("paths") or {}).get("views", {}).pop("memory", None)
+            if not files_ref: s.pop("files", None)
+        if w is not None and now:
+            for x in w.get("roles", []):
+                if "ceiling" in x: x["ceiling"] = [t for t in x["ceiling"] if t not in MEMORY_TOOLS and (files_ref or t not in FILE_CEILING)]
+                if "seed" in x and not files_ref: x["seed"] = [c_ for c_ in x["seed"] if c_ not in FILE_SEEDS]
+            if roles4: w["version"] = 4; w.get("summary", {}).pop("maxChars", None)
+        if s is not None: r[HC]["data"]["harness-setup.json"] = s
+        if w is not None: r[HC]["data"]["harness-workers.json"] = w
+    if CC in r:
+        d = r[CC]["data"]
+        d.pop("docs-grant.mjs", None)
+        if "harness-settings.json" in d:
+            st = json.loads(d["harness-settings.json"])
+            if now:
+                st["permissions"]["allow"] = [t for t in st["permissions"]["allow"] if t not in MEMORY_TOOLS]
+                st["_comment"] = st.get("_comment", "").replace(*COMMENT)
+                if not files_ref:
+                    st["permissions"]["deny"] = [x for x in st["permissions"]["deny"] if not re.fullmatch(r"(Read|Edit|Write)\(//run/files-(token|sock)/\*\*\)", x)]
+                    st["_comment"] = st["_comment"].replace(*FILES_COMMENT)
+            d["harness-settings.json"] = st
+        if now:
+            for k in KEYS.values():
+                if k in d: d[k] = without_standing(d[k])
+            for k, lines in ({} if files_ref else FILE_LINES).items():
+                if k in d:
+                    for l_ in lines: d[k] = d[k].replace(l_, "", 1)
+    if H in r:
+        r[H]["spec"]["template"]["metadata"].get("annotations", {}).pop("checksum/config", None)
+        if not files_ref: without_files_pod(r, now)
+    if RC in r: r[RC]["spec"]["template"]["metadata"].get("annotations", {}).pop("checksum/config", None)
+    return r
+roles4 = (spec(prod_ref) or {}).get("version") == 4   # promote 1 (Task 8) is not on <git-ref> yet
+diffs = (("prod", prod, prod_ref, True), ("test phase", test, test_ref, True), ("harness off", off, off_ref, False), ("staging", staging, staging_ref, False))
+ref_setup = (setup(prod_ref) or {}).get("version") or 0
+if ref_setup >= 5:   # skipped once <git-ref> renders setup 5 (this block's) or later
+    print(f"NOTICE: the {ref} render already has setup spec 5: the whole-render diff against it (Task 18's change alone) was skipped")
+    diffs = ()
+# <git-ref> renders file actions' setup 4 already (file actions shipped first): only Task 18's change is undone
+files_ref = ref_setup == 4
+for label, a, b, on in diffs:
+    tag = (f"the {label} render differs from {ref}'s only in plan 7b Task 18's{'' if files_ref else ' and file actions Task 17' + chr(39) + 's'} lists (harness-setup.json, harness-settings.json, the "
+           + ("ceilings, the instruction files, harness-start.sh's setup guard" if files_ref else "seeds and ceilings, the instruction files, the services JSON, the harness pod's files parts, docs-grant.mjs, harness-start.sh's setup guard and desk lines")
+           + f"{' and, roles spec 4 at the ref, Task 8: the roles spec and its guard' if roles4 else ''} and the checksums)")
+    if on:
+        if (setup(b) or {}).get("version") != (4 if files_ref else 3): bad.append(f"{tag}: the ref's harness-setup.json is not version {4 if files_ref else 3}"); continue
+        if (setup(a) or {}).get("version") != 5: bad.append(f"{tag}: its harness-setup.json is not version 5")
+        if checksum(a) is None or checksum(a) == checksum(b): bad.append(f"{tag}: the harness checksum is {checksum(a)!r}, the ref's {checksum(b)!r}: want a new one")
+        # harness-start.sh: Task 18's setup guard (and Task 8's roles guard) and comments, once file actions' desk lines are
+        # undone (unless the ref has them too)
+        start_a, why_ = (a[HC]["data"]["harness-start.sh"], None) if files_ref else without_desk(a[HC]["data"]["harness-start.sh"])
+        if why_: bad.append(f"{tag}: {why_}")
+        bad += [f"{tag}: {g}" for g in start_gaps(start_a, b[HC]["data"]["harness-start.sh"], roles4)]
+    # the RC lines restart only for an RC key file actions changed (docs-grant.mjs), never for a harness-only change
+    grant_a, grant_b = ((x.get(CC) or {}).get("data", {}).get("docs-grant.mjs") for x in (a, b))
+    if grant_a == grant_b and checksum(a, RC) != checksum(b, RC): bad.append(f"{tag}: the RC lines' checksum moved (a harness-only change restarts no RC line)")
+    if CC in a and CC in b:
+        for k in KEYS.values():
+            if k in b[CC]["data"] and a[CC]["data"].get(k) == b[CC]["data"][k]: bad.append(f"{tag}: {k} is unchanged (want its standing-fact paragraph)")
+    sa, sb = strip(a, True, roles4 and on, files_ref), strip(b, False, False, files_ref)
+    for k in sorted(set(sa) | set(sb)):
+        if sa.get(k) != sb.get(k): bad.append(f"{tag}: {k[0]}/{k[1]} differs{'' if k in sa and k in sb else ' (on one side only)'}")
+if diffs and HAVE:
+    # the pairing guard, new image and old chart: the built core refuses <git-ref>'s setup 3 or 4, naming the chart as older
+    tag = f"naila's built core refuses the {ref} chart's setup {ref_setup}"
+    want = ("version must be 5 (got 4): the chart predates plan 7b (memory limits and the memory view)" if files_ref
+            else "version must be 5 (got 3): the chart predates file actions (the files settings)")
+    q = naila(prod_ref)
+    if q.returncode == 0 or want not in q.stderr or "setup: " not in q.stderr: bad.append(f"{tag}: exit {q.returncode} {why(q)!r}, want {want!r}")
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
-print("file actions: the files sidecar (uid 1003, 128Mi + a limit of memoryMiB + 128 MiB, venv read-only from files-venv, only uploads, the workspaces and finance folders and the desk), the desk rw only in files"
-      + ", setup spec 4 with the files settings (bad ones fail the render" + (", ceilings the built image's" if HAVE else "") + "), two tokens, the roles' file actions and instruction lines; the render is " + ref + "'s but for those")
+print("memory: setup spec 5 carries the limits and Memory.md, the re-make (8 runs per role) production's alone" + (", naila's parseSetup accepts them and refuses a raise" if HAVE else "")
+      + "; the three permanent ceilings and the static allow hold the memory tools" + (" (the built image's CORE_ALWAYS_TOOLS)" if HAVE else "")
+      + "; each permanent role says when to save a standing fact" + (f"; the render is {ref}'s but for those{'' if files_ref else ' and file actions' + chr(39) + ' change'}" if diffs else ""))
 PY

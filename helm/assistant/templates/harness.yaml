@@ -32,7 +32,7 @@
 {{- $vaultRoot := ternary (printf "/vault/%s" (toString $h.profile.paths.testFolder)) "/vault" $test }}   {{- /* the body checked testFolder */}}
 {{- $paths := .paths }}
 {{- /* vault-mcp layout.ts DEFAULT_VAULT_PATHS, verbatim (tests/render-modes.sh checks it against naila's built layout.js) */ -}}
-{{- $defaultPaths := dict "system" "Naila" "finance" "Finance" "inbox" "Inbox" "daily" "Daily" "testFolder" "Harness-test" "views" (dict "decisions" "Decisions.md" "usage" "Usage.md" "selfChanges" "Self-changes.md" "vaultChanges" "Vault changes.md" "changelog" "Engine changelog.md" "places" "Places.md") }}
+{{- $defaultPaths := dict "system" "Naila" "finance" "Finance" "inbox" "Inbox" "daily" "Daily" "testFolder" "Harness-test" "views" (dict "decisions" "Decisions.md" "usage" "Usage.md" "selfChanges" "Self-changes.md" "vaultChanges" "Vault changes.md" "changelog" "Engine changelog.md" "memory" "Memory.md" "places" "Places.md") }}
 {{- $vaultPaths := ternary "" (toJson $paths) (eq (toJson $paths) (toJson $defaultPaths)) }}
 {{- $creds := list }}
 {{- range $id, $e := $h.services | default dict }}{{ if and (kindIs "map" $e) (kindIs "slice" $e.writeCredentials) }}{{ range $e.writeCredentials }}{{ $creds = append $creds (toString .) }}{{ end }}{{ end }}{{ end }}
@@ -220,9 +220,9 @@
 {{- end }}{{ end }}
 {{- /* The owner's profile and the schedules (pure-core phase 4; naila packages/harness/src/setup.ts and schedules-file.ts),
        the Git base of places (setup spec 2, pure-core phase 6; places-config.ts), the budgets and the provider settings
-       (setup spec 3, plan 7a; economy-config.ts) and the files settings (setup spec 4, file actions; files/config.ts) as
-       harness-setup.json:
-       {"version":4,"profile":{"timeZone":<tz>,…},"schedules":{"jobs":[…]},"places":[…],"budgets":{…},"providerSettings":{…},"files":{…}},
+       (setup spec 3, plan 7a; economy-config.ts), the files settings (setup spec 4, file actions; files/config.ts) and the
+       memory's limits with the memory view (setup spec 5, plan 7b; memory-config.ts) as harness-setup.json:
+       {"version":5,"profile":{"timeZone":<tz>,…},"schedules":{"jobs":[…]},"places":[…],"budgets":{…},"providerSettings":{…},"files":{…},"memory":{…}},
        the profile's time zone the top-level tz (one source with TZ), the jobs in values order, each without its chart-only
        `uses`, and a job's request text (files/schedules/<id>.txt) the key harness-job-<id>.txt beside it (the budgets and the
        provider settings are rendered and checked after the roles spec, below). The chart checks only what it uses itself or
@@ -350,6 +350,13 @@
 {{- range $st.resume.roles }}{{ if not (has (toString .) $permanent) }}{{ fail (printf "harness.providerSettings.%s.resume.roles names %s, which is no permanent role of harness.roleSpec" $p (toString .)) }}{{ end }}{{ end }}
 {{- end }}{{ end }}
 {{- end }}
+{{- /* The memory's limits (harness.memory; plan 7b, setup spec 5), rendered as the values hold them (values.prod.yaml adds the
+       re-make, production's alone). The chart checks only the shape it renders: a map with standing and search maps, and a
+       remake map when set (a null remake is left out: no re-make). The core refuses the rest at start: the keys, and each
+       number against its compiled ceiling (render-modes runs its parseSetup on the render). */ -}}
+{{- $memory := $h.memory }}
+{{- if and (kindIs "map" $memory) (hasKey $memory "remake") (kindIs "invalid" $memory.remake) }}{{ $memory = omit $memory "remake" }}{{ end }}
+{{- if not (and (kindIs "map" $memory) (kindIs "map" $memory.standing) (kindIs "map" $memory.search) (or (not (hasKey $memory "remake")) (kindIs "map" $memory.remake))) }}{{ fail "harness.memory must be a map with standing and search (remake optional)" }}{{ end }}
 {{- /* The files settings (harness.files; file actions, setup spec 4), rendered as the values hold them. The chart checks what
        it uses itself: every key the image's FILES_SETTINGS_KEYS names is present, a number (image.keepExif true or false;
        types.remove only present): jobs.memoryMiB sizes the files container's memory limit, the desk's quota and the jobs'
@@ -370,7 +377,7 @@
 {{- end }}
 {{- end }}
 {{- end }}
-{{- $setupJson := printf "{\"version\":4,\"profile\":%s,\"schedules\":{\"jobs\":%s},\"places\":%s,\"budgets\":%s,\"providerSettings\":%s,\"files\":%s}" (toJson $prof) (toJson $jobs) (toJson $placeList) (toJson $budgets) (toJson $psettings) (toJson $files) }}
+{{- $setupJson := printf "{\"version\":5,\"profile\":%s,\"schedules\":{\"jobs\":%s},\"places\":%s,\"budgets\":%s,\"providerSettings\":%s,\"files\":%s,\"memory\":%s}" (toJson $prof) (toJson $jobs) (toJson $placeList) (toJson $budgets) (toJson $psettings) (toJson $files) (toJson $memory) }}
 {{- /* The desk and the files sidecar's view of the vault (file actions, call 26): the desk is the files-desk emptyDir at
        /desk (HARNESS_DESK_ROOT, FILES_DESK); the files container mounts, read-only, only the workspaces folder (vault-mcp
        layout.ts: <profile.paths.system>/Workspace) and the finance folder (profile.paths.finance) of this phase's vault, each
@@ -398,7 +405,8 @@ data:
   harness-workers.json: |
     {{ $workerSpec }}
   # The owner's profile, the schedules (pure-core phase 4), the Git base of places (phase 6), the budgets and the provider
-  # settings (plan 7a): the core reads it at start (HARNESS_SETUP's default, /config/harness-setup.json), and each job's
+  # settings (plan 7a), and the memory's limits (plan 7b): the core reads it at start (HARNESS_SETUP's default,
+  # /config/harness-setup.json), and each job's
   # request text beside it.
   harness-setup.json: |
     {{ $setupJson }}

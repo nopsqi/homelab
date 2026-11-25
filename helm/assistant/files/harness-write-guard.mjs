@@ -16,7 +16,7 @@
 // `|| exit 2`, so a crash blocks too. Inside the workspace it decides nothing: the run's settings still have to allow the
 // write (files.write on), so this guard alone never opens a write.
 // --private-root DIR (workers by plan Task 13, required: <VAULT_ROOT>/Private, the private roles' folders): a private role's
-// workspace is its own folder there, so Write and Edit may also write inside DIR/<worker>/ when the run names it as its own
+// workspace is its own folder there, so Write and Edit write inside DIR/<worker>/ (and not <root>/<worker>/) when the run names it as its own
 // (HARNESS_PRIVATE_OWN, which the core sets for a private role's run alone, exactly DIR/<HARNESS_WORKER>); a path that is, as
 // given or real, under any other entry of DIR is refused with the core's words (case-insensitively, NFC, lower case), whoever
 // writes, the lead included. The run's settings still decide inside it (call 11). A missing, empty, relative or dotted DIR
@@ -77,14 +77,15 @@ try {
   if (t.startsWith('mcp__')) process.exit(0)   // a server's write tool, no marker: the run's settings decide
   if (t !== 'Write' && t !== 'Edit') deny('Not a write tool.')
   const p = e.tool_input?.file_path
-  const where = `${rootArg.replace(/\/+$/, '')}/${w}/${ownPrivate ? ` or ${pr}/${w}/` : ''}`
+  const where = ownPrivate ? `${pr}/${w}/` : `${rootArg.replace(/\/+$/, '')}/${w}/`
   if (!plain(p)) deny(`Write only with a plain absolute path (no ..) inside your workspace ${where}`)
   const root = realpathSync(rootArg.replace(/\/+$/, '') || '/')
   const realOr = (x) => { try { return realpathSync(x) } catch { return undefined } }
   const realPr = realOr(pr)
   // the workspaces: <root>/<worker>, and a private role's own folder; each that exists may not be a link, and one must exist
   const wss = []
-  for (const x of [posix.join(root, w), ...(ownPrivate && realPr !== undefined ? [posix.join(realPr, w)] : [])]) {
+  // a private role's workspace is its own folder alone, never <root>/<worker> (fix round 1 of batch D, minor 1: the port's ownWs)
+  for (const x of ownPrivate ? (realPr === undefined ? [] : [posix.join(realPr, w)]) : [posix.join(root, w)]) {
     const r = realOr(x)
     if (r === undefined) continue
     if (r !== x) deny(`Your workspace ${where} is a link; nothing may be written there.`)

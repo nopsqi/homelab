@@ -351,6 +351,13 @@ else {
   const { uninstallRosterForTests } = await import(join(dist, 'roster.js'))
   if (typeof PRIVATE_SEARCH_REFUSAL !== 'string' || typeof PRIVATE_REFUSAL !== 'string') { bad(`naila's built ${dist}/floor/paths.js has no private texts: build naila first`); process.exit(1) }
   const P = JSON.parse(readFileSync(privFile, 'utf8'))
+  // fix round 1 of batch D (C1): an upload the owner sent a private role lies in its folder (Private/<id>/Uploads/): the cases
+  // hold the other roles' Read, Glob and docs on one (denied) and the owner's Read and docs (allowed); (minor 1) and a private
+  // role's write into the shared workspace under its id (denied: its workspace is its own folder)
+  const upl = P.cases.filter((c) => c.claude.startsWith('hook:') && JSON.stringify(c.input).includes('/Uploads'))
+  const want = ['Glob:chief:deny', 'Read:chief:deny', 'Read:keeper:allow', 'Read:ledger:deny', 'mcp__docs__convert:chief:deny', 'mcp__docs__convert:keeper:allow']
+  if (JSON.stringify(upl.map((c) => `${c.tool}:${c.run.role}:${c.expect}`).sort()) !== JSON.stringify(want)) bad(`${privFile}: the private upload cases are ${JSON.stringify(upl.map((c) => c.id))}, want ${want.join(', ')}`)
+  if (!P.cases.some((c) => c.claude === 'hook:write-guard' && c.run.role === 'keeper' && c.expect === 'deny' && /^\$W\//.test(c.input.file_path ?? ''))) bad(`${privFile}: no case of the private role writing into the shared workspace under its id (hook:write-guard, deny)`)
   uninstallRosterForTests(); installRoster(rosterFrom(parseWorkerSpecs(JSON.stringify(P.roles), () => '')))
   const tp = realpathSync(mkdtempSync(join(tmpdir(), 'floor-private-')))
   for (const part of [tree, P.tree]) {

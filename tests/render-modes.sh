@@ -175,9 +175,10 @@
 #  the standing-fact paragraph after the self-note one (the user's whole message quoted, a long one restated short);
 #  harness-start's setup guard pairs with SETUP_SPEC_VERSION 5 (above; 4 until plan 7b's rebase onto file actions); and the
 #  render is <git-ref>'s but for the setup, the static allow, the three ceilings, the four instructions files,
-#  harness-start.sh's setup guard and the harness checksum, and file actions' change (the rebase: one check over the
-#  union of both lists; Task 8's block composes both changes too), and Task 8's change while <git-ref> renders roles spec
-#  4, and the built core refuses <git-ref>'s setup 3 naming the chart (skipped with a notice once <git-ref> renders setup 4).
+#  harness-start.sh's setup guard and the harness checksum, and file actions' change while <git-ref> renders setup 3 (the
+#  rebase: one check over the union of both lists; Task 8's block composes both changes too), and Task 8's change while
+#  <git-ref> renders roles spec 4, and the built core refuses <git-ref>'s setup 3 or 4 naming the chart (skipped with a
+#  notice once <git-ref> renders setup 5).
 set -euo pipefail
 ref="${1:-origin/master}"
 root="$(git rev-parse --show-toplevel)"
@@ -5337,19 +5338,21 @@ def without_files_pod(r, now):
             c_["volumeMounts"] = [m for m in c_["volumeMounts"] if m["name"] != "files-desk"]
             for e in c_["env"]:
                 if e["name"] == "DOCS_ROOTS" and e["value"].endswith(":/desk"): e["value"] = e["value"][:-len(":/desk")]
-def strip(r, now, roles4):
+def strip(r, now, roles4, files_ref=False):
     """`r` with its checksums, harness-start.sh, docs-grant.mjs and the settings parsed; `now` (this chart's render) also with
-    Task 18's change and file actions' undone (and Task 8's, with `roles4`)."""
+    Task 18's change and, unless `files_ref` (<git-ref> renders file actions' setup 4 already), file actions' undone (and
+    Task 8's, with `roles4`)."""
     r = copy.deepcopy(r)
     if HC in r:
         r[HC]["data"].pop("harness-start.sh", None)
         s, w = setup(r), spec(r)
         if s is not None and now:
-            s["version"] = 3; s.pop("memory", None); s.pop("files", None); ((s.get("profile") or {}).get("paths") or {}).get("views", {}).pop("memory", None)
+            s["version"] = 4 if files_ref else 3; s.pop("memory", None); ((s.get("profile") or {}).get("paths") or {}).get("views", {}).pop("memory", None)
+            if not files_ref: s.pop("files", None)
         if w is not None and now:
             for x in w.get("roles", []):
-                if "ceiling" in x: x["ceiling"] = [t for t in x["ceiling"] if t not in MEMORY_TOOLS and t not in FILE_CEILING]
-                if "seed" in x: x["seed"] = [c_ for c_ in x["seed"] if c_ not in FILE_SEEDS]
+                if "ceiling" in x: x["ceiling"] = [t for t in x["ceiling"] if t not in MEMORY_TOOLS and (files_ref or t not in FILE_CEILING)]
+                if "seed" in x and not files_ref: x["seed"] = [c_ for c_ in x["seed"] if c_ not in FILE_SEEDS]
             if roles4: w["version"] = 4; w.get("summary", {}).pop("maxChars", None)
         if s is not None: r[HC]["data"]["harness-setup.json"] = s
         if w is not None: r[HC]["data"]["harness-workers.json"] = w
@@ -5360,34 +5363,41 @@ def strip(r, now, roles4):
             st = json.loads(d["harness-settings.json"])
             if now:
                 st["permissions"]["allow"] = [t for t in st["permissions"]["allow"] if t not in MEMORY_TOOLS]
-                st["permissions"]["deny"] = [x for x in st["permissions"]["deny"] if not re.fullmatch(r"(Read|Edit|Write)\(//run/files-(token|sock)/\*\*\)", x)]
-                st["_comment"] = st.get("_comment", "").replace(*COMMENT).replace(*FILES_COMMENT)
+                st["_comment"] = st.get("_comment", "").replace(*COMMENT)
+                if not files_ref:
+                    st["permissions"]["deny"] = [x for x in st["permissions"]["deny"] if not re.fullmatch(r"(Read|Edit|Write)\(//run/files-(token|sock)/\*\*\)", x)]
+                    st["_comment"] = st["_comment"].replace(*FILES_COMMENT)
             d["harness-settings.json"] = st
         if now:
             for k in KEYS.values():
                 if k in d: d[k] = without_standing(d[k])
-            for k, lines in FILE_LINES.items():
+            for k, lines in ({} if files_ref else FILE_LINES).items():
                 if k in d:
                     for l_ in lines: d[k] = d[k].replace(l_, "", 1)
     if H in r:
         r[H]["spec"]["template"]["metadata"].get("annotations", {}).pop("checksum/config", None)
-        without_files_pod(r, now)
+        if not files_ref: without_files_pod(r, now)
     if RC in r: r[RC]["spec"]["template"]["metadata"].get("annotations", {}).pop("checksum/config", None)
     return r
 roles4 = (spec(prod_ref) or {}).get("version") == 4   # promote 1 (Task 8) is not on <git-ref> yet
 diffs = (("prod", prod, prod_ref, True), ("test phase", test, test_ref, True), ("harness off", off, off_ref, False), ("staging", staging, staging_ref, False))
-if ((setup(prod_ref) or {}).get("version") or 0) >= 4:   # skipped once <git-ref> renders setup 4 or later
-    print(f"NOTICE: the {ref} render already has setup spec 4: the whole-render diff against it (Task 18's change alone) was skipped")
+ref_setup = (setup(prod_ref) or {}).get("version") or 0
+if ref_setup >= 5:   # skipped once <git-ref> renders setup 5 (this block's) or later
+    print(f"NOTICE: the {ref} render already has setup spec 5: the whole-render diff against it (Task 18's change alone) was skipped")
     diffs = ()
+# <git-ref> renders file actions' setup 4 already (file actions shipped first): only Task 18's change is undone
+files_ref = ref_setup == 4
 for label, a, b, on in diffs:
-    tag = (f"the {label} render differs from {ref}'s only in plan 7b Task 18's and file actions Task 17's lists (harness-setup.json, harness-settings.json, the seeds and ceilings, "
-           f"the instruction files, the services JSON, the harness pod's files parts, docs-grant.mjs, harness-start.sh's setup guard and desk lines{' and, roles spec 4 at the ref, Task 8: the roles spec and its guard' if roles4 else ''} and the checksums)")
+    tag = (f"the {label} render differs from {ref}'s only in plan 7b Task 18's{'' if files_ref else ' and file actions Task 17' + chr(39) + 's'} lists (harness-setup.json, harness-settings.json, the "
+           + ("ceilings, the instruction files, harness-start.sh's setup guard" if files_ref else "seeds and ceilings, the instruction files, the services JSON, the harness pod's files parts, docs-grant.mjs, harness-start.sh's setup guard and desk lines")
+           + f"{' and, roles spec 4 at the ref, Task 8: the roles spec and its guard' if roles4 else ''} and the checksums)")
     if on:
-        if (setup(b) or {}).get("version") != 3: bad.append(f"{tag}: the ref's harness-setup.json is not version 3"); continue
+        if (setup(b) or {}).get("version") != (4 if files_ref else 3): bad.append(f"{tag}: the ref's harness-setup.json is not version {4 if files_ref else 3}"); continue
         if (setup(a) or {}).get("version") != 5: bad.append(f"{tag}: its harness-setup.json is not version 5")
         if checksum(a) is None or checksum(a) == checksum(b): bad.append(f"{tag}: the harness checksum is {checksum(a)!r}, the ref's {checksum(b)!r}: want a new one")
-        # harness-start.sh: Task 18's setup guard (and Task 8's roles guard) and comments, once file actions' desk lines are undone
-        start_a, why_ = without_desk(a[HC]["data"]["harness-start.sh"])
+        # harness-start.sh: Task 18's setup guard (and Task 8's roles guard) and comments, once file actions' desk lines are
+        # undone (unless the ref has them too)
+        start_a, why_ = (a[HC]["data"]["harness-start.sh"], None) if files_ref else without_desk(a[HC]["data"]["harness-start.sh"])
         if why_: bad.append(f"{tag}: {why_}")
         bad += [f"{tag}: {g}" for g in start_gaps(start_a, b[HC]["data"]["harness-start.sh"], roles4)]
     # the RC lines restart only for an RC key file actions changed (docs-grant.mjs), never for a harness-only change
@@ -5396,18 +5406,19 @@ for label, a, b, on in diffs:
     if CC in a and CC in b:
         for k in KEYS.values():
             if k in b[CC]["data"] and a[CC]["data"].get(k) == b[CC]["data"][k]: bad.append(f"{tag}: {k} is unchanged (want its standing-fact paragraph)")
-    sa, sb = strip(a, True, roles4 and on), strip(b, False, False)
+    sa, sb = strip(a, True, roles4 and on, files_ref), strip(b, False, False, files_ref)
     for k in sorted(set(sa) | set(sb)):
         if sa.get(k) != sb.get(k): bad.append(f"{tag}: {k[0]}/{k[1]} differs{'' if k in sa and k in sb else ' (on one side only)'}")
 if diffs and HAVE:
-    # the pairing guard, new image and old chart: the built core refuses <git-ref>'s setup 3, naming the chart as older
-    tag = f"naila's built core refuses the {ref} chart's setup 3"
-    want = "version must be 5 (got 3): the chart predates file actions (the files settings)"
+    # the pairing guard, new image and old chart: the built core refuses <git-ref>'s setup 3 or 4, naming the chart as older
+    tag = f"naila's built core refuses the {ref} chart's setup {ref_setup}"
+    want = ("version must be 5 (got 4): the chart predates plan 7b (memory limits and the memory view)" if files_ref
+            else "version must be 5 (got 3): the chart predates file actions (the files settings)")
     q = naila(prod_ref)
     if q.returncode == 0 or want not in q.stderr or "setup: " not in q.stderr: bad.append(f"{tag}: exit {q.returncode} {why(q)!r}, want {want!r}")
 if bad:
     print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
 print("memory: setup spec 5 carries the limits and Memory.md, the re-make (8 runs per role) production's alone" + (", naila's parseSetup accepts them and refuses a raise" if HAVE else "")
       + "; the three permanent ceilings and the static allow hold the memory tools" + (" (the built image's CORE_ALWAYS_TOOLS)" if HAVE else "")
-      + "; each permanent role says when to save a standing fact" + (f"; the render is {ref}'s but for those and file actions' change" if diffs else ""))
+      + "; each permanent role says when to save a standing fact" + (f"; the render is {ref}'s but for those{'' if files_ref else ' and file actions' + chr(39) + ' change'}" if diffs else ""))
 PY

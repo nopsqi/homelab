@@ -2,8 +2,9 @@
 {{- define "assistant.harnessModeFiles" -}}
 {{- range $p, $_ := .Files.Glob "files/modes/harness/**" }}{{ $.Files.Get $p }}{{ end }}
 {{- end }}
-{{- /* The roles config (harness.roleSpec; naila packages/harness/src/workers-spec.ts, ROLES_SPEC_VERSION 5) as
-       harness-workers.json for harness.phase: {"version":5,"roles":[…],"retired":[…],"summary":{"brain":…,"maxChars":…}}, the roles in values
+{{- /* The roles config (harness.roleSpec; naila packages/harness/src/workers-spec.ts, ROLES_SPEC_VERSION 6) as
+       harness-workers.json for harness.phase: {"version":6,"roles":[…],"retired":[…],"summary":{"brain":…,"maxChars":…},
+       "restart":{"maxWaitMinutes":…,"minGapMinutes":…},"texts":{"maxChars":…}}, the roles in values
        order, each role's `lifecycle` (permanent or temporary), its `hireable` when set, and its `paths` (its path grants)
        when it has them. One source per value: a role's model is its workers[].model, its description its files/agents/<id>.md
        frontmatter's, its ceiling files/modes/harness/<id>.<ceiling>.md split on ", ". The markers __FINANCE_HOST__ and
@@ -15,8 +16,10 @@
        the body. Fails the render on what the core would refuse at start: a duplicate id, no lead or two, a lead not listed
        first, a retired id that roles also lists, an unresolved marker, a server holding a $, a lifecycle other than
        permanent or temporary, a hireable on a permanent role or not a boolean on a temporary one, a temporary lead (the rule
-       that a quarantined role is temporary is left to the core: tests/render-modes.sh runs it), and a summary.maxChars
-       that is no number (plan 7b: the summary trigger; its range is the core's to check). A temporary role is hired for
+       that a quarantined role is temporary is left to the core: tests/render-modes.sh runs it), a summary.maxChars
+       that is no number (plan 7b: the summary trigger; its range is the core's to check), and a restart.maxWaitMinutes,
+       restart.minGapMinutes or texts.maxChars that is no number (workers by plan, spec 6: the planned restart's settings
+       and the texts' limit, their ranges the core's to check). A temporary role is hired for
        one job by the lead, so it has no RC line (workers[]) and no Git place (an entry of harness.places, pure-core phase 6):
        either fails the render. Two chart-only checks besides:
        a server holding a write credential of any service harness.services lists, enabled or not (P11: a disabled service's
@@ -112,7 +115,13 @@
 {{- $summary := $h.roleSpec.summary }}
 {{- if not (kindIs "map" $summary) }}{{ fail "harness.roleSpec.summary.maxChars must be a number" }}{{ end }}
 {{- if not (has (kindOf (index $summary "maxChars")) (list "float64" "int64" "int")) }}{{ fail "harness.roleSpec.summary.maxChars must be a number" }}{{ end }}
-{{- $json := printf "{\"version\":5,\"roles\":%s,\"retired\":%s,\"summary\":%s}" (toJson $roles) (toJson $retired) (toJson $summary) | replace "__FINANCE_HOST__" $finance | replace "__VAULT_ROOT__" $vaultRoot | replace "__FINANCE_FOLDER__" (toString $paths.finance) }}
+{{- $restart := $h.roleSpec.restart }}
+{{- if not (kindIs "map" $restart) }}{{ fail "harness.roleSpec.restart.maxWaitMinutes and minGapMinutes must be numbers" }}{{ end }}
+{{- range (list "maxWaitMinutes" "minGapMinutes") }}{{ if not (has (kindOf (index $restart .)) (list "float64" "int64" "int")) }}{{ fail (printf "harness.roleSpec.restart.%s must be a number" .) }}{{ end }}{{ end }}
+{{- $texts := $h.roleSpec.texts }}
+{{- if not (kindIs "map" $texts) }}{{ fail "harness.roleSpec.texts.maxChars must be a number" }}{{ end }}
+{{- if not (has (kindOf (index $texts "maxChars")) (list "float64" "int64" "int")) }}{{ fail "harness.roleSpec.texts.maxChars must be a number" }}{{ end }}
+{{- $json := printf "{\"version\":6,\"roles\":%s,\"retired\":%s,\"summary\":%s,\"restart\":%s,\"texts\":%s}" (toJson $roles) (toJson $retired) (toJson $summary) (toJson (pick $restart "maxWaitMinutes" "minGapMinutes")) (toJson (pick $texts "maxChars")) | replace "__FINANCE_HOST__" $finance | replace "__VAULT_ROOT__" $vaultRoot | replace "__FINANCE_FOLDER__" (toString $paths.finance) }}
 {{- with regexFind "__[A-Z_]+__" $json }}{{ fail (printf "harness.roleSpec: the marker %s is not resolved" .) }}{{ end }}
 {{- $json }}
 {{- end }}
@@ -439,7 +448,7 @@ spec:
       labels: { app: assistant-harness }
       # What the core and its runs are built from at start, including what harness-start.sh takes from the RC ConfigMap
       # (settings.json, finance-test-note, the harness-* keys) and the worker spec. Not the RC-only mode files: an RC edit doesn't restart the harness.
-      annotations: { checksum/config: {{ print (.Files.Get "files/CLAUDE.md") (include "assistant.agentFiles" .) (include "assistant.harnessModeFiles" .) (toJson .Values.workers) (.Files.Get "files/harness-settings.json") (.Files.Get "files/harness-write-guard.mjs") (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/harness-start.sh") (include "assistant.settingsJson" .) (include "assistant.testCopyNote" .) (toJson $h) $workerSpec $setupJson (toJson $requests) .Values.claude.version .Values.finance.testBudget | sha256sum | trunc 12 | quote }} }
+      annotations: { checksum/config: {{ print (.Files.Get "files/CLAUDE.md") (include "assistant.agentFiles" .) (include "assistant.harnessModeFiles" .) (toJson .Values.workers) (.Files.Get "files/harness-settings.json") (.Files.Get "files/harness-write-guard.mjs") (.Files.Get "files/web-guard.mjs") (.Files.Get "files/read-guard.mjs") (.Files.Get "files/docs-grant.mjs") (.Files.Get "files/harness-start.sh") (.Files.Get "files/actual-handbook.md") (include "assistant.settingsJson" .) (include "assistant.testCopyNote" .) (toJson $h) $workerSpec $setupJson (toJson $requests) .Values.claude.version .Values.finance.testBudget | sha256sum | trunc 12 | quote }} }
     spec:
       automountServiceAccountToken: false
       shareProcessNamespace: true   # the login sidecar sees the core (status) and restarts it after a login; pause reaps exited runs
@@ -557,12 +566,13 @@ spec:
             - { name: FILES_TOKEN_FILE, value: /run/files-token/token }   # the files sidecar's bearer
             - { name: FILES_SOCKET, value: /run/files-sock/files.sock }   # where the core reaches the files sidecar
             - { name: PROVIDER_KEYS_DIR, value: /run/provider-keys }    # the API providers' keys, one file each; none: that provider can't run
+            - { name: HARNESS_HANDBOOKS_BASE, value: /config/handbooks }   # the handbooks' Git base (workers by plan call 14): the core and prepare.js read it
           ports: [{ name: core-metrics, containerPort: 3102 }]
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           volumeMounts:
             - { name: home, mountPath: /home/claude }
             - { name: config, mountPath: /config, readOnly: true }
-            - { name: handbooks, mountPath: /handbooks, readOnly: true }
+            - { name: handbooks, mountPath: /handbooks }   # prepare.js writes the effective handbooks here (workers by plan call 14)
             - { name: naila, mountPath: /naila, readOnly: true }
             - { name: docs-token, mountPath: /run/docs-token, readOnly: true }
             - { name: docs-sock, mountPath: /run/docs-sock, readOnly: true }   # connecting needs no write to the mount
@@ -696,10 +706,14 @@ spec:
           resources: { requests: { cpu: 10m, memory: 64Mi }, limits: { memory: 512Mi } }   # spikes while it runs the Claude CLI
       volumes:
         - { name: home, persistentVolumeClaim: { claimName: assistant-harness-home } }
-        # The RC pod's ConfigMap (harness-* keys, settings.json, the guards) plus harness-start.sh and harness-workers.json.
+        # The RC pod's ConfigMap (harness-* keys, settings.json, the guards) plus harness-start.sh and harness-workers.json, and
+        # the handbooks' Git base under /config/handbooks (HARNESS_HANDBOOKS_BASE: workers by plan call 14), one file each.
         - name: config
-          projected: { sources: [{ configMap: { name: assistant-claude } }, { configMap: { name: assistant-harness } }] }
-        - { name: handbooks, configMap: { name: assistant-claude, items: [{ key: actual-handbook.md, path: actual.md }] } }
+          projected: { sources: [{ configMap: { name: assistant-claude } }, { configMap: { name: assistant-harness } },
+            { configMap: { name: assistant-claude, items: [{ key: actual-handbook.md, path: handbooks/actual.md }] } }] }
+        # The effective handbooks (the Git base plus the approved runtime edits), written by prepare.js at every start
+        # (--handbooks-out /handbooks) and read by the runs at /handbooks, as before.
+        - { name: handbooks, emptyDir: { sizeLimit: 16Mi } }
         - { name: naila, emptyDir: {} }
         - { name: docs-venv, emptyDir: {} }
         - { name: docs-tmp, emptyDir: {} }

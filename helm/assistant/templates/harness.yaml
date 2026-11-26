@@ -389,14 +389,18 @@
 {{- $setupJson := printf "{\"version\":5,\"profile\":%s,\"schedules\":{\"jobs\":%s},\"places\":%s,\"budgets\":%s,\"providerSettings\":%s,\"files\":%s,\"memory\":%s}" (toJson $prof) (toJson $jobs) (toJson $placeList) (toJson $budgets) (toJson $psettings) (toJson $files) (toJson $memory) }}
 {{- /* The desk and the files sidecar's view of the vault (file actions, call 26): the desk is the files-desk emptyDir at
        /desk (HARNESS_DESK_ROOT, FILES_DESK); the files container mounts, read-only, only the workspaces folder (vault-mcp
-       layout.ts: <profile.paths.system>/Workspace) and the finance folder (profile.paths.finance) of this phase's vault, each
-       as a subPath of the vault volume (under $vaultSub when set), never the whole vault. The memory limit follows a job's
-       address space: harness.files.jobs.memoryMiB + 128 MiB (call 3). */ -}}
+       layout.ts: <profile.paths.system>/Workspace), the finance folder (profile.paths.finance) and (private files, Part 3)
+       the private roles' folder (vault-mcp layout.ts PRIVATE_FOLDER: Private, the hooks' --private-root) of this phase's
+       vault, each as a subPath of the vault volume (under $vaultSub when set), never the whole vault. The core alone decides
+       which path a job names (a private role's own folder, for that role's own jobs; never Private/ for any other role); the
+       sidecar refuses anything outside FILES_ROOTS. The memory limit follows a job's address space:
+       harness.files.jobs.memoryMiB + 128 MiB (call 3). */ -}}
 {{- $desk := "/desk" }}
 {{- $workspacesDir := printf "%s/Workspace" (toString $paths.system) }}
 {{- $financeDir := toString $paths.finance }}
-{{- $filesSub := dict "workspaces" (ternary (printf "%s/%s" $vaultSub $workspacesDir) $workspacesDir (ne $vaultSub "")) "finance" (ternary (printf "%s/%s" $vaultSub $financeDir) $financeDir (ne $vaultSub "")) }}
-{{- $filesRoots := printf "%s:%s/%s:%s/%s:%s" $up $vaultRoot $workspacesDir $vaultRoot $financeDir $desk }}
+{{- $privateDir := "Private" }}
+{{- $filesSub := dict "workspaces" (ternary (printf "%s/%s" $vaultSub $workspacesDir) $workspacesDir (ne $vaultSub "")) "finance" (ternary (printf "%s/%s" $vaultSub $financeDir) $financeDir (ne $vaultSub "")) "private" (ternary (printf "%s/%s" $vaultSub $privateDir) $privateDir (ne $vaultSub "")) }}
+{{- $filesRoots := printf "%s:%s/%s:%s/%s:%s/%s:%s" $up $vaultRoot $workspacesDir $vaultRoot $financeDir $vaultRoot $privateDir $desk }}
 {{- $filesLimit := printf "%dMi" (add (int $files.jobs.memoryMiB) 128) }}
 # Harness mode as its own pod: the core (packages/harness) runs each worker as a one-shot Claude Code run with this pod's
 # own Max login (naila.nopsqi.dev/harness), each channel's gateway (harness.channels) carries the user's messages and
@@ -649,8 +653,9 @@ spec:
         # The files sidecar (file actions; naila packages/files-sidecar): unzip, zip, image and CSV jobs on the desk for the
         # core, one at a time, each in a child process under the setup's job limits. It listens only on its socket in files-sock
         # (FILES_SOCKET), answers only the core's uid (FILES_CLIENT_UID) holding the bearer in files-token, and sees only what a
-        # file action may read (FILES_ROOTS, call 26): the uploads, this phase's workspaces and finance folders (each a read-only
-        # subPath of the vault volume, never the whole vault) and the desk, the one folder it writes. Its venv is files-venv's
+        # file action may read (FILES_ROOTS, call 26): the uploads, this phase's workspaces, finance and private folders (each a
+        # read-only subPath of the vault volume, never the whole vault; a private role's job names only its own folder, the
+        # core decides) and the desk, the one folder it writes. Its venv is files-venv's
         # (read-only), its root filesystem read-only, its uid 1003 its own (no other container's /proc), its group 1000 as the
         # gateways': desk.py sets its folders' modes exactly (setgid cleared), so what it makes takes its primary group, which
         # must be the core's and docs' for them to read the desk. The probes look for its listening socket in /proc/net/unix
@@ -677,6 +682,7 @@ spec:
             - { name: home, mountPath: /home/claude/.claude/uploads, subPath: .claude/uploads, readOnly: true }
             - { name: vault, mountPath: {{ printf "%s/%s" $vaultRoot $workspacesDir | quote }}, subPath: {{ $filesSub.workspaces | quote }}, readOnly: true }
             - { name: vault, mountPath: {{ printf "%s/%s" $vaultRoot $financeDir | quote }}, subPath: {{ $filesSub.finance | quote }}, readOnly: true }
+            - { name: vault, mountPath: {{ printf "%s/%s" $vaultRoot $privateDir | quote }}, subPath: {{ $filesSub.private | quote }}, readOnly: true }   # private files, Part 3: read-only
             - { name: files-venv, mountPath: /venv, readOnly: true }
             - { name: files-tmp, mountPath: /tmp }
             - { name: files-token, mountPath: /run/files-token, readOnly: true }

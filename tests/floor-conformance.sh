@@ -47,6 +47,8 @@
 #    private role) runs every hook case through its hook with --private-root, in cases.json's tree plus its own part, with
 #    the core's env (hookEnv: HARNESS_PRIVATE_OWN for the private role's run alone), each agreeing with its expectation and
 #    with the core's port (floor-model.ts port(), from the built dist), and giving the port's private text word for word;
+#    private files, Part 3: its tree's desk ($D, the policy context's deskRoot, docs-grant.mjs --desk) holds keeper's and
+#    chief's job folders: the docs grant opens a private role's desk to it alone, and it reaches no other role's desk;
 #  - it checks that harness-start.sh and claude.yaml still render those hook commands (the web and write hooks with their
 #    30 s timeout and onFailure block), and that web-guard.mjs carries naila's
 #    web-rules block byte for byte (the text between the web-rules:begin and web-rules:end lines, each once in both files, read
@@ -367,6 +369,14 @@ else {
   const tr = P.cases.filter((c) => JSON.stringify(c.input).includes('tool-results'))
   if (JSON.stringify(tr.map((c) => `${c.tool}:${c.run.role}:${c.expect}:${c.claude}:${c.input.file_path}`).sort()) !== JSON.stringify(['chief', 'ledger'].map((w) => `Read:${w}:deny:hook:read-guard:$H/projects/$K/s1/tool-results/t.txt`)))
     bad(`${privFile}: the tool-results cases are ${JSON.stringify(tr.map((c) => c.id))}, want chief's and ledger's Read of keeper's (hook:read-guard, deny)`)
+  // private files, Part 3: a private role's desk job folders are its own: the docs grant opens keeper's own desk to keeper
+  // alone, and keeper no other role's desk (its Read and Grep cases are the settings', which naila's private-floor.test.ts
+  // runs: no hook decides a desk read)
+  if (P.tree.desk !== 'desk') bad(`${privFile}: its tree has no desk (private files, Part 3)`)
+  const dk = P.cases.filter((c) => c.claude.startsWith('hook:') && JSON.stringify(c.input).includes('$D/'))
+  const wantDesk = ['mcp__docs__convert:chief:deny:keeper', 'mcp__docs__convert:keeper:allow:keeper', 'mcp__docs__convert:keeper:deny:chief']
+  if (JSON.stringify(dk.map((c) => `${c.tool}:${c.run.role}:${c.expect}:${JSON.stringify(c.input).includes('$D/keeper') ? 'keeper' : 'chief'}`).sort()) !== JSON.stringify(wantDesk))
+    bad(`${privFile}: the private desk hook cases are ${JSON.stringify(dk.map((c) => c.id))}, want ${wantDesk.join(', ')}`)
   const privRole = (P.roles.roles ?? []).find((r) => r.private === true)?.id
   if (privRole !== 'keeper') bad(`${privFile}: the private role is ${privRole}, want keeper`)
   uninstallRosterForTests(); installRoster(rosterFrom(parseWorkerSpecs(JSON.stringify(P.roles), () => '')))
@@ -377,7 +387,7 @@ else {
     for (const [f, target] of Object.entries(part.hardlinks ?? {})) linkSync(join(tp, target), join(tp, f))
     for (const [f, target] of Object.entries(part.symlinks ?? {})) { mkdirSync(dirname(join(tp, f)), { recursive: true }); symlinkSync(join(tp, target), join(tp, f)) }
   }
-  const pmount = join(tp, tree.mount), puploads = join(tp, tree.uploads)
+  const pmount = join(tp, tree.mount), puploads = join(tp, tree.uploads), pdesk = P.tree.desk === undefined ? undefined : join(tp, P.tree.desk)
   // fix round 2 of batch D: read-guard judges ~/.claude by real paths, and /home may be a link on the machine running this
   // (as render-modes.sh does): the private cases run a copy of it with a real temp folder in place of /home/claude, and the
   // core's claude home there too
@@ -411,10 +421,11 @@ else {
     const ph = tree.phases[c.run.phase], root = join(tp, ph.root), exclude = c.run.phase === 'real' ? ph.exclude : []
     const cwd = join(tp, tree.work, c.run.role)
     const tok = { $V: pmount, $U: puploads, $W: posix.join(root, 'Naila', 'Workspace', c.run.role), $H: phome, $S: cwd.replace(/[^a-zA-Z0-9]/g, '-'),
-      $K: join(tp, tree.work, 'keeper').replace(/[^a-zA-Z0-9]/g, '-') }
+      $K: join(tp, tree.work, 'keeper').replace(/[^a-zA-Z0-9]/g, '-'), ...(pdesk === undefined ? {} : { $D: pdesk }) }
     const input = subst(c.input, tok)
     if (/\$[A-Za-z]/.test(JSON.stringify(input))) { bad(`${c.id} ${c.what}: a path token is left in ${JSON.stringify(input)}`); continue }
-    const ctx = { phase: c.run.phase, vaultRoot: root, vaultMount: pmount, vaultExclude: ph.exclude, uploadsRoot: puploads, workRoot: join(tp, tree.work), claudeHome: phome }
+    const ctx = { phase: c.run.phase, vaultRoot: root, vaultMount: pmount, vaultExclude: ph.exclude, uploadsRoot: puploads, workRoot: join(tp, tree.work), claudeHome: phome,
+      ...(pdesk === undefined ? {} : { deskRoot: pdesk }) }
     const run = { worker: c.run.role, on: c.run.on, ...(c.run.origin === undefined ? {} : { origin: c.run.origin }), asked: c.run.asked }
     let core, policy
     try {
@@ -424,7 +435,7 @@ else {
       policy = policyFor(run.worker, stub, ctx, { ...(run.origin === undefined ? {} : { origin: run.origin }), asked: run.asked })
     } catch (e) { bad(`${c.id} ${c.what}: the core's policy throws: ${e.message}`); continue }
     const theirs = await port(c, policy, input, cwd)
-    const [hook, ...args] = hookArgs(c, root, exclude, undefined, puploads)
+    const [hook, ...args] = hookArgs(c, root, exclude, pdesk, puploads)
     // the hook input as Claude Code gives it: the session's id and transcript (~/.claude/projects/<cwd's slug>/<id>.jsonl)
     const r = spawnSync(process.execPath, [hookFile(hook), ...args], { cwd, input: JSON.stringify({ tool_name: c.tool, tool_input: input, cwd, ...session(tok.$S) }),
       env: { PATH: process.env.PATH, ...core, HARNESS_WEB_SLOTS: slotsWith() }, encoding: 'utf8', timeout: 20000 })

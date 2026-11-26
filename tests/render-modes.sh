@@ -1002,7 +1002,7 @@ for ph, x in phases.items():
     # file actions: docs also reads the desk (the results of file actions)
     if val(ctr(r, "docs"), "DOCS_ROOTS") != f"/home/claude/.claude/uploads:{x['root']}:/desk": bad.append(f"{tag}: docs DOCS_ROOTS is {val(ctr(r, 'docs'), 'DOCS_ROOTS')!r}")
     # every container but files mounts this phase's vault whole; files (file actions, call 26) only its workspaces and finance
-    # folders, as subPaths under this phase's (the test phase's: under Harness-test), checked in the files sidecar's checks below
+    # folders (private files, Part 3: and its Private folder), as subPaths under this phase's (the test phase's: under Harness-test), checked in the files sidecar's checks below
     for c in pod(r)["containers"]:
         for m in c.get("volumeMounts", []):
             if c["name"] == "files" and m["name"] == "vault":
@@ -3352,7 +3352,7 @@ FILES = {"desk": {"ttlHours": 24, "workerQuotaMiB": 512, "totalQuotaMiB": 1024},
 _fx = os.path.join(os.environ.get("NAILA_WORKTREE", ""), "packages/harness/test/fixtures/setup.json")
 if os.environ.get("NAILA_WORKTREE") and json.load(open(_fx)).get("files") != FILES: bad.append(f"the chart's files defaults are naila Task 3's fixture: {_fx}'s files differ from this file's FILES")
 # the workspaces and finance folders of the profile (vault-mcp layout.ts: <system>/Workspace), as the files sidecar mounts them
-FILES_DIRS = ("Naila/Workspace", "Finance")
+FILES_DIRS = ("Naila/Workspace", "Finance", "Private")  # private files, Part 3: the Private folder, read-only
 # plan 7b Task 18: setup spec 4 adds the memory's limits (under the core's ceilings) and views.memory; the summaries' re-make
 # (Task 3's 8 runs per role) is production's alone: values.prod.yaml sets it, staging never
 MEMORY = {"standing": {"maxLines": 20, "maxQuoteChars": 600, "maxMeaningChars": 200, "maxChangesPerRun": 3}, "search": {"maxHits": 10, "maxHitChars": 600, "maxScanTurns": 20000}}
@@ -4919,11 +4919,12 @@ PY
 #    pinned requirements with --require-hashes --only-binary :all:, each try bounded by --timeout 10 --retries 1 so a PyPI
 #    that never answers delays the pod's start by about a minute, not five; files mounts it read-only, so neither its server nor a
 #    job's child can change the code a later job runs: Task 6 ruling I4), no pip at its own start; FILES_SOCKET, FILES_TOKEN_FILE,
-#    FILES_DESK=/desk, FILES_CLIENT_UID the core's uid (1000) and FILES_ROOTS exactly the uploads, this phase's workspaces and
-#    finance folders and the desk; its probes, run as rendered, need the socket to accept; requests 128Mi and a memory limit
+#    FILES_DESK=/desk, FILES_CLIENT_UID the core's uid (1000) and FILES_ROOTS exactly the uploads, this phase's workspaces,
+#    finance and (private files, Part 3) private folders and the desk; its probes, run as rendered, need the socket to accept; requests 128Mi and a memory limit
 #    of exactly harness.files.jobs.memoryMiB + 128 MiB (1028Mi at the default, 640Mi at 512; call 3);
-#  - it mounts only naila (read-only), the uploads subPath (read-only), the vault's workspaces and finance folders as subPaths
-#    (read-only, under the phase's subPath; never the whole vault), files-venv (read-only), files-tmp, files-token
+#  - it mounts only naila (read-only), the uploads subPath (read-only), the vault's workspaces and finance folders and (private
+#    files, Part 3) its Private folder as subPaths (read-only, under the phase's subPath; never the whole vault, and no vault
+#    mount writable), files-venv (read-only), files-tmp, files-token
 #    (read-only), files-sock and the desk; files-venv and files-tmp have sizeLimit 256Mi;
 #  - the desk (files-desk, an emptyDir of sizeLimit 2Gi) is mounted rw only by files, read-only by harness (HARNESS_DESK_ROOT)
 #    and docs (DOCS_ROOTS ends :/desk), by no other container; desk.totalQuotaMiB plus the largest job output cap (call 28:
@@ -5041,22 +5042,28 @@ p = subprocess.run(["sh", "-c", fc], capture_output=True, text=True, env={"PATH"
 if p.returncode != 0 or open(log).read().strip() != f"server -B server.py in {nl}/packages/files-sidecar" or p.stderr: bad.append(f"{tag}: with a venv the files command runs {open(log).read()!r}, logged {p.stderr.strip()!r}; want the server")
 shutil.rmtree(d)
 
-tag = "files mounts only uploads, the workspaces and finance subPaths and the desk; never the whole vault"
+tag = "files mounts only uploads, the workspaces, finance and Private subPaths and the desk; never the whole vault"
 for label, r, root, sub in PHASES:
     f = ctr(r, "files") or {}
+    # private files, Part 3: the vault's Private folder, read-only, so a private role's own file actions reach its folder (the
+    # core narrows each job to the role's own Private/<id>/; FILES_ROOTS alone is the sidecar's outer bound)
     want = [{"name": "naila", "mountPath": "/naila", "readOnly": True},
             {"name": "home", "mountPath": UP, "subPath": ".claude/uploads", "readOnly": True},
             {"name": "vault", "mountPath": f"{root}/{WS}", "subPath": f"{sub}/{WS}", "readOnly": True},
             {"name": "vault", "mountPath": f"{root}/{FIN}", "subPath": f"{sub}/{FIN}", "readOnly": True},
+            {"name": "vault", "mountPath": f"{root}/Private", "subPath": f"{sub}/Private", "readOnly": True},
             {"name": "files-venv", "mountPath": "/venv", "readOnly": True}, {"name": "files-tmp", "mountPath": "/tmp"},
             {"name": "files-token", "mountPath": "/run/files-token", "readOnly": True}, {"name": "files-sock", "mountPath": "/run/files-sock"},
             {"name": "files-desk", "mountPath": "/desk"}]
     if f.get("volumeMounts") != want: bad.append(f"{tag}: its mounts are {f.get('volumeMounts')!r}, want {want!r} ({label})")
     for m in f.get("volumeMounts", []):
         if m["name"] == "vault" and not m.get("subPath", "").strip("/").count("/"): bad.append(f"{tag}: a vault mount without a folder subPath: {m!r} ({label})")
+        if m["name"] == "vault" and m.get("readOnly") is not True: bad.append(f"{tag}: a writable vault mount: {m!r} ({label})")
+        if m["name"] == "vault" and "Private" in m.get("mountPath", "") and (m.get("mountPath"), m.get("subPath")) != (f"{root}/Private", f"{sub}/Private"): bad.append(f"{tag}: a Private mount beyond the phase's own Private folder: {m!r} ({label})")
         if m["name"] == "home" and m.get("subPath") != ".claude/uploads": bad.append(f"{tag}: a home mount beyond the uploads: {m!r} ({label})")
-    tag2 = "FILES_ROOTS names exactly those four"
-    if val(f, "FILES_ROOTS") != f"{UP}:{root}/{WS}:{root}/{FIN}:/desk": bad.append(f"{tag2}: it is {val(f, 'FILES_ROOTS')!r} ({label})")
+    if [m for m in f.get("volumeMounts", []) if m.get("readOnly") is not True and m["name"] not in ("files-tmp", "files-sock", "files-desk")]: bad.append(f"{tag}: files writes beyond its tmp, socket and desk ({label})")
+    tag2 = "FILES_ROOTS names exactly those five"
+    if val(f, "FILES_ROOTS") != f"{UP}:{root}/{WS}:{root}/{FIN}:{root}/Private:/desk": bad.append(f"{tag2}: it is {val(f, 'FILES_ROOTS')!r} ({label})")
     for k, w in (("FILES_SOCKET", "/run/files-sock/files.sock"), ("FILES_TOKEN_FILE", "/run/files-token/token"), ("FILES_DESK", "/desk"), ("HOME", "/tmp"),
                  ("FILES_CLIENT_UID", str(pod(r).get("securityContext", {}).get("runAsUser")))):
         if val(f, k) != w: bad.append(f"the files container's {k} is {val(f, k)!r}, want {w!r} ({label})")
@@ -5070,7 +5077,7 @@ if HAVE:
 # a moved system and finance folder move the mounts and FILES_ROOTS with them
 p = subprocess.run(["helm", "template", "helm/assistant", "-f", "helm/assistant/values.yaml", "-f", "helm/assistant/values.prod.yaml", "--set", "harness.profile.paths.system=Home", "--set", "harness.profile.paths.finance=Money/Notes"], capture_output=True, text=True)
 f = ctr(loads(p.stdout), "files") if p.returncode == 0 else None
-if not f or val(f, "FILES_ROOTS") != f"{UP}:/vault/Home/Workspace:/vault/Money/Notes:/desk" or [(m["mountPath"], m.get("subPath")) for m in f["volumeMounts"] if m["name"] == "vault"] != [("/vault/Home/Workspace", "My Vault/Home/Workspace"), ("/vault/Money/Notes", "My Vault/Money/Notes")]:
+if not f or val(f, "FILES_ROOTS") != f"{UP}:/vault/Home/Workspace:/vault/Money/Notes:/vault/Private:/desk" or [(m["mountPath"], m.get("subPath")) for m in f["volumeMounts"] if m["name"] == "vault"] != [("/vault/Home/Workspace", "My Vault/Home/Workspace"), ("/vault/Money/Notes", "My Vault/Money/Notes"), ("/vault/Private", "My Vault/Private")]:
     bad.append(f"{tag}: a moved system and finance folder: {(val(f, 'FILES_ROOTS'), [m for m in f['volumeMounts'] if m['name'] == 'vault']) if f else p.stderr.strip()[-300:]}")
 
 # fix round 1 (C1): what the files sidecar makes on the desk must be readable by the core and docs (group 1000 through the

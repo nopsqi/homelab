@@ -4998,7 +4998,8 @@ for label, r, root, sub in PHASES:
     if (fv.get("securityContext") or {}) != {"runAsUser": 1003, "runAsGroup": 1000, "allowPrivilegeEscalation": False, "capabilities": {"drop": ["ALL"]}, "readOnlyRootFilesystem": True}: bad.append(f"files-venv runs as files' uid with a read-only root: {fv.get('securityContext')!r} ({label})")
     if fv.get("volumeMounts") != [{"name": "naila", "mountPath": "/naila", "readOnly": True}, {"name": "files-venv", "mountPath": "/venv"}, {"name": "files-tmp", "mountPath": "/tmp"}]: bad.append(f"files-venv mounts {fv.get('volumeMounts')!r} ({label})")
     names = [x["name"] for x in pod(r).get("initContainers", [])]
-    if names != ["naila-tools", "sidecar-tokens", "files-venv"]: bad.append(f"the init containers are naila-tools, sidecar-tokens and files-venv, in that order: {names} ({label})")
+    # private files fix round 1 (M9): vault-private after naila-tools
+    if names != ["naila-tools", "vault-private", "sidecar-tokens", "files-venv"]: bad.append(f"the init containers are naila-tools, vault-private, sidecar-tokens and files-venv, in that order: {names} ({label})")
     if [x["name"] for x in pod(r)["containers"]] != ["harness", "discord", "docs", "files", "login"]: bad.append(f"the containers are harness, discord, docs, files and login: {[x['name'] for x in pod(r)['containers']]} ({label})")
     # the venv is written only by files-venv; every other container that mounts it reads it
     for x in pod(r)["containers"] + pod(r).get("initContainers", []):
@@ -5069,6 +5070,35 @@ for label, r, root, sub in PHASES:
         if val(f, k) != w: bad.append(f"the files container's {k} is {val(f, k)!r}, want {w!r} ({label})")
     if "FILES_TEST_ACTIONS" in envmap(f) or any(e.get("valueFrom") or e.get("envFrom") for e in f.get("env", [])) or f.get("envFrom"): bad.append(f"the files container has a test switch or a secret: {f.get('env')!r} ({label})")
     if ctr(r, "harness").get("securityContext", {}).get("runAsUser", pod(r)["securityContext"]["runAsUser"]) != int(val(f, "FILES_CLIENT_UID") or -1) if f else True: bad.append(f"FILES_CLIENT_UID is the harness container's uid ({label})")
+# private files fix round 1 (M9): one init container, vault-private, makes this phase's <root>/Private (0750 when new, as the
+# pod's uid 1000) before the files container mounts it as a subPath (which the kubelet would otherwise make as root); it
+# mounts only this phase's vault, as the core does; run as rendered on a temp folder it makes Private 0750 and keeps an
+# existing one as it is
+tag = "vault-private makes the phase's Private folder before files mounts it"
+for label, r, root, sub in PHASES:
+    vp = [c for c in pod(r).get("initContainers", []) if c["name"] == "vault-private"]
+    if len(vp) != 1: bad.append(f"{tag}: {len(vp)} vault-private init containers ({label})"); continue
+    c = vp[0]
+    if c.get("command") != ["sh", "-c", f"mkdir -p -m 750 {root}/Private"]: bad.append(f"{tag}: its command is {c.get('command')!r} ({label})")
+    hv = [m for m in ctr(r, "harness").get("volumeMounts", []) if m["name"] == "vault"]
+    if c.get("volumeMounts") != hv or len(hv) != 1: bad.append(f"{tag}: it mounts {c.get('volumeMounts')!r}, want the core's vault mount {hv!r} ({label})")
+    sc = c.get("securityContext", {})
+    if sc.get("allowPrivilegeEscalation") is not False or sc.get("capabilities") != {"drop": ["ALL"]} or sc.get("readOnlyRootFilesystem") is not True or "runAsUser" in sc:
+        bad.append(f"{tag}: its securityContext is {sc!r}: no escalation, all capabilities dropped, a read-only root, the pod's uid ({label})")
+    nt = [x for x in pod(r).get("initContainers", []) if x["name"] == "naila-tools"]
+    if not nt or c.get("image") != nt[0].get("image"): bad.append(f"{tag}: its image is {c.get('image')!r}, not naila's (naila-tools') ({label})")
+d_ = os.path.realpath(tempfile.mkdtemp())
+vp = [c for c in pod(prod).get("initContainers", []) if c["name"] == "vault-private"]
+if vp:
+    cmd = vp[0]["command"][2].replace("/vault/", f"{d_}/vault/")
+    os.makedirs(f"{d_}/vault")
+    p_ = subprocess.run(["sh", "-c", cmd], capture_output=True, text=True, env={"PATH": os.environ["PATH"]})
+    m_ = os.stat(f"{d_}/vault/Private").st_mode & 0o7777 if os.path.isdir(f"{d_}/vault/Private") else None
+    if p_.returncode != 0 or m_ != 0o750: bad.append(f"{tag}: as rendered it exits {p_.returncode} and leaves Private {oct(m_) if m_ is not None else 'missing'}, want 0750")
+    os.chmod(f"{d_}/vault/Private", 0o700)
+    p_ = subprocess.run(["sh", "-c", cmd], capture_output=True, text=True, env={"PATH": os.environ["PATH"]})
+    if p_.returncode != 0 or os.stat(f"{d_}/vault/Private").st_mode & 0o7777 != 0o700: bad.append(f"{tag}: run again it changes an existing Private (exit {p_.returncode})")
+shutil.rmtree(d_)
 # the mounted folders are the image's layout of the profile (with NAILA_WORKTREE): vault-mcp's vaultLayout(paths).workspaces
 if HAVE:
     pth = json.loads(prod[CMH]["data"]["harness-setup.json"])["profile"]["paths"]

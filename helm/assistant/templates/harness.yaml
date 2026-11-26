@@ -475,6 +475,21 @@ spec:
             - { name: naila, mountPath: /naila }
             - { name: home, mountPath: /home/claude }
           resources: { requests: { cpu: 10m, memory: 32Mi }, limits: { memory: 256Mi } }
+        # The vault's Private folder (private files, fix round 1 of the review's M9), before any container mounts it: the files
+        # container mounts it as a subPath, and a subPath that is not there the kubelet makes itself, as root. Made here as
+        # the core makes its folders (uid 1000, group 1000, 0750 when new: main.ts makes Private/<id> the same way); an
+        # existing folder is left as it is. This phase's vault (its subPath) only, nothing else.
+        - name: vault-private
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          command: ["sh", "-c", {{ printf "mkdir -p -m 750 %s/%s" $vaultRoot $privateDir | quote }}]
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] }, readOnlyRootFilesystem: true }
+          volumeMounts:
+            - name: vault
+              mountPath: {{ $vaultRoot }}
+              {{- with $vaultSub }}
+              subPath: {{ . | quote }}
+              {{- end }}
+          resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { memory: 64Mi } }
         # The sidecars' folders (Rulings 19, 21, 22; file actions): two in-memory emptyDirs per sidecar, mounted only by the core
         # and that sidecar. docs-sock and files-sock: the sidecar listens there on a Unix socket (0660), never on a TCP port of
         # the pod's shared 127.0.0.1, which a gateway facing the internet could bind first; the sidecar alone may write it, the

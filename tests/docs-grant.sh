@@ -21,6 +21,10 @@
 #    without it the entry is outside --root and denies everything; with it a file of that folder converts, another worker's
 #    desk folder (not in the entry) does not, nor the desk root as an entry, nor a desk folder that is a link; --desk with a
 #    relative or dotted DIR, an empty one or none denies everything, uploads included; --desk with --exclude still excludes.
+#  - workers by plan Task 13: --private-root DIR (<VAULT_ROOT>/Private, the private roles' folders) is required with --by-caps:
+#    a path under DIR/<entry> is granted only to the role whose run names that folder as its own (HARNESS_PRIVATE_OWN, which
+#    the core sets for a private role alone, DIR/<HARNESS_WORKER>), never to another role, the lead included, nor through a
+#    link; a missing, relative, dotted or empty DIR denies everything, uploads included.
 # Then the RC lines' mode (no flags): it never denies, as before the switches.
 set -euo pipefail
 root="$(git rev-parse --show-toplevel)"
@@ -29,7 +33,7 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 v="$tmp/vault" up="$tmp/uploads"
 mkdir -p "$v/Daily" "$v/Finance" "$v/Naila/Workspace/naila" "$v/Naila/Workspace/finance-bookkeeper" "$v/Naila/Workspace/ops-oncall" \
-  "$v/Harness-test/Naila" "$up/discord" "$up/test" "$tmp/outside"
+  "$v/Harness-test/Naila" "$up/discord" "$up/test" "$tmp/outside" "$up/_pending/discord/u1"
 echo a > "$v/Daily/x.md"
 echo a > "$v/Finance/statement.pdf"
 echo a > "$v/Naila/Workspace/naila/n.docx"
@@ -37,6 +41,7 @@ echo a > "$v/Naila/Workspace/finance-bookkeeper/b.xlsx"
 echo a > "$v/Naila/Workspace/ops-oncall/o.docx"
 echo a > "$up/discord/sent.pdf"
 echo a > "$up/test/fixture.pdf"
+echo a > "$up/_pending/discord/u1/waiting.pdf"   # fix round 2 of batch D: an upload whose turn is not accepted yet
 ln -s "$up/discord/sent.pdf" "$up/test/into-discord.pdf"   # a link from the test channel's folder to a Discord upload
 ln -s discord "$up/evil"                                   # a channel folder that is a link to another channel's
 ln -s "$up/discord/sent.pdf" "$v/Daily/into-uploads.pdf"   # a vault note that is a link to a Discord upload
@@ -46,6 +51,14 @@ ln "$tmp/outside/secret.pdf" "$up/discord/linked.pdf"
 ln -s "$tmp/outside/secret.pdf" "$up/discord/sym.pdf"
 ln -s "$v/Finance/statement.pdf" "$up/discord/into-finance.pdf"
 echo c > "$v/Harness-test/Naila/test.pdf"
+# workers by plan Task 13: the private folders (keeper's, one under the lead's id, one no role owns), a link from a vault note
+# into keeper's and one from keeper's out into another
+mkdir -p "$v/Private/keeper" "$v/Private/naila" "$v/Private/other"
+echo p > "$v/Private/keeper/k.pdf"
+echo p > "$v/Private/naila/n.pdf"
+echo p > "$v/Private/other/o.pdf"
+ln -s "$v/Private/keeper/k.pdf" "$v/Daily/into-private.pdf"
+ln -s "$v/Private/other/o.pdf" "$v/Private/keeper/peek.pdf"
 ln -s "$v/Harness-test/Naila/test.pdf" "$v/Daily/into-test.pdf"
 # a second vault whose workspace and Finance folders are links (into the first one's Daily)
 v2="$tmp/vault2"
@@ -77,22 +90,24 @@ core_roots() {
 }
 run() {  # run CAPS WORKER PATH [hook args…]; CAPS or WORKER "-" leaves the variable unset; HARNESS_ORIGIN is $O (default
   # discord, the channel of the uploads above; "-" leaves it unset); HARNESS_DOCS_ROOTS is $R (default the core's, core_roots
-  # for CAPS, WORKER and the --root given; "-" leaves it unset)
+  # for CAPS, WORKER and the --root given; "-" leaves it unset); HARNESS_PRIVATE_OWN is $P (default unset, as for every role
+  # but a private one)
   local caps="$1" w="$2" p="$3" o="${O-discord}"; shift 3
   local hroot="" a prev=""
   for a in "$@"; do [ "$prev" = --root ] && hroot="$a"; prev="$a"; done
   local dr="${R-$(core_roots "${caps#-}" "$w" "$hroot")}"
-  local e=(env -u HARNESS_CAPS -u HARNESS_WORKER -u HARNESS_ORIGIN -u HARNESS_DOCS_ROOTS)
+  local e=(env -u HARNESS_CAPS -u HARNESS_WORKER -u HARNESS_ORIGIN -u HARNESS_DOCS_ROOTS -u HARNESS_PRIVATE_OWN)
+  [ -z "${P+x}" ] || e+=("HARNESS_PRIVATE_OWN=$P")
   [ "$caps" = - ] || e+=("HARNESS_CAPS=$caps")
   [ "$w" = - ] || e+=("HARNESS_WORKER=$w")
   [ "$o" = - ] || e+=("HARNESS_ORIGIN=$o")
   [ "$dr" = - ] || e+=("HARNESS_DOCS_ROOTS=$dr")
   node -e 'console.log(JSON.stringify({ tool_name: "mcp__docs__convert", tool_input: { path: process.argv[1] } }))' "$p" | "${e[@]}" node "$hook" "$@"
 }
-expect() {  # expect allow|deny CAPS WORKER PATH [hook args; default --by-caps --uploads $up --root $v; "rc" for none]
+expect() {  # expect allow|deny CAPS WORKER PATH [hook args; default --by-caps --uploads $up --root $v --private-root $v/Private; "rc" for none]
   local want="$1" caps="$2" w="$3" p="$4"; shift 4
   local args=("$@")
-  if [ "${#args[@]}" -eq 0 ]; then args=(--by-caps --uploads "$up" --root "$v"); elif [ "${args[0]}" = rc ]; then args=(); fi
+  if [ "${#args[@]}" -eq 0 ]; then args=(--by-caps --uploads "$up" --root "$v" --private-root "$v/Private"); elif [ "${args[0]}" = rc ]; then args=(); fi
   local out rc=0; out="$(run "$caps" "$w" "$p" ${args[@]+"${args[@]}"})" || rc=$?
   local ctx="$w, caps $caps, origin ${O-discord}, docs roots ${R-by the core}"
   if [ "$rc" != 0 ]; then echo "FAIL: $p ($ctx): exit $rc"; fail=1; return; fi
@@ -134,12 +149,18 @@ O="a$(printf '%031d' 0)" expect deny "$NA" naila "$up/discord/sent.pdf"   # well
 O=test expect deny  "$NA" naila "$up/test/into-discord.pdf"                # a link from its own folder into another channel's
 O=evil expect deny  "$NA" naila "$up/evil/sent.pdf"                        # its channel folder is a link to Discord's
 O=evil expect deny  "$NA" naila "$up/discord/sent.pdf"
+# fix round 2 of batch D: an upload waits for its turn in uploads/_pending/<channel>/<id>/, which no run converts, the private
+# role's included (its folder opens only once the turn moved the file into Private/<id>/Uploads/)
+expect deny  "$NA" naila "$up/_pending/discord/u1/waiting.pdf"
+expect deny  "$BK" finance-bookkeeper "$up/_pending/discord/u1/waiting.pdf"
+P="$v/Private/keeper" R="$v,$v/Private/keeper" expect deny "$NA" keeper "$up/_pending/discord/u1/waiting.pdf"   # the private role too
+for o in _pending pending; do O="$o" expect deny "$NA" naila "$up/_pending/discord/u1/waiting.pdf"; done
 O=test expect deny  "$NA" naila "$v/Daily/into-uploads.pdf"                # a vault link to a Discord upload (vault.read on)
 expect allow "$NA" naila "$v/Daily/into-uploads.pdf"                       # ... which a discord-origin run converts
-O=test expect deny  "$NA" naila "$up/discord/sent.pdf" --by-caps --uploads "$up" --root "$tmp"   # a deny, not a missing grant:
-O=test expect allow "$NA" naila "$tmp/outside/plain.pdf" --by-caps --uploads "$up" --root "$tmp"   # a root holding uploads/ still can't open it
+O=test expect deny  "$NA" naila "$up/discord/sent.pdf" --by-caps --uploads "$up" --root "$tmp" --private-root "$tmp/Private"   # a deny, not a missing grant:
+O=test expect allow "$NA" naila "$tmp/outside/plain.pdf" --by-caps --uploads "$up" --root "$tmp" --private-root "$tmp/Private"   # a root holding uploads/ still can't open it
 # the deny reason names the folders without a doubled slash when --uploads or --root ends in /
-why="$(run "$BK" finance-bookkeeper "$v/Daily/x.md" --by-caps --uploads "$up/" --root "$v/")"
+why="$(run "$BK" finance-bookkeeper "$v/Daily/x.md" --by-caps --uploads "$up/" --root "$v/" --private-root "$v/Private")"
 case "$why" in *"$up/discord, $v/Finance, $v/Naila/Workspace/finance-bookkeeper "*) ;; *) echo "FAIL: the deny reason with a trailing / is: $why"; fail=1 ;; esac
 case "$why" in *//*) echo "FAIL: the deny reason has a doubled slash: $why"; fail=1 ;; esac
 # HARNESS_DOCS_ROOTS (the engine's docs roots): the hook takes its folders from there, and parses it strictly
@@ -157,16 +178,16 @@ for r in "$v," ",$v" "$v,,$v/Finance" "," "vault" "$v/../vault" "$v/./Daily" "$v
   R="$r" expect deny "$NA" naila "$v/Daily/x.md"
   R="$r" expect deny "$NA" naila "$up/discord/sent.pdf"
 done
-R="$v2/Finance" expect deny  "docs.convert" naila "$v2/Finance/x.md" --by-caps --uploads "$up" --root "$v2"   # a root that is a link opens nothing
-R="$v2/Finance" expect allow "docs.convert" naila "$up/discord/sent.pdf" --by-caps --uploads "$up" --root "$v2"   # ... but the value is usable
-R="$v2" expect deny "docs.convert" naila "$v2/Naila/Workspace/naila/x.md" --by-caps --uploads "$up" --root "$v2"   # under a root, through a link
+R="$v2/Finance" expect deny  "docs.convert" naila "$v2/Finance/x.md" --by-caps --uploads "$up" --root "$v2" --private-root "$v2/Private"   # a root that is a link opens nothing
+R="$v2/Finance" expect allow "docs.convert" naila "$up/discord/sent.pdf" --by-caps --uploads "$up" --root "$v2" --private-root "$v2/Private"   # ... but the value is usable
+R="$v2" expect deny "docs.convert" naila "$v2/Naila/Workspace/naila/x.md" --by-caps --uploads "$up" --root "$v2" --private-root "$v2/Private"   # under a root, through a link
 R="$v/Finance" expect allow "docs.convert,files.read,messaging.ask,cluster.read" ops-oncall "$v/Finance/statement.pdf"   # a non-finance worker given Finance by the engine converts there
 R="$v/Daily" expect allow "docs.convert" researcher "$v/Daily/x.md"        # the engine decides, whatever HARNESS_CAPS says beyond docs.convert
 R="$v/Daily" expect deny  "files.read,vault.read" naila "$v/Daily/x.md"    # ... but docs.convert must be on
 R="$v/Daily,$v/Finance" expect allow "docs.convert" naila "$v/Finance/statement.pdf"   # every entry counts
-why="$(R="$v/Daily,$v/Finance" run "docs.convert" naila "$tmp/outside/plain.pdf" --by-caps --uploads "$up" --root "$v")"   # where: the entries in order
+why="$(R="$v/Daily,$v/Finance" run "docs.convert" naila "$tmp/outside/plain.pdf" --by-caps --uploads "$up" --root "$v" --private-root "$v/Private")"   # where: the entries in order
 case "$why" in *"in $up/discord, $v/Daily, $v/Finance ("*) ;; *) echo "FAIL: the deny reason does not name the engine's roots in order: $why"; fail=1 ;; esac
-why="$(R=- run "$NA" naila "$v/Daily/x.md" --by-caps --uploads "$up" --root "$v")"
+why="$(R=- run "$NA" naila "$v/Daily/x.md" --by-caps --uploads "$up" --root "$v" --private-root "$v/Private")"
 case "$why" in *"in nowhere ("*) ;; *) echo "FAIL: the deny reason without HARNESS_DOCS_ROOTS is: $why"; fail=1 ;; esac
 n="$(grep -c "finance-bookkeeper\|finance-advisor" "$hook" || true)"   # the hook names no worker
 [ "$n" = 0 ] || { echo "FAIL: docs-grant.mjs names a finance worker ($n lines): the engine decides the folders"; fail=1; }
@@ -180,12 +201,12 @@ expect deny  "$NA" "Naila" "$up/discord/sent.pdf"
 expect deny  "docs.convert, vault.read" naila "$v/Daily/x.md"              # unusable HARNESS_CAPS
 expect deny  "docs.convert;vault.read" naila "$up/discord/sent.pdf"
 expect deny  "docs.convert,,vault.read" naila "$up/discord/sent.pdf"
-expect deny  "$NA" naila "$v/Daily/x.md" --by-caps --uploads "$up"        # no --root
-expect deny  "$NA" naila "$up/discord/sent.pdf" --by-caps --root "$v"     # no --uploads
-expect deny  "$NA" naila "$up/discord/sent.pdf" --by-caps --uploads uploads --root "$v"
-expect deny  "$NA" naila "$v/Daily/x.md" --by-caps --uploads "$up" --root vault
-expect deny  "$NA" naila "$v/Daily/x.md" --by-caps --uploads "$up" --root
-expect deny  "$NA" naila "$v/Daily/x.md" --by-caps --uploads "$up" --root "$v/../vault"
+expect deny  "$NA" naila "$v/Daily/x.md" --by-caps --uploads "$up" --private-root "$v/Private"        # no --root
+expect deny  "$NA" naila "$up/discord/sent.pdf" --by-caps --root "$v" --private-root "$v/Private"     # no --uploads
+expect deny  "$NA" naila "$up/discord/sent.pdf" --by-caps --uploads uploads --root "$v" --private-root "$v/Private"
+expect deny  "$NA" naila "$v/Daily/x.md" --by-caps --uploads "$up" --root vault --private-root "$v/Private"
+expect deny  "$NA" naila "$v/Daily/x.md" --by-caps --uploads "$up" --private-root "$v/Private" --root
+expect deny  "$NA" naila "$v/Daily/x.md" --by-caps --uploads "$up" --root "$v/../vault" --private-root "$v/Private"
 # paths
 expect deny  "$NA" naila "$up/discord/linked.pdf"                          # a second hard link
 expect deny  "$NA" naila "$up/discord/sym.pdf"                             # a symlink out
@@ -198,19 +219,19 @@ expect deny  "$NA" naila "$v/Daily/./x.md"
 expect deny  "$NA" naila "$up/discord\\sent.pdf"                           # a backslash
 expect deny  "$NA" naila "$(printf '%s/discord/sent\001.pdf' "$up")"      # a control character
 expect deny  "$NA" naila "discord/sent.pdf"                                # relative
-expect deny  "docs.convert,files.read" naila "$v2/Naila/Workspace/naila/x.md" --by-caps --uploads "$up" --root "$v2"   # workspace is a link
-expect deny  "docs.convert,files.read" finance-bookkeeper "$v2/Finance/x.md" --by-caps --uploads "$up" --root "$v2"    # Finance is a link
+expect deny  "docs.convert,files.read" naila "$v2/Naila/Workspace/naila/x.md" --by-caps --uploads "$up" --root "$v2" --private-root "$v2/Private"   # workspace is a link
+expect deny  "docs.convert,files.read" finance-bookkeeper "$v2/Finance/x.md" --by-caps --uploads "$up" --root "$v2" --private-root "$v2/Private"    # Finance is a link
 # --exclude (the real phase)
-ex=(--by-caps --uploads "$up" --root "$v" --exclude "$v/Harness-test")
+ex=(--by-caps --uploads "$up" --root "$v" --private-root "$v/Private" --exclude "$v/Harness-test")
 expect allow "$NA" naila "$v/Daily/x.md" "${ex[@]}"
 expect deny  "$NA" naila "$v/Harness-test/Naila/test.pdf" "${ex[@]}"
 expect deny  "$NA" naila "$v/Daily/into-test.pdf" "${ex[@]}"
 expect allow "$NA" naila "$v/Harness-test/Naila/test.pdf"                  # without --exclude (the test phase's root holds it)
-expect deny  "$NA" naila "$v/Harness-test/Naila/test.pdf" --by-caps --uploads "$up" --root "$v" --exclude "/nonexistent,$v/Harness-test"
-expect deny  "$NA" naila "$v/Daily/x.md" --by-caps --uploads "$up" --root "$v" --exclude "relative/dir"
-expect deny  "$NA" naila "$v/Daily/x.md" --by-caps --uploads "$up" --root "$v" --exclude ""
+expect deny  "$NA" naila "$v/Harness-test/Naila/test.pdf" --by-caps --uploads "$up" --root "$v" --private-root "$v/Private" --exclude "/nonexistent,$v/Harness-test"
+expect deny  "$NA" naila "$v/Daily/x.md" --by-caps --uploads "$up" --root "$v" --private-root "$v/Private" --exclude "relative/dir"
+expect deny  "$NA" naila "$v/Daily/x.md" --by-caps --uploads "$up" --root "$v" --private-root "$v/Private" --exclude ""
 # file actions Task 17: --desk DIR (the pod's desk): a desk entry is usable only with --desk
-dx=(--by-caps --uploads "$up" --root "$v" --desk "$dk")
+dx=(--by-caps --uploads "$up" --root "$v" --private-root "$v/Private" --desk "$dk")
 R="$v,$dk/naila" expect allow "$NA" naila "$dk/naila/20261122-0901-1a2b-unzip/a.pdf" "${dx[@]}"      # its own desk, with --desk
 R="$v,$dk/naila" expect allow "$NA" naila "$v/Daily/x.md" "${dx[@]}"                                  # the other roots as before
 R="$v,$dk/naila" expect allow "$NA" naila "$up/discord/sent.pdf" "${dx[@]}"
@@ -228,18 +249,47 @@ expect deny  "$NA" naila "$dk/naila/20261122-0901-1a2b-unzip/a.pdf" "${dx[@]}"
 O=test R="$v,$dk/_test/naila" expect deny "$NA" naila "$dk/naila/20261122-0901-1a2b-unzip/a.pdf" "${dx[@]}"   # a test run's own _test desk is not the owner's
 # --desk with a relative or dotted DIR denies everything, uploads included (and none, or an empty one)
 for d in "desk" "$dk/../desk" "$dk/./naila" "$tmp/desk\\x" "" "/"; do
-  R="$v,$dk/naila" expect deny "$NA" naila "$dk/naila/20261122-0901-1a2b-unzip/a.pdf" --by-caps --uploads "$up" --root "$v" --desk "$d"
-  R="$v,$dk/naila" expect deny "$NA" naila "$up/discord/sent.pdf" --by-caps --uploads "$up" --root "$v" --desk "$d"
-  R="" expect deny "$NA" naila "$up/discord/sent.pdf" --by-caps --uploads "$up" --root "$v" --desk "$d"
+  R="$v,$dk/naila" expect deny "$NA" naila "$dk/naila/20261122-0901-1a2b-unzip/a.pdf" --by-caps --uploads "$up" --root "$v" --private-root "$v/Private" --desk "$d"
+  R="$v,$dk/naila" expect deny "$NA" naila "$up/discord/sent.pdf" --by-caps --uploads "$up" --root "$v" --private-root "$v/Private" --desk "$d"
+  R="" expect deny "$NA" naila "$up/discord/sent.pdf" --by-caps --uploads "$up" --root "$v" --private-root "$v/Private" --desk "$d"
 done
-R="" expect deny "$NA" naila "$up/discord/sent.pdf" --by-caps --uploads "$up" --root "$v" --desk     # --desk with no value
-R="$v,$dk/naila" expect allow "$NA" naila "$dk/naila/20261122-0901-1a2b-unzip/a.pdf" --by-caps --uploads "$up" --root "$v" --desk "$dk/"   # a trailing / is the same desk
+R="" expect deny "$NA" naila "$up/discord/sent.pdf" --by-caps --uploads "$up" --root "$v" --private-root "$v/Private" --desk     # --desk with no value
+R="$v,$dk/naila" expect allow "$NA" naila "$dk/naila/20261122-0901-1a2b-unzip/a.pdf" --by-caps --uploads "$up" --root "$v" --private-root "$v/Private" --desk "$dk/"   # a trailing / is the same desk
 R="$v,$dk/naila" expect deny  "$NA" naila "$v/Harness-test/Naila/test.pdf" "${dx[@]}" --exclude "$v/Harness-test"   # --exclude still holds
 R="$v,$dk/naila" expect allow "$NA" naila "$dk/naila/20261122-0901-1a2b-unzip/a.pdf" "${dx[@]}" --exclude "$v/Harness-test"
+# workers by plan Task 13: a path under Private is granted only to its own role
+KP="$v/Private/keeper"
+P="$KP" R="$v,$KP" expect allow "$NA" keeper "$KP/k.pdf"                   # the private role, its own folder
+P="$KP" R="$v,$KP" expect deny  "$NA" keeper "$v/Private/other/o.pdf"      # ... not another entry
+P="$KP" R="$v,$KP" expect deny  "$NA" keeper "$v/Private/naila/n.pdf"
+P="$KP" R="$v,$KP" expect deny  "$NA" keeper "$KP/peek.pdf"                # ... nor through a link out of its folder
+P="$KP" R="$v,$KP" expect allow "$NA" keeper "$v/Daily/x.md"               # the rest as the switches say
+expect deny  "$NA" naila "$KP/k.pdf"                                       # the lead (vault.read on): not keeper's
+expect deny  "$NA" naila "$v/Private/naila/n.pdf"                          # ... nor one under its own id (it is not private)
+expect deny  "$NA" naila "$v/Daily/into-private.pdf"                       # ... nor through a vault note that links there
+R="$v,$KP" expect deny "$NA" keeper "$KP/k.pdf"                            # keeper's run without its own folder named: denied
+P="$v/Private/naila" R="$v,$KP" expect deny "$NA" keeper "$KP/k.pdf"       # one naming another role's folder opens neither
+P="$v/Private/naila" R="$v,$KP" expect deny "$NA" keeper "$v/Private/naila/n.pdf"
+P="$KP" expect deny "$NA" naila "$KP/k.pdf"                               # the lead's run naming keeper's folder opens neither
+P="$KP" expect deny "$NA" naila "$v/Private/naila/n.pdf"
+P="$tmp/elsewhere" R="$v,$KP" expect deny "$NA" keeper "$KP/k.pdf"         # an own folder outside --private-root
+P="$KP/../keeper" R="$v,$KP" expect deny "$NA" keeper "$KP/k.pdf"          # ... or dotted
+why="$(run "$NA" naila "$KP/k.pdf" --by-caps --uploads "$up" --root "$v" --private-root "$v/Private")"   # the core's words (paths.ts PRIVATE_REFUSAL)
+case "$why" in *'"permissionDecisionReason":"That folder is private: only the worker it belongs to may read or write it."'*) ;; *) echo "FAIL: the private deny reason is: $why"; fail=1 ;; esac
+# a relative or dotted --private-root denies everything (and none, or an empty one)
+for d in "Private" "vault/Private" "$v/../vault/Private" "$v/./Private" "$v/Private/.." "$(printf '%s/Priv\001ate' "$v")" "$v\\Private" ""; do
+  expect deny "$NA" naila "$v/Daily/x.md" --by-caps --uploads "$up" --root "$v" --private-root "$d"
+  expect deny "$NA" naila "$up/discord/sent.pdf" --by-caps --uploads "$up" --root "$v" --private-root "$d"
+  P="$KP" R="$v,$KP" expect deny "$NA" keeper "$KP/k.pdf" --by-caps --uploads "$up" --root "$v" --private-root "$d"
+done
+expect deny "$NA" naila "$v/Daily/x.md" --by-caps --uploads "$up" --root "$v"           # no --private-root
+expect deny "$NA" naila "$up/discord/sent.pdf" --by-caps --uploads "$up" --root "$v"
+expect deny "$NA" naila "$v/Daily/x.md" --by-caps --uploads "$up" --root "$v" --private-root   # --private-root with no value
+P="$KP" R="$v,$KP" expect allow "$NA" keeper "$KP/k.pdf" --by-caps --uploads "$up" --root "$v" --private-root "$v/Private/"   # a trailing / is the same root
 # the RC lines' mode (no flags): nothing denied, whatever the env
 for p in "$v/Daily/x.md" "$tmp/outside/secret.pdf" "$up/discord/linked.pdf" "$up/test/fixture.pdf"; do
   O=- expect allow - - "$p" rc
   O=test expect allow "docs.convert" ops-oncall "$p" rc
 done
-[ "$fail" = 0 ] && echo "OK: docs-grant --by-caps (switches, own origin's uploads only), --exclude, RC mode"
+[ "$fail" = 0 ] && echo "OK: docs-grant --by-caps (switches, own origin's uploads only, private folders), --exclude, RC mode"
 exit "$fail"

@@ -41,7 +41,8 @@
 #  - HARNESS_VERSION is the naila image tag, harness-start runs the claude-code adapter's prepare.js on the worker spec (its
 #    exit status and an empty dir list fail the start), exports HARNESS_WORKER_SPEC, and its settings check refuses a static
 #    allow outside the mcp__core__ tools;
-#  - phase 2 (provider-neutral core): the runs' vault server gets VAULT_WORKERS_WRITE=0, harness-start dies unless the image's
+#  - phase 2 (provider-neutral core): the runs' vault server (the core's per run since workers by plan Task 13, call 12: no
+#    user-scope vault) gets VAULT_WORKERS_WRITE=0, harness-start dies unless the image's
 #    vault server and notes server log their VAULT_WORKERS_WRITE / NOTES_READONLY phrases (an older image dies, never starts
 #    weaker), its settings check imports the image's CLAUDE_STATIC_LAYER (dist/providers/claude-code/compile.js; missing:
 #    the start fails) and refuses settings without every layer deny or with a layer hook's tools not hooked by exactly one
@@ -60,12 +61,12 @@
 # Then the core's run metrics: 3102 open to monitoring only, its own Service and ServiceMonitor (job assistant-harness-core),
 #  the login Service and ServiceMonitor as at <git-ref>, and the three core alerts, scoped by job, none naming Discord.
 # Then the worker spec (harness-workers.json in ConfigMap assistant-harness, both phases): pure core Task 9 and phase 2 Task 11,
-#  it is the roles spec v5 (version 5; the roles naila, finance-bookkeeper, finance-advisor, ops-oncall, researcher in that
+#  it is the roles spec v6 (version 6 since workers by plan Task 18; the roles naila, finance-bookkeeper, finance-advisor, ops-oncall, researcher in that
 #  order, naila alone the lead and first; retired []; each role's display and seed the chart's literals; paths
 #  [finance-documents] on the two finance roles alone; lifecycle permanent on the four, temporary with hireable true on the
 #  researcher (phase 5); no role key beyond the spec's, quarantined never one), the render fails on a duplicate id, two
-#  leads or none, a lead not first and a retired active role, and harness-start dies on an image without ROLES_SPEC_VERSION 5
-#  (plan 7b Task 8: worded both ways, an image above 5 says it is the newer side);
+#  leads or none, a lead not first and a retired active role, and harness-start dies on an image without ROLES_SPEC_VERSION 6
+#  (plan 7b Task 8: worded both ways, an image above 6 says it is the newer side);
 #  naila's own validator accepts it and every seed entry applies (naila's checkSeeds, from its built dist) when
 #  NAILA_WORKTREE points at a naila checkout (skipped with a notice otherwise), no __MARKER__ survives, each model is the
 #  chart's per-worker model (direct-lines), each description the RC agent file's, each ceiling its tools.md, the URLs and the
@@ -192,9 +193,9 @@ export FLOOR_DENY='["Bash","NotebookEdit","Agent","Task","Workflow","TaskStop","
 # The claude-code adapter's static layer, verbatim from naila packages/harness/src/providers/claude-code/compile.ts
 # CLAUDE_STATIC_LAYER (up to naila 8346393; /run/provider-keys since cbbede6; /run/files-token and /run/files-sock since file actions; the researcher's web and write hooks, their 30 s
 # timeout and onFailure block, since the researcher branch; the write guard's root pinned only to end in /Workspace since pure-core
-# phase 4, call 15: the profile names the system folder): the denies and the guard hooks (matcher, command regex source, pins) harness-start's
+# phase 4, call 15: the profile names the system folder; every vault hook's --private-root <root>/Private since workers by plan Task 11): the denies and the guard hooks (matcher, command regex source, pins) harness-start's
 # settings check takes from the image. With NAILA_WORKTREE the built dist export must equal it. A change there changes this.
-export CLAUDE_STATIC_LAYER='{"deny":["Read(//run/docs-token/**)","Edit(//run/docs-token/**)","Write(//run/docs-token/**)","Read(//run/docs-sock/**)","Edit(//run/docs-sock/**)","Write(//run/docs-sock/**)","Read(//run/files-token/**)","Edit(//run/files-token/**)","Write(//run/files-token/**)","Read(//run/files-sock/**)","Edit(//run/files-sock/**)","Write(//run/files-sock/**)","Read(//run/provider-keys/**)","Edit(//run/provider-keys/**)","Write(//run/provider-keys/**)"],"hooks":[{"matcher":"Read|Glob|Grep","command":"^node \\/config\\/read-guard\\.mjs --by-origin \\|\\| exit 2$"},{"matcher":"Write|Edit|MultiEdit|NotebookEdit|mcp__vault__write_inbox|mcp__vault__append_daily|mcp__vault__workers_write|mcp__finance-notes__write_note|mcp__finance-notes__edit_note","command":"harness-write-guard\\.mjs --root \\S+\\/Workspace \\|\\| exit 2$","timeout":30,"onFailure":"block"},{"matcher":"mcp__docs__convert","command":"docs-grant\\.mjs --by-caps "},{"matcher":"WebFetch|WebSearch","command":"^node \\/config\\/web-guard\\.mjs --by-worker \\|\\| exit 2$","timeout":30,"onFailure":"block"}]}'
+export CLAUDE_STATIC_LAYER='{"deny":["Read(//run/docs-token/**)","Edit(//run/docs-token/**)","Write(//run/docs-token/**)","Read(//run/docs-sock/**)","Edit(//run/docs-sock/**)","Write(//run/docs-sock/**)","Read(//run/files-token/**)","Edit(//run/files-token/**)","Write(//run/files-token/**)","Read(//run/files-sock/**)","Edit(//run/files-sock/**)","Write(//run/files-sock/**)","Read(//run/provider-keys/**)","Edit(//run/provider-keys/**)","Write(//run/provider-keys/**)"],"hooks":[{"matcher":"Read|Glob|Grep","command":"^node \\/config\\/read-guard\\.mjs --by-origin --private-root \\/\\S+\\/Private \\|\\| exit 2$"},{"matcher":"Write|Edit|MultiEdit|NotebookEdit|mcp__vault__write_inbox|mcp__vault__append_daily|mcp__vault__workers_write|mcp__finance-notes__write_note|mcp__finance-notes__edit_note","command":"harness-write-guard\\.mjs --root \\S+\\/Workspace --private-root \\/\\S+\\/Private \\|\\| exit 2$","timeout":30,"onFailure":"block"},{"matcher":"mcp__docs__convert","command":"docs-grant\\.mjs --by-caps --uploads \\S+ --root \\S+ --private-root \\/\\S+\\/Private( |$)"},{"matcher":"WebFetch|WebSearch","command":"^node \\/config\\/web-guard\\.mjs --by-worker \\|\\| exit 2$","timeout":30,"onFailure":"block"}]}'
 # The core tools every run has, verbatim from naila packages/harness/src/capabilities.ts CORE_ALWAYS_TOOLS (up to 8346393;
 # capability-ids.ts since, re-exported; plan 7b Tasks 13-14, naila 3ee73ee: standing_save, standing_remove and history_search):
 # harness-start's settings check requires harness-settings.json's allow to be exactly these plus propose_plan and ask_worker
@@ -263,10 +264,10 @@ def keys(path):
 
 old, new = keys(sys.argv[1]), keys(sys.argv[2])
 # The worker spec (harness-workers.json, ConfigMap assistant-harness): each worker's ceiling and servers come from it. A v2 to
-# v5 spec (the roles config: an ordered list of roles) reads into the same {id: role} dict as a v1 one ({workers: {id: worker}}).
+# v6 spec (the roles config: an ordered list of roles) reads into the same {id: role} dict as a v1 one ({workers: {id: worker}}).
 import json
 def spec_roles(spec):
-    if spec.get("version") in (2, 3, 4, 5): return {r["id"]: {k: v for k, v in r.items() if k != "id"} for r in spec["roles"]}
+    if spec.get("version") in (2, 3, 4, 5, 6): return {r["id"]: {k: v for k, v in r.items() if k != "id"} for r in spec["roles"]}
     return spec["workers"]
 def spec_workers(path):
     for d in yaml.safe_load_all(open(path)):
@@ -766,7 +767,11 @@ else:
     open(os.path.join(ws, "naila", "old.md"), "w").write("x")
     os.link(os.path.join(v, "Naila", "Decisions.md"), os.path.join(ws, "naila", "hard.md"))
     W = lambda p, tool="Write": {"tool_name": tool, "tool_input": {"file_path": p, "content": "x"}}
-    R, N = ["--root", ws], {"HARNESS_WORKER": "naila", "HARNESS_WEB_SLOTS": tempfile.mkdtemp()}
+    # workers by plan Task 13: the private roles' folders, as harness-start renders them (--private-root <VAULT_ROOT>/Private)
+    pv = os.path.join(v, "Private")
+    for d in ("keeper", "naila", "other"): os.makedirs(os.path.join(pv, d))
+    R, N = ["--root", ws, "--private-root", pv], {"HARNESS_WORKER": "naila", "HARNESS_WEB_SLOTS": tempfile.mkdtemp()}
+    K = {"HARNESS_WORKER": "keeper", "HARNESS_WEB_SLOTS": tempfile.mkdtemp(), "HARNESS_PRIVATE_OWN": os.path.join(pv, "keeper")}
     marked_ = tempfile.mkdtemp(); open(os.path.join(marked_, "researched"), "w").close()
     M = {**N, "HARNESS_WEB_SLOTS": marked_}
     for what, ev, args, env_, want_ in (
@@ -778,6 +783,13 @@ else:
         ("a symlink out", W(f"{ws}/naila/out/Decisions.md"), R, N, "deny"),
         ("a hardlink to a file outside", W(f"{ws}/naila/hard.md", "Edit"), R, N, "deny"),
         ("/vault/Naila/Decisions.md", W(f"{v}/Naila/Decisions.md"), R, N, "deny"),
+        # workers by plan Task 18: the copies (Naila/Setup/, call 17) and the workers view (Naila/Workers.md) are outside every
+        # workspace and private folder, so Write and Edit never reach them, a private role's run included (vault-mcp's layout
+        # protects them from the vault actions: naila's protectedFolders)
+        ("/vault/Naila/Setup/Workers/naila.md", W(f"{v}/Naila/Setup/Workers/naila.md"), R, N, "deny"),
+        ("an Edit of /vault/Naila/Workers.md", W(f"{v}/Naila/Workers.md", "Edit"), R, N, "deny"),
+        ("a private role writing /vault/Naila/Setup/Handbooks/actual.md", W(f"{v}/Naila/Setup/Handbooks/actual.md"), R, K, "deny"),
+        ("a private role writing /vault/Naila/Workers.md", W(f"{v}/Naila/Workers.md"), R, K, "deny"),
         ("the workspace folder itself", W(f"{ws}/naila"), R, N, "deny"),
         ("a relative path", W("naila/x.md"), R, N, "deny"),
         ("a backslash in the path", W(f"{ws}/naila/a\\..\\x.md"), R, N, "deny"),
@@ -785,6 +797,15 @@ else:
         ("a newline in the path", W(f"{ws}/naila/x\n.md"), R, N, "deny"),
         ("NotebookEdit, even in its own workspace", {"tool_name": "NotebookEdit", "tool_input": {"notebook_path": f"{ws}/naila/x.ipynb", "new_source": "x"}}, R, N, "deny"),
         ("a call without --root", W(f"{ws}/naila/x.md"), [], N, "deny"),
+        ("a call without --private-root", W(f"{ws}/naila/x.md"), ["--root", ws], N, "deny"),
+        ("a relative --private-root", W(f"{ws}/naila/x.md"), ["--root", ws, "--private-root", "vault/Private"], N, "deny"),
+        ("a dotted --private-root", W(f"{ws}/naila/x.md"), ["--root", ws, "--private-root", f"{v}/../vault/Private"], N, "deny"),
+        ("--private-root with no value", W(f"{ws}/naila/x.md"), ["--root", ws, "--private-root"], N, "deny"),
+        ("the lead in Private/<its own id> (it is not private)", W(f"{pv}/naila/x.md"), R, N, "deny"),
+        ("the lead in a private role's folder", W(f"{pv}/keeper/x.md"), R, N, "deny"),
+        ("a private role in its own folder", W(f"{pv}/keeper/x.md"), R, K, "none"),
+        ("a private role in another entry", W(f"{pv}/other/x.md"), R, K, "deny"),
+        ("a role naming another role's folder as its own", W(f"{pv}/keeper/x.md"), R, {**N, "HARNESS_PRIVATE_OWN": os.path.join(pv, "keeper")}, "deny"),
         ("--root with no value", W(f"{ws}/naila/x.md"), ["--root"], N, "deny"),
         ("a call without HARNESS_WORKER", W(f"{ws}/naila/x.md"), R, {}, "deny"),
         ("a worker with no workspace", W(f"{ws}/ops-oncall/x.md"), R, {"HARNESS_WORKER": "ops-oncall"}, "deny"),
@@ -811,7 +832,7 @@ for d in ("discord", "test"): os.makedirs(os.path.join(up, d))
 for f in ("Daily/x.md", "Finance/s.pdf", "Naila/Workspace/finance-bookkeeper/b.xlsx"): open(os.path.join(v, f), "w").write("x")
 for f in ("discord/u.pdf", "test/t.pdf"): open(os.path.join(up, f), "w").write("x")
 C = lambda p: {"tool_name": "mcp__docs__convert", "tool_input": {"path": p}}
-BC = ["--by-caps", "--uploads", up, "--root", v]
+BC = ["--by-caps", "--uploads", up, "--root", v, "--private-root", os.path.join(v, "Private")]   # workers by plan Task 13: with the private root
 BK = "docs.convert,files.read,messaging.ask,budget.read,budget.write-plans"
 def core_roots(caps, w):
     """HARNESS_DOCS_ROOTS as naila's docsRoots sets it for these switches: the vault with vault.read, a finance worker's
@@ -857,7 +878,8 @@ for p in (f"{v}/Daily/x.md", f"{up}/discord/u.pdf", "/etc/hostname"):
     for env_ in ({}, {"HARNESS_CAPS": "docs.convert", "HARNESS_WORKER": "ops-oncall"}, {"HARNESS_CAPS": "docs.convert", "HARNESS_WORKER": "ops-oncall", "HARNESS_ORIGIN": "test"}):
         if hook(dg, C(p), [], env_) != hook(dg_old, C(p), [], env_): bad.append(f"{tag}: without flags, {p} with {env_}: {hook(dg, C(p), [], env_)}, at the ref {hook(dg_old, C(p), [], env_)}")
 # read-guard (Ruling 16): with --by-origin (the harness runs) the only uploads readable are uploads/<HARNESS_ORIGIN>/, none
-# without a well-formed origin, judged by real paths; tool-results/ and the rest as before. Without flags (the RC lines) it
+# without a well-formed origin, judged by real paths; of tool-results/ only its own session's (fix round 2 of batch D:
+# projects/<P>/<session_id>/, from the hook input's session_id and transcript_path), none without them. Without flags (the RC lines) it
 # behaves as at the ref, whatever HARNESS_ORIGIN says. The hook's paths are literal (/home/claude) and /home may be a link on
 # the machine running this, so both keys run with a temp dir in its place.
 tag = "read-guard --by-origin opens only the run's own channel's uploads, and without flags behaves as at the ref"
@@ -873,7 +895,8 @@ Rd = lambda p: {"tool_name": "Read", "tool_input": {"file_path": p}}
 Gl = lambda path, pat: {"tool_name": "Glob", "tool_input": {"path": path, "pattern": pat}}
 Gr = lambda path: {"tool_name": "Grep", "tool_input": {"path": path, "pattern": "x"}}
 Ga = lambda pat: {"tool_name": "Glob", "tool_input": {"pattern": pat}}   # an absolute pattern, no path
-BO = ["--by-origin"]
+S = {"session_id": "s", "transcript_path": f"{cl}/projects/p/s.jsonl"}   # Claude Code's hook input: the run's session
+BO = ["--by-origin", "--private-root", "/vault/Private"]   # workers by plan Task 13: with the private root, as harness-start renders it
 for what, ev, o_, want_ in (
     ("a discord-origin run, its own upload", Rd(f"{cl}/uploads/discord/id1/u.pdf"), "discord", "none"),
     ("a test-origin run, a Discord upload", Rd(f"{cl}/uploads/discord/id1/u.pdf"), "test", "deny"),
@@ -892,8 +915,12 @@ for what, ev, o_, want_ in (
     ("a Glob of its own folder by absolute pattern", Ga(f"{cl}/uploads/discord/**"), "discord", "none"),
     ("a Grep over all uploads", Gr(f"{cl}/uploads"), "discord", "deny"),
     ("a Grep in its own folder", Gr(f"{cl}/uploads/discord"), "discord", "none"),
-    ("tool-results with an origin", Rd(f"{cl}/projects/p/s/tool-results/r.txt"), "discord", "none"),
-    ("tool-results without an origin", Rd(f"{cl}/projects/p/s/tool-results/r.txt"), None, "none"),
+    ("its own session's tool-results, with an origin", {**Rd(f"{cl}/projects/p/s/tool-results/r.txt"), **S}, "discord", "none"),
+    ("its own session's tool-results, without an origin", {**Rd(f"{cl}/projects/p/s/tool-results/r.txt"), **S}, None, "none"),
+    ("another session's tool-results of its project", {**Rd(f"{cl}/projects/p/s2/tool-results/r.txt"), **S}, "discord", "deny"),
+    ("another project's tool-results (another role's)", {**Rd(f"{cl}/projects/q/s/tool-results/r.txt"), **S}, "discord", "deny"),
+    ("tool-results without the session in the hook input", Rd(f"{cl}/projects/p/s/tool-results/r.txt"), "discord", "deny"),
+    ("tool-results, a transcript of another session", {**Rd(f"{cl}/projects/p/s/tool-results/r.txt"), "session_id": "s", "transcript_path": f"{cl}/projects/p/s2.jsonl"}, "discord", "deny"),
     ("the login", Rd(f"{cl}/.credentials.json"), "discord", "deny"),
     ("a file outside ~/.claude", Rd("/etc/hostname"), None, "none")):
     got = hook(rg, ev, BO, {"HARNESS_ORIGIN": o_} if o_ is not None else {})
@@ -908,6 +935,9 @@ for o_, want_ in (("test", "Under ~/.claude only uploads/test/ (files sent in th
                   (None, "Under ~/.claude only tool-results/ may be read: this run came from no channel, so no uploads are open to it.")):
     got = reason(rg, Rd(f"{cl}/uploads/discord/id1/u.pdf"), BO, {"HARNESS_ORIGIN": o_} if o_ else {}).replace(hc, "/home/claude")
     if got != want_: bad.append(f"{tag}: the deny reason with origin {o_!r} is {got!r}, want {want_!r}")
+# workers by plan Task 13: with --by-origin, a missing, relative or dotted --private-root denies every call
+for args_ in (["--by-origin"], ["--by-origin", "--private-root", "vault/Private"], ["--by-origin", "--private-root", "/vault/../vault/Private"], ["--by-origin", "--private-root"]):
+    if (got := hook(rg, Rd("/etc/hostname"), args_, {"HARNESS_ORIGIN": "discord"})) != "deny": bad.append(f"{tag}: {args_} lets a read of /etc/hostname through: {got}")
 for ev in (Rd(f"{cl}/uploads/discord/id1/u.pdf"), Rd(f"{cl}/uploads/test/id2/t.pdf"), Gl(f"{cl}/uploads", "**"), Gr(f"{cl}/uploads"),
            Rd(f"{cl}/projects/p/s/tool-results/r.txt"), Rd(f"{cl}/.credentials.json"), Rd("/etc/hostname"), Ga(f"{cl}/uploads/disc*/**"), Ga(f"{cl}/uploads/discord/**")):
     for env_ in ({}, {"HARNESS_ORIGIN": "test"}, {"HARNESS_ORIGIN": "Bad"}):
@@ -1108,8 +1138,9 @@ for ph, r in (("test", test), ("real", real)):
     if ph == "real" and "--exclude /vault/Harness-test" not in hook: bad.append(f"real phase: the docs hook does not exclude /vault/Harness-test: {hook}")
     # I1: the docs hook follows each run's switches, rooted at this phase's vault; file actions: with the desk (HARNESS_DESK_ROOT)
     # as --desk, after --root and before --exclude
-    if not re.search(rf" --by-caps --uploads \S+/uploads --root {re.escape(val(ctr(r, 'harness'), 'VAULT_ROOT'))} --desk {re.escape(val(ctr(r, 'harness'), 'HARNESS_DESK_ROOT') or '(unset)')}( --exclude \S+)? \|\| exit 2$", hook) or "--only" in hook:
-        bad.append(f"{ph} phase: the docs hook does not follow the switches (--by-caps --root VAULT_ROOT --desk HARNESS_DESK_ROOT): {hook}")
+    VR_ = val(ctr(r, 'harness'), 'VAULT_ROOT')
+    if not re.search(rf" --by-caps --uploads \S+/uploads --root {re.escape(VR_)} --private-root {re.escape(VR_)}/Private --desk {re.escape(val(ctr(r, 'harness'), 'HARNESS_DESK_ROOT') or '(unset)')}( --exclude \S+)? \|\| exit 2$", hook) or "--only" in hook:
+        bad.append(f"{ph} phase: the docs hook does not follow the switches (--by-caps --root VAULT_ROOT --private-root VAULT_ROOT/Private --desk HARNESS_DESK_ROOT): {hook}")
     if ph == "test" and "--exclude" in hook: bad.append(f"test phase: the docs hook excludes a folder: {hook}")
     want = "Harness-test" if ph == "real" else None
     if val(ctr(r, "harness"), "VAULT_EXCLUDE") != want: bad.append(f"{ph} phase: harness VAULT_EXCLUDE is {val(ctr(r, 'harness'), 'VAULT_EXCLUDE')!r}, want {want!r}")
@@ -1132,11 +1163,23 @@ for ph, r in (("test", test), ("real", real)):
     for tool, guard in (("Read", "read-guard.mjs"), ("Glob", "read-guard.mjs"), ("Grep", "read-guard.mjs"), ("WebSearch", "web-guard.mjs"),
                         ("WebFetch", "web-guard.mjs"), ("mcp__docs__convert", "docs-grant.mjs")):
         if not any(guard in c for c in hooked(tool)): bad.append(f"{tag}: the {guard} hook is missing for {tool}")
+    PRIV_ = f"{val(ctr(r, 'harness'), 'VAULT_ROOT')}/Private"   # workers by plan Task 13: the private roles' folders
     for tool in ("Read", "Glob", "Grep"):   # Ruling 16: the runs read only their own origin channel's uploads
-        if hooked(tool) != ["node /config/read-guard.mjs --by-origin || exit 2"]: bad.append(f"Ruling 16: {tag}: the {tool} hooks are {hooked(tool)}, want the read guard with --by-origin")
+        if hooked(tool) != [f"node /config/read-guard.mjs --by-origin --private-root {PRIV_} || exit 2"]: bad.append(f"Ruling 16: {tag}: the {tool} hooks are {hooked(tool)}, want the read guard with --by-origin --private-root {PRIV_}")
     wroot = f"{val(ctr(r, 'harness'), 'VAULT_ROOT')}/Naila/Workspace"
     for tool in ("Write", "Edit", "NotebookEdit"):   # P18: the root on the command line
-        if hooked(tool) != [f"node /config/harness-write-guard.mjs --root {wroot} || exit 2"]: bad.append(f"P18: {tag}: the {tool} hooks are {hooked(tool)}, want the write guard with --root {wroot}")
+        if hooked(tool) != [f"node /config/harness-write-guard.mjs --root {wroot} --private-root {PRIV_} || exit 2"]: bad.append(f"P18: {tag}: the {tool} hooks are {hooked(tool)}, want the write guard with --root {wroot} --private-root {PRIV_}")
+    # workers by plan Task 13: every hook command carries --private-root in its fixed position (read: right after --by-origin;
+    # write: right after --root; docs: right after --root, before --desk and --exclude), once, as <VAULT_ROOT>/Private
+    tag_p = f"every hook command carries --private-root in its fixed position ({ph} phase)"
+    for tool, before in (("Read", "--by-origin"), ("Write", "--root"), ("mcp__docs__convert", "--root")):
+        for c_ in hooked(tool):
+            tk = c_.split(" ")
+            at_p = [k for k, x in enumerate(tk) if x == "--private-root"]
+            want_at = tk.index(before) + (1 if before == "--by-origin" else 2) if before in tk else -1
+            if at_p != [want_at] or tk[want_at + 1] != PRIV_: bad.append(f"{tag_p}: the {tool} hook is {c_!r}, want --private-root {PRIV_} once, right after {before}{'' if before == '--by-origin' else ' <dir>'}")
+    for c_ in (h["command"] for e in pre for h in e["hooks"]):
+        if "--private-root" in c_ and not re.search(r"/(read-guard|harness-write-guard|docs-grant)\.mjs ", c_): bad.append(f"{tag_p}: {c_!r} carries --private-root, but it is no vault hook")
     # researcher Task 11: WebFetch and WebSearch are hooked once, by the guard deciding by worker; the RC lines' entry (the guard
     # with no flag, which refuses every call) is gone; the web and write hooks carry a 30 s timeout and onFailure block
     for tool in ("WebFetch", "WebSearch"):
@@ -1186,7 +1229,7 @@ for ph, r in (("test", test), ("real", real)):
     # unset (an older chart) it accepts the hook without --desk and refuses one with it
     tag_d = f"harness-start accepts the hook command with --desk, and dies on --desk in another position ({ph} phase)"
     dh = [h["command"] for e in s.get("hooks", {}).get("PreToolUse", []) for h in e["hooks"] if "docs-grant" in h["command"]]
-    if len(dh) != 1 or not re.search(rf" --root \S+ --desk {re.escape(vars_.get('HARNESS_DESK_ROOT') or '(none)')}( --exclude \S+)? \|\| exit 2$", dh[0]): bad.append(f"{tag_d}: the written docs hook is {dh}")
+    if len(dh) != 1 or not re.search(rf" --root \S+ --private-root \S+ --desk {re.escape(vars_.get('HARNESS_DESK_ROOT') or '(none)')}( --exclude \S+)? \|\| exit 2$", dh[0]): bad.append(f"{tag_d}: the written docs hook is {dh}")
     nodesk = json.loads(json.dumps(s))
     for e in nodesk["hooks"]["PreToolUse"]:
         for h in e["hooks"]:
@@ -1214,7 +1257,16 @@ for ph, r in (("test", test), ("real", real)):
                      ("a second docs hook", lambda x: x["hooks"]["PreToolUse"].append({"matcher": "mcp__docs__convert", "hooks": [{"type": "command", "command": "true"}]})),
                      # file actions Task 17: --desk only after --root and before --exclude, and only as HARNESS_DESK_ROOT
                      ("the docs hook with --desk before --uploads", lambda x: [h.__setitem__("command", re.sub(r"--by-caps (.*) --desk (\S+)", r"--by-caps --desk \2 \1", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
-                     ("the docs hook with --desk before --root", lambda x: [h.__setitem__("command", re.sub(r"--root (\S+) --desk (\S+)", r"--desk \2 --root \1", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
+                     ("the docs hook with --desk before --root", lambda x: [h.__setitem__("command", re.sub(r"--root (\S+) --private-root (\S+) --desk (\S+)", r"--desk \3 --root \1 --private-root \2", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
+                     # workers by plan Task 13: every vault hook carries --private-root <VAULT_ROOT>/Private in its fixed position
+                     ("the read guard without --private-root", lambda x: [h.__setitem__("command", re.sub(r" --private-root \S+", "", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "read-guard" in h["command"]]),
+                     ("the read guard with --private-root elsewhere", lambda x: [h.__setitem__("command", re.sub(r" --private-root (\S+)", r" --private-root \1/x", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "read-guard" in h["command"]]),
+                     ("the read guard with --private-root before --by-origin", lambda x: [h.__setitem__("command", re.sub(r"--by-origin --private-root (\S+)", r"--private-root \1 --by-origin", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "read-guard" in h["command"]]),
+                     ("the write guard without --private-root", lambda x: [h.__setitem__("command", re.sub(r" --private-root \S+", "", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "write-guard" in h["command"]]),
+                     ("the write guard with a relative --private-root", lambda x: [h.__setitem__("command", re.sub(r" --private-root /(\S+)", r" --private-root \1", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "write-guard" in h["command"]]),
+                     ("the docs hook without --private-root", lambda x: [h.__setitem__("command", re.sub(r" --private-root \S+", "", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
+                     ("the docs hook with --private-root after --desk", lambda x: [h.__setitem__("command", re.sub(r" --private-root (\S+) --desk (\S+)", r" --desk \2 --private-root \1", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
+                     ("the docs hook with --private-root elsewhere", lambda x: [h.__setitem__("command", re.sub(r" --private-root (\S+)", r" --private-root \1/x", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
                      ("the docs hook with --desk after --exclude", lambda x: [h.__setitem__("command", re.sub(r" --desk (\S+)(.*) \|\| exit 2$", r"\2 --exclude /x --desk \1 || exit 2", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
                      ("the docs hook without --desk (HARNESS_DESK_ROOT set)", lambda x: [h.__setitem__("command", re.sub(r" --desk \S+", "", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
                      ("the docs hook with another desk", lambda x: [h.__setitem__("command", re.sub(r" --desk (\S+)", r" --desk \1/x", h["command"])) for e in x["hooks"]["PreToolUse"] for h in e["hooks"] if "docs-grant" in h["command"]]),
@@ -1363,17 +1415,18 @@ else:
     if check("old image", "Harness-test") == 0: bad.append("harness-start.sh: starts with VAULT_EXCLUDE set although the vault server lacks support")
     if check("console.error(`vault-mcp: VAULT_EXCLUDE supported; leaving out ${x}`)", "Harness-test") != 0: bad.append("harness-start.sh: refuses a vault server that supports VAULT_EXCLUDE")
     if check("old image", "") != 0: bad.append("harness-start.sh: the test phase (no VAULT_EXCLUDE) needs the support marker")
-if not (re.search(r'^\[ -z "\$\{VAULT_EXCLUDE:-\}" \] \|\| vault_env\+=\(-e VAULT_EXCLUDE="\$VAULT_EXCLUDE"\)', start, re.M) and re.search(r'^claude mcp add vault [^\n]*"\$\{vault_env\[@\]\}"', start, re.M)): bad.append("harness-start.sh: the runs' vault server does not get VAULT_EXCLUDE")
+# workers by plan Task 13 (call 12): the runs' vault server is the core's, per run (VAULT_EXCLUDE, VAULT_WORKERS_WRITE=0,
+# VAULT_PATHS and VAULT_OWNER from naila's coreServerDecls): harness-start adds no user-scope vault server any more, and removes
+# one an older chart added
+if re.search(r'^\s*claude mcp add vault\b', start, re.M) or "vault_env" in start: bad.append("harness-start.sh: it still adds a user-scope vault server (call 12: each run gets its own, the core's)")
+if not re.search(r'^claude mcp remove vault --scope user >/dev/null 2>&1 \|\| true$', start, re.M): bad.append("harness-start.sh: it does not remove the user-scope vault server an older chart added")
 # phase 2: the runs' vault server never registers workers_write (VAULT_WORKERS_WRITE=0, unconditionally, before it is added),
 # and harness-start dies unless the image's vault server and notes server log their support phrases: an older image (the
 # phrases missing, or the notes server absent) dies naming the image as too old, never starts with weaker rules. Run as rendered.
 import shutil
-tag = "phase 2: harness-start.sh gives the runs' vault server VAULT_WORKERS_WRITE=0 and needs the image's phrases"
+tag = "phase 2: harness-start.sh needs the image's phrases (the runs' vault server, the core's per run since workers by plan Task 13, gets VAULT_WORKERS_WRITE=0 from naila's coreServerDecls)"
 sl = start.splitlines()
-vw = [i for i, l in enumerate(sl) if re.fullmatch(r"vault_env\+=\(-e VAULT_WORKERS_WRITE=0\)(\s+#.*)?", l)]
-va = [i for i, l in enumerate(sl) if re.match(r'^claude mcp add vault [^\n]*"\$\{vault_env\[@\]\}"', l)]
-v0 = [i for i, l in enumerate(sl) if l.startswith("vault_env=(")]
-if len(vw) != 1 or len(va) != 1 or len(v0) != 1 or not v0[0] < vw[0] < va[0]: bad.append(f"{tag}: want one unconditional vault_env+=(-e VAULT_WORKERS_WRITE=0) between vault_env=( and claude mcp add vault")
+if any(re.match(r'^\s*claude mcp add vault\b', l) for l in sl): bad.append(f"{tag}: harness-start adds a user-scope vault server (call 12: none)")
 if "NOTES_SERVER=/naila/packages/vault-mcp/dist/notes-server.js" not in sl: bad.append(f"{tag}: harness-start does not set NOTES_SERVER=/naila/packages/vault-mcp/dist/notes-server.js")
 PHRASES = {"VAULT_SERVER": "vault-mcp: VAULT_WORKERS_WRITE supported", "NOTES_SERVER": "finance-notes: NOTES_READONLY supported"}
 pl = [l for l in sl if not l.lstrip().startswith("#") and any(f"'{ph_}'" in l for ph_ in PHRASES.values())]
@@ -1492,12 +1545,14 @@ else:
 
 # The worker spec replaces the sed loop, direct-lines and HARNESS_MODELS: harness-start refuses an image without the claude-code
 # adapter's prepare.js and a chart without the spec, runs prepare.js on /config/harness-workers.json (its exit status and an empty
-# dir list fail the start: run as rendered with a stand-in node), keeps the TEST COPY append and the agent-file checks after it,
-# and exports HARNESS_WORKER_SPEC before the core starts.
+# dir list fail the start: run as rendered with a stand-in node), keeps the agent-file checks after it, and exports
+# HARNESS_WORKER_SPEC before the core starts. Workers by plan Task 18: the call sits in prepare_runs (run before each start of
+# the core: the block below this file's last), takes --db, --phase, the test phase's --test-note and the handbooks, and the
+# TEST COPY append moved into prepare.js (its --test-note).
 tag = "harness-start runs prepare.js on the worker spec and exports HARNESS_WORKER_SPEC"
 sl = start.splitlines()
 PREP = "/naila/packages/harness/dist/providers/claude-code/prepare.js"
-ex = [i for i, l in enumerate(sl) if l.startswith('exec node "$MAIN"')]
+ex = [i for i, l in enumerate(sl) if l == '  node "$MAIN" & pid=$!']
 hw = [i for i, l in enumerate(sl) if l == "export HARNESS_WORKER_SPEC=/config/harness-workers.json"]
 if len(hw) != 1 or not ex or hw[0] > ex[0]: bad.append(f"{tag}: {len(hw)} export lines of HARNESS_WORKER_SPEC=/config/harness-workers.json before the core starts")
 if f"PREPARE={PREP}" not in sl: bad.append(f"{tag}: harness-start does not set PREPARE={PREP}")
@@ -1510,42 +1565,47 @@ for gone in ("HARNESS_MODELS", "direct-lines", "s/__MCP_FINANCE_READ_TOKEN__/", 
 NOTES_MK = 'if node -e \'process.exit(Object.hasOwn(JSON.parse(process.env.HARNESS_SERVICES).services, "finance") ? 0 : 1)\'; then mkdir -p "$VAULT_ROOT/$FINANCE_FOLDER"; fi'
 if NOTES_MK not in sl: bad.append(f"{tag}: harness-start does not make the finance notes folder while finance is enabled ({NOTES_MK})")
 wl = [i for i, l in enumerate(sl) if l == "W=$HARNESS_HOME/work"]
-pc = [i for i, l in enumerate(sl) if l.startswith('out=$(node "$PREPARE" --spec /config/harness-workers.json --claude-dir "$C" --work-dir "$W") || die ')]
-ck = [i for i, l in enumerate(sl) if l.startswith('[ -n "$out" ] || die ')]
-mf = [i for i, l in enumerate(sl) if l == 'mapfile -t dirs <<< "$out"']
-if len(wl) != 1 or len(pc) != 1 or len(ck) != 1 or len(mf) != 1 or not wl[0] < pc[0] < min(ck[0], mf[0]):
-    bad.append(f"{tag}: want one W=$HARNESS_HOME/work, then one prepare call into $out with || die, then one empty-output die and one mapfile into dirs (got {len(wl)}, {len(pc)}, {len(ck)}, {len(mf)})")
+fn = [i for i, l in enumerate(sl) if l == "prepare_runs() {"]
+fe = [j for j in range(fn[0], len(sl)) if sl[j] == "}"][:1] if len(fn) == 1 else []
+pc = [i for i, l in enumerate(sl) if l.startswith('  out=$(node "$PREPARE" --spec /config/harness-workers.json --claude-dir "$C" --work-dir "$W" --db ') and ') || die ' in l]
+ck = [i for i, l in enumerate(sl) if l.startswith('  [ -n "$out" ] || die ')]
+mf = [i for i, l in enumerate(sl) if l == '  mapfile -t dirs <<< "$out"']
+if len(wl) != 1 or len(fn) != 1 or not fe or len(pc) != 1 or len(ck) != 1 or len(mf) != 1 or not wl[0] < fn[0] < pc[0] < min(ck[0], mf[0]) < fe[0]:
+    bad.append(f"{tag}: want one W=$HARNESS_HOME/work, then prepare_runs with one prepare call into $out with || die, then one empty-output die and one mapfile into dirs (got {len(wl)}, {len(fn)}, {len(pc)}, {len(ck)}, {len(mf)})")
 else:
-    for what, pat in (("the TEST COPY append", "TEST COPY"), ("the placeholder check", "grep -l '__MCP_'"), ("the real-server check", "'//assistant-finance:'"),
+    for what, pat in (("the placeholder check", "grep -l '__MCP_'"), ("the real-server check", "'//assistant-finance:'"),
                       ("the write-credential check", 'a worker holds a write credential'), ("the trusted dirs", '"${dirs[@]}"')):
         at_ = [i for i, l in enumerate(sl) if pat in l and not l.lstrip().startswith("#")]
-        if not at_ or min(at_) < pc[0]: bad.append(f"{tag}: {what} is missing or comes before prepare.js")
-    d = tempfile.mkdtemp(); os.makedirs(f"{d}/bin")
-    open(f"{d}/bin/node", "w").write('#!/bin/sh\nprintf "%s\\n" "$*" > "$ARGS"\ncase "$FAKE" in ok) printf "%s\\n" /h/work/naila /h/work/_summary /h/work/ops-oncall ;; fail) echo "prepare: refused" >&2; exit 2 ;; esac\n')
+        if not at_ or min(at_) < pc[0] or max(at_) > fe[0]: bad.append(f"{tag}: {what} is missing, comes before prepare.js or lies outside prepare_runs")
+    d = tempfile.mkdtemp(); os.makedirs(f"{d}/bin"); os.makedirs(f"{d}/c"); os.makedirs(f"{d}/home"); open(f"{d}/home/.claude.json", "w").write("{}")
+    # the stand-in node: prepare.js records its arguments; the .claude.json writer (node -e) does nothing
+    open(f"{d}/bin/node", "w").write('#!/bin/sh\n[ "$1" = -e ] && exit 0\nprintf "%s\\n" "$*" > "$ARGS"\ncase "$FAKE" in ok) printf "%s\\n" /h/work/naila /h/work/_summary /h/work/ops-oncall ;; fail) echo "prepare: refused" >&2; exit 2 ;; esac\n')
     os.chmod(f"{d}/bin/node", 0o755)
-    snippet = "\n".join(sl[wl[0]:max(ck[0], mf[0]) + 1])
+    snippet = "\n".join(sl[fn[0]:fe[0] + 1]) + "\nprepare_runs"
     for fake, rc_, out_ in (("ok", 0, "/h/work/naila\n/h/work/_summary\n/h/work/ops-oncall\n"), ("fail", 2, ""), ("empty", 2, "")):
-        p = subprocess.run(["bash", "-c", 'set -eu; die() { echo "harness-start: $*" >&2; exit 2; }; C=/c; HARNESS_HOME=/h; PREPARE=/p.js\n' + snippet + '\nprintf "%s\\n" "${dirs[@]}"'],
+        p = subprocess.run(["bash", "-c", f'set -eu; die() {{ echo "harness-start: $*" >&2; exit 2; }}; C={d}/c; HOME={d}/home; HARNESS_HOME=/h; HARNESS_PHASE=real; W=/h/work; PREPARE=/p.js; wcreds=; DOCS_BY_CORE=1\n' + snippet + '\nprintf "%s\\n" "${dirs[@]}"'],
                            env={"PATH": f"{d}/bin:/usr/bin:/bin", "FAKE": fake, "ARGS": f"{d}/args"}, capture_output=True, text=True)
         if p.returncode != rc_ or p.stdout != out_: bad.append(f"{tag}: with prepare.js {fake}: exit {p.returncode} {p.stderr.strip()!r}, dirs {p.stdout!r}; want exit {rc_}, dirs {out_!r}")
-    if open(f"{d}/args").read() != "/p.js --spec /config/harness-workers.json --claude-dir /c --work-dir /h/work\n": bad.append(f"{tag}: prepare.js ran with {open(f'{d}/args').read()!r}")
+    # workers by plan Task 18: was "/p.js --spec /config/harness-workers.json --claude-dir /c --work-dir /h/work"
+    want_args = f"/p.js --spec /config/harness-workers.json --claude-dir {d}/c --work-dir /h/work --db /h/harness.db --phase real --handbooks-base /config/handbooks --handbooks-out /handbooks\n"
+    if open(f"{d}/args").read() != want_args: bad.append(f"{tag}: prepare.js ran with {open(f'{d}/args').read()!r}, want {want_args!r}")
     __import__("shutil").rmtree(d)
 
-# pure core Task 9, phase 2 Task 10, phase 5 Task 9, plan 7b Task 8: harness-start dies on an image whose ROLES_SPEC_VERSION
-# is not 5 (dist/workers-spec.js), before prepare.js reads the roles config, saying which side is older and what to do: below
-# 5, no number or no module, the image predates the chart (the import error printed too); above 5, the image is newer than the
-# chart. The guard is one block, from SPEC_JS= to the node -e call's last line ('"$SPEC_JS"'). Run as rendered on stand-in
-# images (none, 1 to 4, "5", 6, 7 and a few broken ones), and on naila's built dist.
-tag = "harness-start dies on an image whose ROLES_SPEC_VERSION is not 5"
+# pure core Task 9, phase 2 Task 10, phase 5 Task 9, plan 7b Task 8, workers by plan Task 18: harness-start dies on an image
+# whose ROLES_SPEC_VERSION is not 6 (dist/workers-spec.js), before prepare.js reads the roles config, saying which side is
+# older and what to do: below 6, no number or no module, the image predates the chart (the import error printed too); above
+# 6, the image is newer than the chart. The guard is one block, from SPEC_JS= to the node -e call's last line ('"$SPEC_JS"').
+# Run as rendered on stand-in images (none, 1 to 5, "6", 6.5, 7, 8 and a few broken ones), and on naila's built dist.
+tag = "harness-start dies on an image whose ROLES_SPEC_VERSION is not 6"   # 5 until workers by plan Task 18
 sl = start.splitlines()
-OLD_SPEC = "this naila image predates plan 7b (roles spec 5: the summary size): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+OLD_SPEC = "this naila image predates workers by plan (roles spec 6): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
 def NEWER_SPEC(n): return f"this naila image is newer than this chart (roles spec {n}): deploy the chart that ships with it"
 sj = [i for i, l in enumerate(sl) if l == "SPEC_JS=/naila/packages/harness/dist/workers-spec.js"]
 se = [j for j in range(sj[0], len(sl)) if sl[j].endswith(' "$SPEC_JS"')][:1] if len(sj) == 1 else []
-pc9 = [i for i, l in enumerate(sl) if l.startswith('out=$(node "$PREPARE" ')]
+pc9 = [i for i, l in enumerate(sl) if l.startswith('  out=$(node "$PREPARE" ')]
 guard9 = sl[sj[0]:se[0] + 1] if se else []
-if len(sj) != 1 or not se or len(pc9) != 1 or not sj[0] < se[0] < pc9[0] or not guard9[1:2] or not guard9[1].startswith("node -e ") or "if (m.ROLES_SPEC_VERSION === 5) return" not in guard9 or not any(OLD_SPEC in l for l in guard9):
-    bad.append(f"{tag}: want one SPEC_JS= line, then one node -e guard testing m.ROLES_SPEC_VERSION === 5 and naming {OLD_SPEC!r}, ending in '\"$SPEC_JS\"', before prepare.js (got {len(sj)}, {len(se)}, {len(pc9)})")
+if len(sj) != 1 or not se or len(pc9) != 1 or not sj[0] < se[0] < pc9[0] or not guard9[1:2] or not guard9[1].startswith("node -e ") or "if (m.ROLES_SPEC_VERSION === 6) return" not in guard9 or not any(OLD_SPEC in l for l in guard9):
+    bad.append(f"{tag}: want one SPEC_JS= line, then one node -e guard testing m.ROLES_SPEC_VERSION === 6 and naming {OLD_SPEC!r}, ending in '\"$SPEC_JS\"', before prepare.js (got {len(sj)}, {len(se)}, {len(pc9)})")
 else:
     def spec_check(body=None, dist=None):
         d = tempfile.mkdtemp()
@@ -1556,17 +1616,18 @@ else:
         snippet = "\n".join(guard9).replace("/naila/packages/harness/dist/", dist + "/")
         p = subprocess.run(["bash", "-c", 'set -eu; die() { echo "harness-start: $*" >&2; exit 2; }\n' + snippet + "\necho started"], capture_output=True, text=True)
         shutil.rmtree(d); return p
-    if (p := spec_check("export const ROLES_SPEC_VERSION = 5\n")).returncode != 0 or p.stdout.strip() != "started" or p.stderr: bad.append(f"{tag}: refuses an image with ROLES_SPEC_VERSION 5: exit {p.returncode} {p.stderr.strip()!r}")
+    if (p := spec_check("export const ROLES_SPEC_VERSION = 6\n")).returncode != 0 or p.stdout.strip() != "started" or p.stderr: bad.append(f"{tag}: refuses an image with ROLES_SPEC_VERSION 6: exit {p.returncode} {p.stderr.strip()!r}")
     for what, body in (("no workers-spec.js", None), ("no ROLES_SPEC_VERSION", "export const other = 1\n"), ("ROLES_SPEC_VERSION 1", "export const ROLES_SPEC_VERSION = 1\n"),
                        ("ROLES_SPEC_VERSION 2 (pure-core phase 1)", "export const ROLES_SPEC_VERSION = 2\n"), ("ROLES_SPEC_VERSION 3 (pure-core phases 2 to 4)", "export const ROLES_SPEC_VERSION = 3\n"),
-                       ("ROLES_SPEC_VERSION 4 (pure-core phase 5 to plan 7a)", "export const ROLES_SPEC_VERSION = 4\n"), ("ROLES_SPEC_VERSION \"5\"", "export const ROLES_SPEC_VERSION = '5'\n"),
-                       ("ROLES_SPEC_VERSION 5.5", "export const ROLES_SPEC_VERSION = 5.5\n"), ("a workers-spec.js that throws", "throw new Error('boom')\n")):
+                       ("ROLES_SPEC_VERSION 4 (pure-core phase 5 to plan 7a)", "export const ROLES_SPEC_VERSION = 4\n"), ("ROLES_SPEC_VERSION 5 (plan 7b)", "export const ROLES_SPEC_VERSION = 5\n"),
+                       ("ROLES_SPEC_VERSION \"6\"", "export const ROLES_SPEC_VERSION = '6'\n"),
+                       ("ROLES_SPEC_VERSION 6.5", "export const ROLES_SPEC_VERSION = 6.5\n"), ("a workers-spec.js that throws", "throw new Error('boom')\n")):
         p = spec_check(body)
         if p.returncode != 2 or OLD_SPEC not in p.stderr or "newer than this chart" in p.stderr or "started" in p.stdout: bad.append(f"{tag}: an image with {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {OLD_SPEC!r}")
     if "boom" not in (p := spec_check("throw new Error('boom')\n")).stderr: bad.append(f"{tag}: a workers-spec.js that throws: the import error is not printed: {p.stderr.strip()!r}")
     if "Cannot find module" not in (p := spec_check(None)).stderr: bad.append(f"{tag}: no workers-spec.js: the import error is not printed: {p.stderr.strip()!r}")
     # plan 7b Task 8 (worded both ways): an image newer than the chart says so, naming its spec, and not that it predates the chart
-    for n in (6, 7):
+    for n in (7, 8):   # 6 and 7 until workers by plan Task 18
         p = spec_check(f"export const ROLES_SPEC_VERSION = {n}\n")
         if p.returncode != 2 or NEWER_SPEC(n) not in p.stderr or OLD_SPEC in p.stderr or "started" in p.stdout: bad.append(f"{tag}: an image with ROLES_SPEC_VERSION {n}: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {NEWER_SPEC(n)!r}")
     nw9 = os.environ.get("NAILA_WORKTREE", "")
@@ -1646,7 +1707,7 @@ p1ref="${PHASE1_REF:-937d2d3}"
 mkdir -p "$tmp/phase1" && git archive "$p1ref" helm/assistant | tar -x -C "$tmp/phase1"
 helm template "$tmp/phase1/helm/assistant" -f "$tmp/phase1/helm/assistant/values.yaml" -f "$tmp/phase1/helm/assistant/values.prod.yaml" --set harness.enabled=true --set harness.phase=test --set claude.rcLines=true > "$tmp/phase1.yaml"
 python3 - "$tmp/new.yaml" "$tmp/real.yaml" "$tmp/oracle-test.yaml" "$tmp/oracle-real.yaml" "$oref" "$tmp/phase1.yaml" "$p1ref" <<'PY'
-import sys, yaml, json, re, os, subprocess, tempfile, shutil, difflib
+import sys, yaml, json, re, os, subprocess, tempfile, shutil, difflib, copy
 def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
 def config(r):
     """/config as the harness pod mounts it: ConfigMap assistant-claude, then assistant-harness (one projected volume)."""
@@ -1658,9 +1719,9 @@ bad = []
 AGENTS = ["finance-bookkeeper", "finance-advisor", "ops-oncall", "researcher"]   # the roles config's order, minus the lead
 WORKERS = ["naila", *AGENTS]
 def spec_roles(spec):
-    """A worker spec as {id: role}: a v2 to v5 one (the roles config: an ordered list of roles) or a v1 one ({workers: {id:
+    """A worker spec as {id: role}: a v2 to v6 one (the roles config: an ordered list of roles) or a v1 one ({workers: {id:
     worker}}, as ORACLE_REF has it)."""
-    if spec.get("version") in (2, 3, 4, 5): return {r["id"]: {k: v for k, v in r.items() if k != "id"} for r in spec["roles"]}
+    if spec.get("version") in (2, 3, 4, 5, 6): return {r["id"]: {k: v for k, v in r.items() if k != "id"} for r in spec["roles"]}
     return spec["workers"]
 # pure core Task 9: each role's display and seed in the roles config, literally (today's seeds and display names)
 DISPLAY = {"naila": "Naila", "finance-bookkeeper": "Finance Bookkeeper", "finance-advisor": "Finance Advisor", "ops-oncall": "Ops Oncall", "researcher": "Researcher"}
@@ -1725,6 +1786,13 @@ def test_copy(files, cfg, ph, spec=None):
     Task 11's block (from its marker comment to its closing `done`, over /config/harness-workers.json: `spec`, else this
     /config's), or, in a start script before it (ORACLE_REF's), the bookkeeper's one `if … fi` append."""
     sl = cfg.get("harness-start.sh", "").splitlines()
+    # workers by plan Task 18: a start script whose prepare_runs gives prepare.js the note (--test-note) appends nothing
+    # itself: prepare.js renders the note after the text of every role with a server that serves a test copy there (naila
+    # Task 5: TEST_COPY_SERVERS, the finance server), in the test phase alone, so the pod's files are these with it
+    if any(l.lstrip().startswith("[ \"$HARNESS_PHASE\" != test ] || note=(--test-note /config/finance-test-note)") for l in sl) and TEST_COPY_MARK not in sl:
+        if ph != "test": return dict(files)
+        roles_ = spec_roles(json.loads(cfg["harness-workers.json"] if spec is None else spec))
+        return {w: t + "\n" + cfg["finance-test-note"] if any(x.get("name") == "finance" for x in roles_.get(w, {}).get("servers", [])) else t for w, t in files.items()}
     d = tempfile.mkdtemp(); os.makedirs(f"{d}/agents")
     for w, t in files.items(): open(f"{d}/agents/{w}.md", "w").write(t)
     open(f"{d}/note", "w").write(cfg["finance-test-note"])
@@ -1815,13 +1883,14 @@ for ph in ("test", "real"):
     try: spec = json.loads(raw)
     except ValueError as e: bad.append(f"{tag}: harness-workers.json is not JSON: {e}"); continue
     specs[ph] = spec
-    # pure core Task 9, phase 2 Task 11, phase 5 Task 9, plan 7b Task 8: harness-workers.json is the roles spec v5: the five roles in order,
+    # pure core Task 9, phase 2 Task 11, phase 5 Task 9, plan 7b Task 8, workers by plan Task 18: harness-workers.json is the
+    # roles spec v6 (5 until workers by plan Task 18, which added restart and texts: checked in the block below this file's last): the five roles in order,
     # naila alone the lead and first, nothing retired, each role's display and seed the literals above, paths
     # [finance-documents] on the two finance roles and on no other, lifecycle on every role (hireable on the researcher alone),
     # and no role key beyond the spec's (quarantine is derived, never a key)
-    t9 = f"harness-workers.json is the roles spec v5 ({ph} phase)"
-    if spec.get("version") != 5: bad.append(f"{t9}: version is {spec.get('version')!r}, want 5")
-    if sorted(spec) != ["retired", "roles", "summary", "version"]: bad.append(f"{t9}: its keys are {sorted(spec)}")
+    t9 = f"harness-workers.json is the roles spec v6 ({ph} phase)"
+    if spec.get("version") != 6: bad.append(f"{t9}: version is {spec.get('version')!r}, want 6")
+    if sorted(spec) != ["restart", "retired", "roles", "summary", "texts", "version"]: bad.append(f"{t9}: its keys are {sorted(spec)}")
     roles_ = spec.get("roles") if isinstance(spec.get("roles"), list) else []
     if [r.get("id") for r in roles_] != WORKERS: bad.append(f"{t9}: the roles are {[r.get('id') for r in roles_]}, want {WORKERS} in that order"); continue
     if [r["id"] for r in roles_ if "lead" in r] != ["naila"] or roles_[0].get("lead") is not True: bad.append(f"{t9}: the lead is not naila alone, first, lead: true")
@@ -1898,7 +1967,15 @@ if specs.get("test") and specs.get("real"):
 # nothing, no other file changes, the real phase adds nothing, and the note follows the server, not the name: a renamed
 # bookkeeper gets it, and so would the advisor with a finance server; a listed role without an agent file fails the start.
 tag = "the test phase's TEST COPY note goes to every role with a finance server, and only once"
-if specs.get("test"):
+NOTE_LINE = '  [ "$HARNESS_PHASE" != test ] || note=(--test-note /config/finance-test-note)'
+prep_mode = NOTE_LINE in new["test"].get("harness-start.sh", "").splitlines()
+if prep_mode:
+    # workers by plan Task 18: prepare.js appends the note (--test-note, the test phase alone: the block below this file's last
+    # runs prepare_runs), so these run naila's prepare as the chart calls it, after the oracle check below (NAILA_WORKTREE)
+    sl_ = new["test"].get("harness-start.sh", "").splitlines()
+    if sl_.count(NOTE_LINE) != 1 or any(TEST_COPY_MARK == l for l in sl_): bad.append(f"{tag}: prepare_runs holds {sl_.count(NOTE_LINE)} lines {NOTE_LINE.strip()!r}, want one, and harness-start no TEST COPY block of its own")
+    if any("finance-bookkeeper" in l for l in sl_ if not l.lstrip().startswith("#")): bad.append(f"{tag}: harness-start.sh names finance-bookkeeper outside a comment")
+elif specs.get("test"):
     cfg_t = new["test"]
     base_files = {w: f"---\nname: {w}\n---\nbody of {w}\n" for w in AGENTS}
     note_ = "\n" + cfg_t["finance-test-note"]
@@ -1996,7 +2073,7 @@ else:
         dist = f"{nw}/packages/harness/dist"
         seeds_js = ("const [d, f, bad] = process.argv.slice(1); const { loadWorkerSpecs, parseWorkerSpecs, ROLES_SPEC_VERSION } = await import(`${d}/workers-spec.js`); "
                     "const { checkSeeds } = await import(`${d}/capabilities.js`); const fs = await import('node:fs'); const path = await import('node:path'); "
-                    "if (ROLES_SPEC_VERSION !== 5) throw new Error(`ROLES_SPEC_VERSION ${ROLES_SPEC_VERSION}`); "
+                    "if (ROLES_SPEC_VERSION !== 6) throw new Error(`ROLES_SPEC_VERSION ${ROLES_SPEC_VERSION}`); "
                     "if (bad) { const j = JSON.parse(fs.readFileSync(f, 'utf8')); j.roles.find((r) => r.id === 'ops-oncall').seed.push('budget.read'); "
                     "checkSeeds(parseWorkerSpecs(JSON.stringify(j), (n) => fs.readFileSync(path.join(path.dirname(f), n), 'utf8'))) } "
                     "else checkSeeds(loadWorkerSpecs(f)); console.log('seeds apply')")
@@ -2004,14 +2081,16 @@ else:
         if p.returncode != 0 or p.stdout.strip() != "seeds apply": bad.append(f"{tag}: naila's checkSeeds refuses a seed entry: {(p.stderr or p.stdout).strip()[-300:]}")
         p = subprocess.run(["node", "--input-type=module", "-e", seeds_js, dist, sf, "bad"], capture_output=True, text=True)
         if p.returncode == 0 or "roles.ops-oncall.seed has budget.read, which does not apply to ops-oncall" not in p.stderr: bad.append(f"{tag}: naila's checkSeeds accepts an ops-oncall seed with budget.read: {(p.stderr or p.stdout).strip()[-300:]}")
-        prep = ["packages/harness/src/providers/claude-code/prepare.ts", "--spec", sf, "--claude-dir", f"{d}/c", "--work-dir", f"{d}/w"]
+        prep = ["packages/harness/src/providers/claude-code/prepare.ts", "--spec", sf, "--claude-dir", f"{d}/c", "--work-dir", f"{d}/w",
+                *(["--phase", ph] + (["--test-note", f"{cdir}/finance-test-note"] if ph == "test" else []) if prep_mode else [])]   # workers by plan Task 18: as prepare_runs calls it
         # a CLAUDE.md left in the lead's work dir by an older image (a rollback, then forward again) is removed
         os.makedirs(f"{d}/w/naila"); open(f"{d}/w/naila/CLAUDE.md", "w").write("stale instructions\n")
         p = tsx(prep, {**ENV, "MCP_FINANCE_TOKEN": "placeholder-write-bearer"}, d)
         if p.returncode != 0: bad.append(f"{tag}: prepare exits {p.returncode}: {p.stderr.strip()[-300:]}"); continue
         if p.stdout.splitlines() != [f"{d}/w/{x}" for x in ("naila", "_summary", *AGENTS)]: bad.append(f"{tag}: prepare printed {p.stdout.splitlines()}")
         if sorted(os.listdir(f"{d}/c/agents")) != sorted(f"{w}.md" for w in AGENTS): bad.append(f"{tag}: agents/ holds {sorted(os.listdir(f'{d}/c/agents'))}"); continue
-        got = test_copy({w: open(f"{d}/c/agents/{w}.md").read() for w in AGENTS}, new[ph], ph)
+        got = {w: open(f"{d}/c/agents/{w}.md").read() for w in AGENTS}
+        if not prep_mode: got = test_copy(got, new[ph], ph)   # workers by plan Task 18: prepare.js appended the note itself
         want = phase2(pod_files(orc[ph], ph, new[ph]))
         for w in OLD_AGENTS:
             if got[w] != want[w]: bad.append(f"{tag}: prepare's {w}.md differs from {oref}'s (minus WebSearch and WebFetch, plus the advisor's NOTES_READONLY line): {first_diff(want[w], got[w])}")
@@ -2039,6 +2118,36 @@ else:
             if p.returncode != 2 or os.listdir(e): bad.append(f"{tag}: prepare with {what}: exit {p.returncode}, wrote {os.listdir(e)}")
             shutil.rmtree(e)
         shutil.rmtree(d)
+    if prep_mode and specs.get("test"):
+        # workers by plan Task 18: the TEST COPY note, by naila's prepare run as prepare_runs calls it (--phase, and the test
+        # phase's --test-note): once in the bookkeeper's file and nowhere else, none in the real phase, and it follows the
+        # server, not the name (a renamed bookkeeper is told, and so is the advisor with a finance server). A listed role
+        # without an agent file can't happen any more: prepare.js writes every agent file itself.
+        tag = "the test phase's TEST COPY note goes to every role with a finance server, and only once"
+        def prep_files(ph, spec_json=None):
+            d = tempfile.mkdtemp(); cdir = f"{d}/config"; os.makedirs(cdir)
+            for k, v in new[ph].items(): open(f"{cdir}/{k}", "w").write(v)
+            if spec_json is not None: open(f"{cdir}/harness-workers.json", "w").write(spec_json)
+            args = ["packages/harness/src/providers/claude-code/prepare.ts", "--spec", f"{cdir}/harness-workers.json", "--claude-dir", f"{d}/c", "--work-dir", f"{d}/w", "--phase", ph,
+                    *(["--test-note", f"{cdir}/finance-test-note"] if ph == "test" else [])]
+            p = tsx(args, {**ENV, "MCP_FINANCE_TOKEN": "placeholder-write-bearer"}, d)
+            files = {f[:-3]: open(f"{d}/c/agents/{f}").read() for f in os.listdir(f"{d}/c/agents")} if p.returncode == 0 else None
+            shutil.rmtree(d)
+            if files is None: raise ValueError(f"prepare exits {p.returncode}: {p.stderr.strip()[-300:]}")
+            return files
+        try:
+            note_ = "\n" + new["test"]["finance-test-note"]
+            told = lambda fs: sorted(w for w, t in fs.items() if "TEST COPY" in t)
+            once = prep_files("test")
+            if told(once) != ["finance-bookkeeper"] or not once["finance-bookkeeper"].endswith(note_) or once["finance-bookkeeper"].count("TEST COPY") != 1: bad.append(f"{tag}: the test phase tells {told(once)}; the bookkeeper's file ends {once['finance-bookkeeper'][-200:]!r}")
+            if told(prep_files("real")): bad.append(f"{tag}: the real phase tells {told(prep_files('real'))}")
+            sp = json.loads(new["test"]["harness-workers.json"])
+            ren = json.loads(json.dumps(sp)); [r.__setitem__("id", "ledger") for r in ren["roles"] if r["id"] == "finance-bookkeeper"]
+            if told(prep_files("test", json.dumps(ren))) != ["ledger"]: bad.append(f"{tag}: a bookkeeper renamed ledger is not told (or another file is)")
+            two = json.loads(json.dumps(sp)); bk = next(r for r in two["roles"] if r["id"] == "finance-bookkeeper")
+            [r["servers"].append(copy.deepcopy(next(x for x in bk["servers"] if x["name"] == "finance"))) for r in two["roles"] if r["id"] == "finance-advisor"]
+            if told(prep_files("test", json.dumps(two))) != ["finance-advisor", "finance-bookkeeper"]: bad.append(f"{tag}: with a finance server on the advisor too, the told files are {told(prep_files('test', json.dumps(two)))}")
+        except (KeyError, ValueError, StopIteration) as e: bad.append(f"{tag}: {e}")
     # phase 2 Task 11, the pairing guards (new image, old chart): naila's built core refuses the PHASE1_REF chart's roles spec
     # (version 2, naming the chart as older) and its HARNESS_CHANNELS (no kind), and accepts this chart's; so a phase 2 image
     # on a phase 1 chart refuses to start instead of running it
@@ -2050,7 +2159,7 @@ else:
                 "const out = []; try { parseWorkerSpecs(spec, () => ''); out.push('spec ok') } catch (e) { out.push(`spec: ${e.message}`) } "
                 "const secrets = Object.fromEntries((JSON.parse(ch) ?? []).map((c) => [c.name, 'x'])); "
                 "try { parseChannelTable(ch, { secrets, test: false }); out.push('channels ok') } catch (e) { out.push(`channels: ${e.message}`) } console.log(out.join('\\n'))")
-    for label, r_, want_spec, want_ch in ((sys.argv[7], old_r, "version must be 5 (got 2): the chart predates pure-core phase 2", "kind must be owner or test"), ("this chart", new_r, "spec ok", "channels ok")):
+    for label, r_, want_spec, want_ch in ((sys.argv[7], old_r, "version must be 6 (got 2): the chart predates pure-core phase 2", "kind must be owner or test"), ("this chart", new_r, "spec ok", "channels ok")):
         try: sj, cj = config(r_)["harness-workers.json"], chans(r_)
         except (KeyError, StopIteration) as e: bad.append(f"{tag}: the {label} render has no spec or HARNESS_CHANNELS: {e!r}"); continue
         p = subprocess.run(["node", "--input-type=module", "-e", guard_js, f"{nw}/packages/harness/dist", sj, cj or "[]"], capture_output=True, text=True)
@@ -2406,11 +2515,13 @@ else:
     if p.returncode != 0 or p.stdout.strip() != "unset unset discord:a": bad.append(f"{tag}: the loop leaves {p.stdout.strip()!r} (exit {p.returncode})")
     p = subprocess.run(["bash", "-c", sh], env={"PATH": "/usr/bin:/bin"}, capture_output=True, text=True)
     if p.returncode != 0: bad.append(f"{tag}: the loop fails when no gateway secret is set: {p.stderr.strip()}")
-    ex = [i for i, l in enumerate(lines) if l.startswith('exec node "$MAIN"')]
-    if not ex or not (loop[0] < ex[0]): bad.append(f"{tag}: the loop does not come before the core starts")
-    # run from the loop to the exec: the gateway secrets go, the core's bearers stay (a stub node prints what it got)
-    sh = "set -euo pipefail; " + "\n".join(l for l in lines[loop[0]:ex[0] + 1] if not l.startswith("cd ") and not l.startswith("export "))
-    p = subprocess.run(["bash", "-c", "node() { for v in GATEWAY_DISCORD_SECRET GATEWAY_SECRETS MCP_FINANCE_TOKEN MCP_FINANCE_READ_TOKEN MCP_OPS_TOKEN; do echo \"$v=${!v+set}\"; done; }; " + sh.replace('exec node "$MAIN"', 'node "$MAIN"')],
+    # workers by plan Task 18: the core starts as the tail's child (prepare_runs, then the loop), no longer by exec
+    ex = [i for i, l in enumerate(lines) if l == '  node "$MAIN" & pid=$!']
+    tail_ = [i for i, l in enumerate(lines) if l == "prepare_runs"]
+    if not ex or len(tail_) != 1 or not (loop[0] < tail_[0] < ex[0]): bad.append(f"{tag}: the loop does not come before the core starts")
+    # run from the loop to the core's start: the gateway secrets go, the core's bearers stay (a stub node prints what it got)
+    sh = "set -euo pipefail; " + "\n".join(l for l in lines[loop[0]:tail_[0] if tail_ else loop[0] + 1] if not l.startswith("cd ") and not l.startswith("export ")) + '\nnode "$MAIN"'
+    p = subprocess.run(["bash", "-c", "node() { for v in GATEWAY_DISCORD_SECRET GATEWAY_SECRETS MCP_FINANCE_TOKEN MCP_FINANCE_READ_TOKEN MCP_OPS_TOKEN; do echo \"$v=${!v+set}\"; done; }; " + sh],
                        env={"PATH": "/usr/bin:/bin", "MAIN": "/m.js", "GATEWAY_DISCORD_SECRET": "a", "GATEWAY_SECRETS": "discord:a",
                             "MCP_FINANCE_TOKEN": "w", "MCP_FINANCE_READ_TOKEN": "r", "MCP_OPS_TOKEN": "o"}, capture_output=True, text=True)
     want = "GATEWAY_DISCORD_SECRET=\nGATEWAY_SECRETS=set\nMCP_FINANCE_TOKEN=set\nMCP_FINANCE_READ_TOKEN=set\nMCP_OPS_TOKEN=set\n"
@@ -2578,9 +2689,12 @@ for label, path in zip(("test", "real", "two channels", "real, RC off"), sys.arg
     tag = f"Ruling 19: harness-start.sh's user-scope docs entry follows the image (P24) ({label})"
     start = data["harness-start.sh"]
     sel = [l for l in start.splitlines() if l.startswith("DOCS_BY_CORE=") and "dist/docs-relay.js" in l]
-    mc = [x for x in re.finditer(r"^node -e '([^']*)' ([^\n]*)$", start, re.M) if x.group(2).startswith('"$HOME/.claude.json"')]
+    # workers by plan Task 18: the patch sits in prepare_runs (indented), run after each prepare
+    mc = [x for x in re.finditer(r"^ *node -e '([^']*)' ([^\n]*)$", start, re.M) if x.group(2).startswith('"$HOME/.claude.json"')]
     if len(sel) != 1 or len(mc) != 1: bad.append(f"{tag}: {len(sel)} DOCS_BY_CORE lines, {len(mc)} ~/.claude.json patches"); continue
-    for has, want in ((True, ["vault"]), (False, ["docs", "vault"])):
+    # workers by plan Task 13 (call 12): no user-scope vault (each run gets its own, the core's): .claude.json lists no user-scope
+    # vault, whatever an older chart left there; an older image's runs keep the user-scope docs entry alone
+    for has, want in ((True, []), (False, ["docs"])):
         d = tempfile.mkdtemp(); nl = os.path.join(d, "naila")
         os.makedirs(f"{nl}/packages/harness/dist")
         if has: open(f"{nl}/packages/harness/dist/docs-relay.js", "w").write("")
@@ -2592,8 +2706,9 @@ for label, path in zip(("test", "real", "two channels", "real, RC off"), sys.arg
         q = subprocess.run(["node", "-e", mc[0].group(1), *args], capture_output=True, text=True)
         got = sorted(json.load(open(cj)).get("mcpServers", {})) if q.returncode == 0 else q.stderr.strip()
         if got != want: bad.append(f"{tag}: with{'' if has else 'out'} dist/docs-relay.js the user-scope servers are {got!r}, want {want!r} (DOCS_BY_CORE={by!r})")
+        if isinstance(got, list) and "vault" in got: bad.append(f".claude.json lists no user-scope vault ({label}): with{'' if has else 'out'} dist/docs-relay.js it lists {got!r}")
         if not has:
-            json.dump({"mcpServers": {"vault": {}}}, open(cj, "w"))
+            json.dump({"mcpServers": {"vault": {}}}, open(cj, "w"))   # a vault entry, no docs one
             if subprocess.run(["node", "-e", mc[0].group(1), *args], capture_output=True, text=True).returncode == 0: bad.append(f"{tag}: on an older image it accepts a ~/.claude.json without the docs entry")
     if not re.search(r'^\s*if \[ "\$DOCS_BY_CORE" = 0 \]; then[^\n]*\n(?:[^\n]*\n)*?\s*claude mcp add --transport http docs --scope user http://127\.0\.0\.1:3002/mcp >/dev/null\n\s*fi$', start, re.M):
         bad.append(f"{tag}: the user-scope docs entry is not added only when DOCS_BY_CORE is 0")
@@ -2921,8 +3036,8 @@ def sh(lines, env, prefix=""):
 def died(p, *says): return p.returncode == 2 and "started" not in p.stdout and all(s in p.stderr for s in says)
 def started(p): return p.returncode == 0 and p.stdout.strip() == "started"
 
-roles_check = one(lambda l: l == "if (m.ROLES_SPEC_VERSION === 5) return")   # the roles spec 5 guard (plan 7b Task 8; a one-line === 4 check before)
-prepare_at = one(lambda l: l.startswith('out=$(node "$PREPARE" '))
+roles_check = one(lambda l: l == "if (m.ROLES_SPEC_VERSION === 6) return")   # the roles spec 6 guard (workers by plan Task 18; === 5 from plan 7b Task 8, a one-line === 4 check before)
+prepare_at = one(lambda l: l.startswith('  out=$(node "$PREPARE" '))   # in prepare_runs since workers by plan Task 18 (unindented before)
 settings_at = one(lambda l: l.startswith("# Settings:"))
 lead_at = one(lambda l: l.startswith("LEAD=$(node -e '"))
 mkdir_at = one(lambda l: l == 'mkdir -p "$W/$LEAD" "$W/_summary"')
@@ -2970,7 +3085,8 @@ if pb:
         for label, r in (("prod", prod), ("test phase", test), ("real phase", real)):
             if not started(p := pairing(REAL_DIST, val(r, "HARNESS_SERVICES"))): bad.append(f"{tag}: the {label} render's HARNESS_SERVICES against {REAL_DIST}: exit {p.returncode} {p.stderr.strip()!r}")
 
-# P6: the bearers follow the roles config and the enabled services
+# P6: the bearers follow the roles config and the enabled services (workers by plan Task 18: the roles' bearers are checked by
+# prepare.js, the enabled services' write credentials here)
 tag = "harness-start dies when a role's bearer or an enabled write credential is unset"
 if any("a bearer is missing (MCP_FINANCE_TOKEN, MCP_FINANCE_READ_TOKEN, MCP_OPS_TOKEN)" in l for l in sl): bad.append(f"{tag}: harness-start.sh still requires the three literal bearers")
 bb = span(lambda l: l.startswith("bearers=$(node -e '"), lambda l: l == '[ -z "$missing" ] || die "a bearer is missing ($missing)"', "bearer check (bearers=$(node -e ... a bearer is missing ($missing))")
@@ -2989,34 +3105,50 @@ if bb and pb:
         d = tempfile.mkdtemp(); open(f"{d}/spec.json", "w").write(r[CMH]["data"]["harness-workers.json"])
         p = sh([l.replace("/config/harness-workers.json", f"{d}/spec.json") for l in sl[bb[0]:bb[1] + 1]], {"HARNESS_SERVICES": services or val(r, "HARNESS_SERVICES"), **env})
         shutil.rmtree(d); return p
+    # workers by plan Task 18: the roles' own bearers (MCP_FINANCE_READ_TOKEN, MCP_OPS_TOKEN) are prepare.js's to check (Task 5:
+    # a Git role's unset bearer exits 2 there, the oracle check "MCP_OPS_TOKEN unset" above, a runtime role's is left out), so
+    # harness-start's check keeps the enabled services' write credentials alone: until Task 18 each of the three unset (and
+    # MCP_OPS_TOKEN empty) died here; now MCP_FINANCE_TOKEN does, and the two role bearers start
+    ROLE_BEARERS = ("MCP_FINANCE_READ_TOKEN", "MCP_OPS_TOKEN")
+    if any("harness-workers.json" in l for l in sl[bb[0]:bb[1] + 1]): bad.append(f"{tag}: the bearer check still reads the roles config")
     for label, r in (("test phase", test), ("real phase", real)):
         if not started(p := bearers(r, ALL)): bad.append(f"{tag}: refuses the {label} render with every bearer set: {p.stderr.strip()!r}")
         for k in ALL:
-            if not died(p := bearers(r, {x: v for x, v in ALL.items() if x != k}), f"a bearer is missing ({k})"): bad.append(f"{tag}: {k} unset ({label}): exit {p.returncode} {p.stderr.strip()!r}, want 2 saying a bearer is missing ({k})")
-        if not died(p := bearers(r, {**ALL, "MCP_OPS_TOKEN": ""}), "a bearer is missing (MCP_OPS_TOKEN)"): bad.append(f"{tag}: MCP_OPS_TOKEN empty ({label}): exit {p.returncode} {p.stderr.strip()!r}")
+            p = bearers(r, {x: v for x, v in ALL.items() if x != k})
+            if k in ROLE_BEARERS:
+                if not started(p): bad.append(f"{tag}: the role bearer {k} unset ({label}) fails harness-start's own check (prepare.js's to check): exit {p.returncode} {p.stderr.strip()!r}")
+            elif not died(p, f"a bearer is missing ({k})"): bad.append(f"{tag}: {k} unset ({label}): exit {p.returncode} {p.stderr.strip()!r}, want 2 saying a bearer is missing ({k})")
+        if not started(p := bearers(r, {**ALL, "MCP_OPS_TOKEN": ""})): bad.append(f"{tag}: MCP_OPS_TOKEN empty ({label}) fails harness-start's own check: exit {p.returncode} {p.stderr.strip()!r}")
+        if not died(p := bearers(r, {**ALL, "MCP_FINANCE_TOKEN": ""}), "a bearer is missing (MCP_FINANCE_TOKEN)"): bad.append(f"{tag}: MCP_FINANCE_TOKEN empty ({label}): exit {p.returncode} {p.stderr.strip()!r}")
     web_cred = json.dumps({**json.loads(val(real, "HARNESS_SERVICES")), "services": {**json.loads(val(real, "HARNESS_SERVICES"))["services"], "web": {"writeCredentials": ["MCP_WEB_WRITE"]}}})
     if not died(p := bearers(real, ALL, web_cred), "a bearer is missing (MCP_WEB_WRITE)"): bad.append(f"{tag}: an enabled service's write credential (MCP_WEB_WRITE) unset: exit {p.returncode} {p.stderr.strip()!r}")
     if not started(p := bearers(real, {**ALL, "MCP_WEB_WRITE": "w2"}, web_cred)): bad.append(f"{tag}: refuses an enabled service's write credential that is set: {p.stderr.strip()!r}")
     odd = copy.deepcopy(real); spec_ = json.loads(odd[CMH]["data"]["harness-workers.json"])
     next(r_ for r_ in spec_["roles"] if r_["id"] == "ops-oncall")["servers"][0]["bearer"] = "MCP_OPS_TOKEN; true"
     odd[CMH]["data"]["harness-workers.json"] = json.dumps(spec_)
-    if not died(p := bearers(odd, ALL)): bad.append(f"{tag}: a role bearer that is no env name: exit {p.returncode} {p.stderr.strip()!r}, want 2")
+    # workers by plan Task 18: a role bearer that is no env name is the roles validator's and prepare.js's to refuse (was: died here)
+    if not started(p := bearers(odd, ALL)): bad.append(f"{tag}: a role bearer that is no env name changes harness-start's own check: exit {p.returncode} {p.stderr.strip()!r}")
+    bad_cred = json.dumps({**json.loads(val(real, "HARNESS_SERVICES")), "services": {**json.loads(val(real, "HARNESS_SERVICES"))["services"], "web": {"writeCredentials": ["MCP_WEB; true"]}}})
+    if not died(p := bearers(real, ALL, bad_cred)): bad.append(f"{tag}: a write credential that is no env name: exit {p.returncode} {p.stderr.strip()!r}, want 2")
     if nofin is not None:
         tag = "a chart with finance disabled starts without the finance env (P6)"
         if not started(p := bearers(nofin, {"MCP_OPS_TOKEN": ALL["MCP_OPS_TOKEN"]})): bad.append(f"{tag}: the bearer check refuses it: {p.stderr.strip()!r}")
-        if not died(p := bearers(nofin, {}), "a bearer is missing (MCP_OPS_TOKEN)"): bad.append(f"{tag}: MCP_OPS_TOKEN unset: exit {p.returncode} {p.stderr.strip()!r}")
+        # workers by plan Task 18: MCP_OPS_TOKEN unset is prepare.js's to refuse (a Git role's bearer); was: died here
+        if not started(p := bearers(nofin, {})): bad.append(f"{tag}: nothing set fails harness-start's own check on a chart without finance (no write credential enabled): exit {p.returncode} {p.stderr.strip()!r}")
         if pb and HAVE_DIST and not started(p := pairing(REAL_DIST, val(nofin, "HARNESS_SERVICES"))): bad.append(f"{tag}: the pairing refuses it against the built image: {p.stderr.strip()!r}")
 
 # the leak check: no agent file holds the value of a write credential the image declares, enabled or not
 tag = "harness-start dies when an agent file holds a declared write credential's value, enabled or not"
 if any('"$MCP_FINANCE_TOKEN"' in l for l in sl if not l.lstrip().startswith("#")): bad.append(f"{tag}: harness-start.sh still checks the literal $MCP_FINANCE_TOKEN")
-lb = span(lambda l: l.startswith("wcreds=$(node -e '"), lambda l: l.startswith("for k in $wcreds; do"), "leak check (wcreds=$(node -e ... for k in $wcreds; do ...)")
+# workers by plan Task 18: wcreds is read once, before prepare_runs; its loop runs in prepare_runs, after each prepare (the
+# span was one block after prepare.js before: `not prepare_at < lb[0] < settings_at`); run as the two lines it is
+lb = span(lambda l: l.startswith("wcreds=$(node -e '"), lambda l: l.startswith("  for k in $wcreds; do"), "leak check (wcreds=$(node -e ... for k in $wcreds; do ...)")
 if lb and pb:
-    if not prepare_at[0] < lb[0] < settings_at[0]: bad.append(f"{tag}: the leak check is not after prepare.js and before the settings")
+    if not lb[0] < prepare_at[0] < lb[1] < settings_at[0]: bad.append(f"{tag}: the leak check is not wcreds before prepare_runs, then its loop after prepare.js, before the settings")
     def leak(reg, env, files):
         d = stub_dist(reg); c = tempfile.mkdtemp(); os.makedirs(f"{c}/agents")
         for n, t in files.items(): open(f"{c}/agents/{n}.md", "w").write(t)
-        p = sh(sl[lb[0]:lb[1] + 1], env, f"SERVICES_JS={d}/services/registry.js; C={c}\n"); shutil.rmtree(d); shutil.rmtree(c); return p
+        p = sh([sl[lb[0]], sl[lb[1]]], env, f"SERVICES_JS={d}/services/registry.js; C={c}\n"); shutil.rmtree(d); shutil.rmtree(c); return p
     clean = {"naila": "body", "finance-bookkeeper": f"bearer {ALL['MCP_FINANCE_READ_TOKEN']}", "ops-oncall": f"bearer {ALL['MCP_OPS_TOKEN']}"}
     if not started(p := leak(registry(), ALL, clean)): bad.append(f"{tag}: refuses agent files holding only the read and ops bearers: {p.stderr.strip()!r}")
     if not died(p := leak(registry(), ALL, {**clean, "finance-advisor": f"x {ALL['MCP_FINANCE_TOKEN']} y"}), "a worker holds a write credential (MCP_FINANCE_TOKEN)"): bad.append(f"{tag}: the finance write bearer in an agent file: exit {p.returncode} {p.stderr.strip()!r}")
@@ -3057,8 +3189,47 @@ elif pb:
         if q.returncode != 0 or json.loads(q.stdout or "null") != REFUSED: bad.append(f"{tag}: the built naila RESEARCHED_WRITE_REFUSED differs from this file's copy: {(q.stdout or q.stderr)[:300]}")
         if not started(p := parity(REAL_DIST)): bad.append(f"{tag}: refuses the chart's write guard against naila's built dist: {p.stderr.strip()!r}")
 
+# workers by plan Task 13: the chart's read guard keeps the lead out of the private folders: harness-start runs it as the lead
+# (no private folder of its own) with --by-origin --private-root <VAULT_ROOT>/Private, and dies unless it denies a Read under
+# Private/<the lead's id>/ and Private/<a probe>/ with the image's PRIVATE_REFUSAL, and a Grep of the vault root with its
+# PRIVATE_SEARCH_REFUSAL. Run as rendered on the chart's read guard, on weakened copies and on naila's built dist.
+tag = "harness-start dies on a read-guard that lets the lead into Private"
+PRIV_SAYS = "harness-start: read-guard.mjs does not deny the private folders: ship it with the image"
+PRIV_REFUSAL = "That folder is private: only the worker it belongs to may read or write it."
+PRIV_SEARCH = "search a folder: the vault root holds private folders"
+qe = one(lambda l: l.startswith("})().catch(") and l.endswith(" /config/read-guard.mjs /naila/packages/harness/dist/floor/paths.js \"$VAULT_ROOT\" \"$LEAD\""))
+qs = [i for i in range(qe[0], -1, -1) if sl[i].startswith("node -e '")][:1] if len(qe) == 1 else []
+if len(qe) != 1 or not qs: bad.append(f"{tag}: want one private-folder check of the read guard (node -e ... /config/read-guard.mjs /naila/packages/harness/dist/floor/paths.js \"$VAULT_ROOT\" \"$LEAD\"), got {len(qe)}")
+else:
+    if not mkdir_at[0] < qs[0] < qe[0] < spec_export[0]: bad.append(f"{tag}: the check is not after LEAD and its mkdir, and before the core is told the spec")
+    RG = {**test[CMC]["data"], **test[CMH]["data"]}["read-guard.mjs"]
+    old_rg = {**srt[CMC]["data"], **srt[CMH]["data"]}.get("read-guard.mjs", "")   # the SETTINGS_REF chart's, before the private rule
+    PATHS_JS = f"export const PRIVATE_REFUSAL = {json.dumps(PRIV_REFUSAL)}\nexport const PRIVATE_SEARCH_REFUSAL = {json.dumps(PRIV_SEARCH)}\n"
+    def private_check(rguard=RG, paths=PATHS_JS, lead="naila", dist=None):
+        cfg, dd = tempfile.mkdtemp(), dist or tempfile.mkdtemp(); open(f"{cfg}/read-guard.mjs", "w").write(rguard)
+        if dist is None:
+            os.makedirs(f"{dd}/floor"); open(f"{dd}/package.json", "w").write('{"type":"module"}')
+            if paths is not None: open(f"{dd}/floor/paths.js", "w").write(paths)
+        lines = [l.replace("/naila/packages/harness/dist/", dd + "/").replace("/config/", cfg + "/") for l in sl[qs[0]:qe[0] + 1]]
+        p = sh(lines, {}, f"VAULT_ROOT=/vault; LEAD={shlex.quote(lead)}\n")
+        shutil.rmtree(cfg)
+        if dist is None: shutil.rmtree(dd)
+        return p
+    if not started(p := private_check()): bad.append(f"{tag}: refuses the chart's read guard: {p.stderr.strip()!r}")
+    for what, rg_ in (("a read guard without the private rule", RG.replace("deny(PRIVATE_TEXT)", "void 0").replace("deny(PRIVATE_SEARCH)", "void 0")),
+                      ("a read guard that lets a search of the vault root through", RG.replace("deny(PRIVATE_SEARCH)", "void 0")),
+                      ("a read guard that lets a Read in Private through", RG.replace("deny(PRIVATE_TEXT)", "void 0")),
+                      ("a read guard that treats the lead's own id as its folder", RG.replace("=== `${PR}/${worker}` ? fold(worker) : undefined", "!== undefined || true ? fold(worker) : undefined")),
+                      ("a read guard older than the private rule (the ref's)", old_rg)):
+        if rg_ == RG: bad.append(f"{tag}: {what}: the weakened copy is the chart's own (the guard changed: update this check)"); continue
+        if not died(p := private_check(rguard=rg_), PRIV_SAYS): bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {PRIV_SAYS!r}")
+    if not died(p := private_check(paths=PATHS_JS.replace("only the worker", "only the role"))): bad.append(f"{tag}: an image whose PRIVATE_REFUSAL differs: exit {p.returncode} {p.stderr.strip()!r}")
+    if not died(p := private_check(paths=None), "PRIVATE_REFUSAL"): bad.append(f"{tag}: an image without floor/paths.js: exit {p.returncode} {p.stderr.strip()!r}, want 2 naming PRIVATE_REFUSAL")
+    if not died(p := private_check(lead="")): bad.append(f"{tag}: the guard run without a lead passes: exit {p.returncode} {p.stderr.strip()!r}")
+    if HAVE_DIST and not started(p := private_check(dist=REAL_DIST)): bad.append(f"{tag}: refuses the chart's read guard against naila's built dist: {p.stderr.strip()!r}")
+
 # call 9: the settings harness-start writes are byte-identical to the SETTINGS_REF chart's (default aefa661), both phases,
-# but for the static allow's memory tools (plan 7b Task 18)
+# but for the static allow's memory tools (plan 7b Task 18) and every vault hook's --private-root (workers by plan Task 13)
 tag = f"the rendered settings.json is byte-identical to the SETTINGS_REF ({sref}) chart's"
 UNDO_LINE = b'      "mcp__core__self_note_undo"\n'
 MEMORY_LINES = b'      "mcp__core__self_note_undo",\n      "mcp__core__standing_save",\n      "mcp__core__standing_remove",\n      "mcp__core__history_search"\n'
@@ -3092,7 +3263,12 @@ for ph, now_, then_ in (("test", test, srt), ("real", real, srr)):
     if len(at_) != 1 or not desk_: bad.append(f"{tag}: the ref's settings have {len(at_)} docs-sock Write denies, or the render no HARNESS_DESK_ROOT ({ph} phase)"); continue
     ind_ = at_[0][:len(at_[0]) - len(at_[0].lstrip())]
     t_ = t_.replace(at_[0], at_[0] + "".join(f'{ind_}"{x}(//run/{f_}/**)",\n' for f_ in ("files-token", "files-sock") for x in ("Read", "Edit", "Write")))
-    t_, n_ = re.subn(r"(docs-grant\.mjs --by-caps --uploads \S+ --root \S+)( --exclude \S+)? \|\| exit 2", lambda m_: f"{m_.group(1)} --desk {desk_}{m_.group(2) or ''} || exit 2", t_)
+    # workers by plan Task 13: and every vault hook's --private-root <VAULT_ROOT>/Private, at its fixed position
+    pr_ = f"{val(now_, 'VAULT_ROOT')}/Private"
+    t_, n_ = re.subn(r"(docs-grant\.mjs --by-caps --uploads \S+ --root \S+)( --exclude \S+)? \|\| exit 2", lambda m_: f"{m_.group(1)} --private-root {pr_} --desk {desk_}{m_.group(2) or ''} || exit 2", t_)
+    t_, nr_ = re.subn(r"read-guard\.mjs --by-origin \|\| exit 2", f"read-guard.mjs --by-origin --private-root {pr_} || exit 2", t_)
+    t_, nw_ = re.subn(r"(harness-write-guard\.mjs --root \S+) \|\| exit 2", lambda m_: f"{m_.group(1)} --private-root {pr_} || exit 2", t_)
+    if nr_ != 1 or nw_ != 1: bad.append(f"{tag}: the ref's settings have {nr_} read guards and {nw_} write guards ({ph} phase)")
     if n_ != 1: bad.append(f"{tag}: the ref's settings have {n_} docs hooks ({ph} phase)")
     elif t_.count(UNDO_LINE.decode()) != 1 or a != t_.replace(UNDO_LINE.decode(), MEMORY_LINES.decode()).encode(): bad.append(f"{tag}: they differ beyond the files sidecar's six denies, the docs hook's --desk and the allow's memory tools after self_note_undo ({ph} phase): {' | '.join(l for l in __import__('difflib').unified_diff(t_.replace(UNDO_LINE.decode(), MEMORY_LINES.decode()).splitlines(), a.decode().splitlines(), n=0, lineterm='') if l[:1] in '+-')[:600]}")
 
@@ -3416,7 +3592,8 @@ PY
 #    providerSettings, memory or files, a numeric ref); the real phase dies unless
 #    VAULT_EXCLUDE names the profile's test folder; a test folder or workspace root that is no plain path dies;
 #  - the prod render pairs with the built image, printing Harness-test, Finance, Naila/Workspace and an empty VAULT_PATHS;
-#  - a non-default profile (system Home) reaches the user-scope vault server as VAULT_PATHS (prod's adds nothing), and the
+#  - a non-default profile (system Home) reaches the pairing as VAULT_PATHS (prod's adds nothing; no user-scope vault server
+#    takes it since workers by plan Task 13: each run's own, the core's, does), and the
 #    advisor's finance-notes server (its root and VAULT_PATHS); the chart's copy of vault-mcp's DEFAULT_VAULT_PATHS is the
 #    image's (a profile equal to it adds no VAULT_PATHS, one that differs in any key does);
 #  - the test phase's P8 rules, the test-phase allow check and the write guard's root follow the profile (a moved finance,
@@ -3570,8 +3747,10 @@ if HAVE:
     cfg = config(prod, bent); p = pairing(DIST, VDIST, cfg); shutil.rmtree(cfg)
     if not died(p, REFUSES, "profile.paths.inbox", "is or lies under Workers/"): bad.append(f"{tag}: the built image accepts an inbox under Workers/: exit {p.returncode} {p.stderr.strip()!r}")
 
-# a non-default profile reaches the user-scope vault server; production's adds nothing
-tag = "a non-default profile reaches the user-scope vault server"
+# a non-default profile reaches the pairing as VAULT_PATHS; production's adds nothing. Workers by plan Task 13 (call 12): no
+# user-scope vault server takes it any more (each run's own, naila's coreServerDecls, carries the profile's VAULT_PATHS):
+# harness-start removes one an older chart added and adds none
+tag = "a non-default profile reaches the pairing as VAULT_PATHS, and no user-scope vault server is added"
 home = prof(prod); home["profile"]["paths"]["system"] = "Home"
 d_ = stub(); cfg = config(prod, home)
 p = pairing(DIST, VDIST, cfg) if HAVE else pairing(f"{d_}/h", f"{d_}/v", cfg)
@@ -3580,25 +3759,11 @@ vp = shown(p).split("|", 3)[3] if started(p) and shown(p).count("|") >= 3 else N
 if vp is None or shown(p).split("|")[2] != "Home/Workspace": bad.append(f"{tag}: the pairing with system Home: exit {p.returncode} {p.stderr.strip()!r}, printed {shown(p)!r}")
 elif json.loads(vp or "null") != home["profile"]["paths"]: bad.append(f"{tag}: VAULT_PATHS is {vp!r}, want the profile's paths")
 va = one(lambda l: l == "claude mcp remove vault --scope user >/dev/null 2>&1 || true")
-vb = one(lambda l: l.startswith("claude mcp add vault --scope user "))
-if len(va) != 1 or len(vb) != 1 or not va[0] < vb[0]: bad.append(f"{tag}: want one claude mcp remove vault, then one claude mcp add vault")
-elif vp is not None:
-    b_ = tempfile.mkdtemp()
-    open(f"{b_}/claude", "w").write('#!/bin/sh\n[ "$1 $2" = "mcp add" ] && printf "%s\\n" "$@" > "$LOG"\nexit 0\n'); os.chmod(f"{b_}/claude", 0o755)
-    def added(paths):
-        log = f"{b_}/log"
-        if os.path.exists(log): os.remove(log)
-        q = subprocess.run(["bash", "-c", "set -eu\n" + "\n".join(sl[va[0]:vb[0] + 1])], capture_output=True, text=True,
-                           env={"PATH": f"{b_}:{os.environ['PATH']}", "LOG": log, "VAULT_ROOT": "/vault", "TZ": "Asia/Jakarta", "VAULT_SERVER": "/s.js", "SETUP_VAULT_PATHS": paths})
-        return q, (open(log).read().splitlines() if os.path.exists(log) else [])
-    q, args = added(vp)
-    if q.returncode != 0 or f"VAULT_PATHS={vp}" not in args or args[args.index(f"VAULT_PATHS={vp}") - 1] != "-e": bad.append(f"{tag}: the claude mcp add vault line does not carry -e VAULT_PATHS=<the profile's paths>: {args} {q.stderr.strip()!r}")
-    q, args = added("")
-    if q.returncode != 0 or any(a.startswith("VAULT_PATHS") for a in args) or args[-2:] != ["node", "/s.js"]: bad.append(f"{tag}: production's paths (empty VAULT_PATHS) still add one: {args} {q.stderr.strip()!r}")
-    shutil.rmtree(b_)
-    if HAVE:
-        q = subprocess.run(["node", "--input-type=module", "-e", f"const m = await import({json.dumps(VDIST + '/layout.js')}); process.stdout.write(m.layoutFromEnv(process.argv[1]).workspaces)", vp], capture_output=True, text=True)
-        if q.stdout != "Home/Workspace": bad.append(f"{tag}: the built vault server's layoutFromEnv reads VAULT_PATHS as {q.stdout or q.stderr.strip()!r}, want Home/Workspace")
+vb = one(lambda l: re.match(r"^\s*claude mcp add vault\b", l) is not None)
+if len(va) != 1 or vb: bad.append(f"{tag}: want one claude mcp remove vault and no claude mcp add vault (got {len(va)} and {len(vb)})")
+elif vp is not None and HAVE:
+    q = subprocess.run(["node", "--input-type=module", "-e", f"const m = await import({json.dumps(VDIST + '/layout.js')}); process.stdout.write(m.layoutFromEnv(process.argv[1]).workspaces)", vp], capture_output=True, text=True)
+    if q.stdout != "Home/Workspace": bad.append(f"{tag}: the built vault server's layoutFromEnv reads VAULT_PATHS as {q.stdout or q.stderr.strip()!r}, want Home/Workspace")
 
 # the advisor's finance-notes server follows the profile; the chart's copy of DEFAULT_VAULT_PATHS is the image's
 tag = "the advisor's finance-notes server takes its root and VAULT_PATHS from the profile"
@@ -3660,7 +3825,7 @@ if r is not None:
             dn = s["permissions"]["deny"]
             if "Read(//vault/Money/**)" not in dn or "Read(//vault/Finance/**)" in dn: bad.append(f"{tag}: the test phase denies {[x for x in dn if x.startswith('Read(//vault/')]}, want Read(//vault/Money/**) and not Finance")
             wg = [h["command"] for e in s["hooks"]["PreToolUse"] for h in e["hooks"] if "write-guard" in h["command"]]
-            want = f"node /config/harness-write-guard.mjs --root {val(r, 'VAULT_ROOT')}/Home/Workspace || exit 2"
+            want = f"node /config/harness-write-guard.mjs --root {val(r, 'VAULT_ROOT')}/Home/Workspace --private-root {val(r, 'VAULT_ROOT')}/Private || exit 2"   # workers by plan Task 13
             if wg != [want] or val(r, "VAULT_ROOT") != "/vault/Probe-x": bad.append(f"{tag}: the write guard is {wg}, want [{want!r}] (VAULT_ROOT {val(r, 'VAULT_ROOT')!r})")
             if HAVE:
                 def check(settings):
@@ -3816,10 +3981,11 @@ if HAVE:
     tag = "the prod render pairs with the built image"
     sl = prod[HC]["data"]["harness-start.sh"].splitlines()
     sj = [i for i, l in enumerate(sl) if l == "SPEC_JS=/naila/packages/harness/dist/workers-spec.js"]
-    # plan 7b Task 8: the guard is a block now (SPEC_JS= to the node -e call's last line), testing m.ROLES_SPEC_VERSION === 5
+    # plan 7b Task 8: the guard is a block now (SPEC_JS= to the node -e call's last line), testing m.ROLES_SPEC_VERSION === 6
+    # (=== 5 until workers by plan Task 18)
     se = [j for j in range(sj[0], len(sl)) if sl[j].endswith(' "$SPEC_JS"')][:1] if len(sj) == 1 else []
-    sc = [i for i in range(sj[0], se[0] + 1) if sl[i] == "if (m.ROLES_SPEC_VERSION === 5) return"] if se else []
-    if len(sj) != 1 or len(sc) != 1 or not sj[0] < sc[0]: bad.append(f"{tag}: want one SPEC_JS= line, then one roles spec 5 guard (got {len(sj)}, {len(sc)})")
+    sc = [i for i in range(sj[0], se[0] + 1) if sl[i] == "if (m.ROLES_SPEC_VERSION === 6) return"] if se else []
+    if len(sj) != 1 or len(sc) != 1 or not sj[0] < sc[0]: bad.append(f"{tag}: want one SPEC_JS= line, then one roles spec 6 guard (got {len(sj)}, {len(sc)})")
     else:
         snippet = "\n".join(sl[sj[0]:se[0] + 1]).replace("/naila/packages/harness/dist/", DIST + "/")
         p = subprocess.run(["bash", "-c", 'set -eu; die() { echo "harness-start: $*" >&2; exit 2; }\n' + snippet + "\necho started"], capture_output=True, text=True)
@@ -4488,7 +4654,7 @@ tag = "the prod render's summary is the roles spec 5's"
 for label, r in (("prod", prod), ("test phase", test), ("staging (harness on)", staging_on)):
     s = spec(r)
     if s is None: bad.append(f"{tag}: the {label} render has no JSON harness-workers.json"); continue
-    if s.get("version") != 5: bad.append(f"{tag}: the {label} spec's version is {s.get('version')!r}, want 5")
+    if s.get("version") != 6: bad.append(f"{tag}: the {label} spec's version is {s.get('version')!r}, want 6")   # 5 until workers by plan Task 18 (its block, this file's last, checks restart and texts)
     if s.get("summary") != SUMMARY: bad.append(f"{tag}: the {label} summary is {json.dumps(s.get('summary'))}, want {json.dumps(SUMMARY)}")
     if '"summary":{"brain":{"model":"default","provider":"claude-subscription"},"maxChars":60000}' not in r[HC]["data"]["harness-workers.json"]: bad.append(f"{tag}: the {label} harness-workers.json does not render the summary as one JSON object with maxChars 60000")
 if HAVE:
@@ -4646,6 +4812,31 @@ def undo_files(r, now):
                     for e in c_["env"]:
                         if e["name"] == "DOCS_ROOTS" and e["value"].endswith(":/desk"): e["value"] = e["value"][:-len(":/desk")]
     return r
+# workers by plan Task 13's harness-start.sh change (every vault hook's --private-root <VAULT_ROOT>/Private, its checks, the
+# read guard's private-folder check after the write guard's, and no user-scope vault server), undone text for text: each text
+# it wrote, as often as it wrote it, back to what it replaced; its read-guard check block as a whole
+PRIVATE_START = [
+    ('// workers by plan Task 13: every vault hook takes the private folders of the roles, <VAULT_ROOT>/Private, at a fixed position\n', '', 1),
+    ('command: `node /config/read-guard.mjs --by-origin --private-root ${root}/Private || exit 2` }', 'command: "node /config/read-guard.mjs --by-origin || exit 2" }', 1),
+    ('--root ${root} --private-root ${root}/Private${docsDesk}', '--root ${root}${docsDesk}', 1),
+    ('${root}/${workspaces} --private-root ${root}/Private || exit 2`', '${root}/${workspaces} || exit 2`', 2),
+    ('--root ${esc(root)} --private-root ${esc(root)}/Private( --desk', '--root ${esc(root)}( --desk', 1),
+    ('(docs-grant.mjs --by-caps --root VAULT_ROOT --private-root VAULT_ROOT/Private)', '(docs-grant.mjs --by-caps --root VAULT_ROOT)', 1),
+    ('const rguard = `node /config/read-guard.mjs --by-origin --private-root ${root}/Private || exit 2`', 'const rguard = "node /config/read-guard.mjs --by-origin || exit 2"', 1),
+    ('origin and kept out of the private folders (read-guard.mjs --by-origin --private-root ${root}/Private)`)', 'origin (read-guard.mjs --by-origin)`)', 1),
+    ('[guard, "--root", `${root}/${workspaces}`, "--private-root", `${root}/Private`]', '[guard, "--root", `${root}/${workspaces}`]', 1),
+    ('claude mcp remove vault --scope user >/dev/null 2>&1 || true\nclaude mcp remove docs', 'claude mcp remove vault --scope user >/dev/null 2>&1 || true\nvault_env=(-e VAULT_ROOT="$VAULT_ROOT" -e TZ="$TZ")\n[ -z "${VAULT_EXCLUDE:-}" ] || vault_env+=(-e VAULT_EXCLUDE="$VAULT_EXCLUDE")   # real phase: the test folder stays out\nvault_env+=(-e VAULT_WORKERS_WRITE=0)   # the runs never get workers_write (the floor denies it too); checked supported above\n[ -z "$SETUP_VAULT_PATHS" ] || vault_env+=(-e VAULT_PATHS="$SETUP_VAULT_PATHS")   # the profile\'s paths, when not production\'s\nclaude mcp add vault --scope user "${vault_env[@]}" -- node "$VAULT_SERVER" >/dev/null\nclaude mcp remove docs', 1),
+    ('const want = byCore === "1" ? [] : ["docs"]', 'const want = byCore === "1" ? ["vault"] : ["vault", "docs"]', 1),
+]
+PRIVATE_CHECK = re.compile(r"^node -e '\nconst \{ spawnSync \} = require\(\"child_process\"\)\nconst \[guard, paths, root, lead\] = process\.argv\.slice\(1\)\n.*?^\}\)\(\)\.catch\([^\n]*' /config/read-guard\.mjs /naila/packages/harness/dist/floor/paths\.js \"\$VAULT_ROOT\" \"\$LEAD\"\n", re.M | re.S)
+def without_private(t):
+    """`t` (a harness-start.sh) without workers by plan Task 13's lines, and the problem when one is not there as it wrote them."""
+    t, n_ = PRIVATE_CHECK.subn("", t)
+    if n_ != 1: return t, f"harness-start.sh holds the read guard's private-folder check {n_} times, workers by plan Task 13 wrote it once"
+    for new_, old_, k_ in PRIVATE_START:
+        if t.count(new_) != k_: return t, f"harness-start.sh holds {new_[:60]!r}… {t.count(new_)} times, workers by plan Task 13 wrote it {k_}"
+        t = t.replace(new_, old_)
+    return t, None
 # file actions' harness-start.sh change (its Task 17: the desk, HARNESS_DESK_ROOT, as the docs hook's --desk), undone text for
 # text: each text it wrote, as often as it wrote it, back to what it replaced (plan 7b's rebase onto file actions)
 DESK_START = [
@@ -4683,6 +4874,9 @@ def strip(r, now):
         s = spec(r)
         if s is not None and now: s["version"] = 4; s.get("summary", {}).pop("maxChars", None)
         if s is not None: r[HC]["data"]["harness-workers.json"] = s
+    # workers by plan Task 13: the read and write guards take --private-root (tests/floor-conformance.sh and the checks above run them)
+    if CC in r:
+        for k_ in ("read-guard.mjs", "harness-write-guard.mjs"): r[CC]["data"].pop(k_, None)
     if H in r: r[H]["spec"]["template"]["metadata"].get("annotations", {}).pop("checksum/config", None)
     return r
 diffs = (("prod", prod, prod_ref, True), ("test phase", test, test_ref, True), ("harness off", off, off_ref, False), ("staging", staging, staging_ref, False))
@@ -4696,7 +4890,8 @@ for label, a, b, moved in diffs:
         if (spec(a) or {}).get("version") != 5: bad.append(f"{tag}: its harness-workers.json is not version 5")
         if "maxChars" in (spec(b) or {}).get("summary", {}): bad.append(f"{tag}: the ref's summary already has a maxChars")
         if checksum(a) is None or checksum(a) == checksum(b): bad.append(f"{tag}: the harness checksum is {checksum(a)!r}, the ref's {checksum(b)!r}: want a new one")
-        start_a, why_ = without_desk(a[HC]["data"]["harness-start.sh"]) if setup3 else (a[HC]["data"]["harness-start.sh"], None)   # file actions' desk lines, composed
+        start_a, why_ = without_private(a[HC]["data"]["harness-start.sh"])
+        if not why_: start_a, why_ = without_desk(start_a) if setup3 else (start_a, None)   # file actions' desk lines, composed
         if why_: bad.append(f"{tag}: {why_}")
         bad += [f"{tag}: {g}" for g in start_gaps(start_a, b[HC]["data"]["harness-start.sh"])]
         sa, sb = strip(a, True), strip(b, False)
@@ -5255,6 +5450,31 @@ for label, r in (("prod", prod), ("test phase", test)):
     if any(x in rp for x in ("standing_save", "standing_remove", "history_search", "standing fact")): bad.append(f"{tag}: the {label} researcher's instructions name the memory")
 
 # the whole render, as at <git-ref> but for Task 18's change and file actions' (and Task 8's while <git-ref> renders roles spec 4)
+# workers by plan Task 13's harness-start.sh change (every vault hook's --private-root <VAULT_ROOT>/Private, its checks, the
+# read guard's private-folder check after the write guard's, and no user-scope vault server), undone text for text: each text
+# it wrote, as often as it wrote it, back to what it replaced; its read-guard check block as a whole
+PRIVATE_START = [
+    ('// workers by plan Task 13: every vault hook takes the private folders of the roles, <VAULT_ROOT>/Private, at a fixed position\n', '', 1),
+    ('command: `node /config/read-guard.mjs --by-origin --private-root ${root}/Private || exit 2` }', 'command: "node /config/read-guard.mjs --by-origin || exit 2" }', 1),
+    ('--root ${root} --private-root ${root}/Private${docsDesk}', '--root ${root}${docsDesk}', 1),
+    ('${root}/${workspaces} --private-root ${root}/Private || exit 2`', '${root}/${workspaces} || exit 2`', 2),
+    ('--root ${esc(root)} --private-root ${esc(root)}/Private( --desk', '--root ${esc(root)}( --desk', 1),
+    ('(docs-grant.mjs --by-caps --root VAULT_ROOT --private-root VAULT_ROOT/Private)', '(docs-grant.mjs --by-caps --root VAULT_ROOT)', 1),
+    ('const rguard = `node /config/read-guard.mjs --by-origin --private-root ${root}/Private || exit 2`', 'const rguard = "node /config/read-guard.mjs --by-origin || exit 2"', 1),
+    ('origin and kept out of the private folders (read-guard.mjs --by-origin --private-root ${root}/Private)`)', 'origin (read-guard.mjs --by-origin)`)', 1),
+    ('[guard, "--root", `${root}/${workspaces}`, "--private-root", `${root}/Private`]', '[guard, "--root", `${root}/${workspaces}`]', 1),
+    ('claude mcp remove vault --scope user >/dev/null 2>&1 || true\nclaude mcp remove docs', 'claude mcp remove vault --scope user >/dev/null 2>&1 || true\nvault_env=(-e VAULT_ROOT="$VAULT_ROOT" -e TZ="$TZ")\n[ -z "${VAULT_EXCLUDE:-}" ] || vault_env+=(-e VAULT_EXCLUDE="$VAULT_EXCLUDE")   # real phase: the test folder stays out\nvault_env+=(-e VAULT_WORKERS_WRITE=0)   # the runs never get workers_write (the floor denies it too); checked supported above\n[ -z "$SETUP_VAULT_PATHS" ] || vault_env+=(-e VAULT_PATHS="$SETUP_VAULT_PATHS")   # the profile\'s paths, when not production\'s\nclaude mcp add vault --scope user "${vault_env[@]}" -- node "$VAULT_SERVER" >/dev/null\nclaude mcp remove docs', 1),
+    ('const want = byCore === "1" ? [] : ["docs"]', 'const want = byCore === "1" ? ["vault"] : ["vault", "docs"]', 1),
+]
+PRIVATE_CHECK = re.compile(r"^node -e '\nconst \{ spawnSync \} = require\(\"child_process\"\)\nconst \[guard, paths, root, lead\] = process\.argv\.slice\(1\)\n.*?^\}\)\(\)\.catch\([^\n]*' /config/read-guard\.mjs /naila/packages/harness/dist/floor/paths\.js \"\$VAULT_ROOT\" \"\$LEAD\"\n", re.M | re.S)
+def without_private(t):
+    """`t` (a harness-start.sh) without workers by plan Task 13's lines, and the problem when one is not there as it wrote them."""
+    t, n_ = PRIVATE_CHECK.subn("", t)
+    if n_ != 1: return t, f"harness-start.sh holds the read guard's private-folder check {n_} times, workers by plan Task 13 wrote it once"
+    for new_, old_, k_ in PRIVATE_START:
+        if t.count(new_) != k_: return t, f"harness-start.sh holds {new_[:60]!r}… {t.count(new_)} times, workers by plan Task 13 wrote it {k_}"
+        t = t.replace(new_, old_)
+    return t, None
 # file actions' harness-start.sh change (its Task 17: the desk, HARNESS_DESK_ROOT, as the docs hook's --desk), undone text for
 # text: each text it wrote, as often as it wrote it, back to what it replaced (plan 7b's rebase onto file actions)
 DESK_START = [
@@ -5359,6 +5579,8 @@ def strip(r, now, roles4, files_ref=False):
     if CC in r:
         d = r[CC]["data"]
         d.pop("docs-grant.mjs", None)
+        # workers by plan Task 13: the read and write guards take --private-root (tests/floor-conformance.sh and the checks above run them)
+        for k_ in ("read-guard.mjs", "harness-write-guard.mjs"): d.pop(k_, None)
         if "harness-settings.json" in d:
             st = json.loads(d["harness-settings.json"])
             if now:
@@ -5395,9 +5617,10 @@ for label, a, b, on in diffs:
         if (setup(b) or {}).get("version") != (4 if files_ref else 3): bad.append(f"{tag}: the ref's harness-setup.json is not version {4 if files_ref else 3}"); continue
         if (setup(a) or {}).get("version") != 5: bad.append(f"{tag}: its harness-setup.json is not version 5")
         if checksum(a) is None or checksum(a) == checksum(b): bad.append(f"{tag}: the harness checksum is {checksum(a)!r}, the ref's {checksum(b)!r}: want a new one")
-        # harness-start.sh: Task 18's setup guard (and Task 8's roles guard) and comments, once file actions' desk lines are
-        # undone (unless the ref has them too)
-        start_a, why_ = (a[HC]["data"]["harness-start.sh"], None) if files_ref else without_desk(a[HC]["data"]["harness-start.sh"])
+        # harness-start.sh: Task 18's setup guard (and Task 8's roles guard) and comments, once workers by plan Task 13's
+        # private-root lines and file actions' desk lines are undone (the desk lines unless the ref has them too)
+        start_a, why_ = without_private(a[HC]["data"]["harness-start.sh"])
+        if not why_ and not files_ref: start_a, why_ = without_desk(start_a)
         if why_: bad.append(f"{tag}: {why_}")
         bad += [f"{tag}: {g}" for g in start_gaps(start_a, b[HC]["data"]["harness-start.sh"], roles4)]
     # the RC lines restart only for an RC key file actions changed (docs-grant.mjs), never for a harness-only change
@@ -5421,4 +5644,240 @@ if bad:
 print("memory: setup spec 5 carries the limits and Memory.md, the re-make (8 runs per role) production's alone" + (", naila's parseSetup accepts them and refuses a raise" if HAVE else "")
       + "; the three permanent ceilings and the static allow hold the memory tools" + (" (the built image's CORE_ALWAYS_TOOLS)" if HAVE else "")
       + "; each permanent role says when to save a standing fact" + (f"; the render is {ref}'s but for those{'' if files_ref else ' and file actions' + chr(39) + ' change'}" if diffs else ""))
+PY
+
+# Workers by plan Task 18: roles spec 6, the restart loop, prepare's arguments and the handbooks, both sides:
+#  - the workers JSON is version 6 with restart {maxWaitMinutes 20, minGapMinutes 10} and texts {maxChars 40000} (values.yaml
+#    names each range), no role private or one-job; a restart or texts value that is no number fails the render; naila's
+#    built parser reads the prod, test-phase and staging specs;
+#  - harness-start.sh's tail runs prepare_runs, then the core as its child in a loop: on exit 75 it prepares the runs again
+#    and starts the core again ("harness-start: planned restart"), any other exit ends it with that code, and SIGTERM goes on
+#    to the core (run as rendered, with a stub node for prepare.js, the .claude.json writer and the core: 75, 75, 0 prepares
+#    three times and exits 0; 1 prepares once and exits 1; SIGTERM reaches the stub core, whose code harness-start exits with);
+#  - prepare_runs calls prepare.js with --db, --phase, the test phase's --test-note, --handbooks-base /config/handbooks and
+#    --handbooks-out /handbooks; a prepare.js whose usage names no --db fails the start ("prepare.js predates workers by
+#    plan"); harness-start's own TEST COPY loop and the roles' bearer list are gone (prepare.js does both, Task 5);
+#  - handbooks is an emptyDir (16Mi) mounted rw at /handbooks in the harness container (ro in any other that mounted it at
+#    <git-ref>), and the handbook's ConfigMap item is projected at /config/handbooks (HARNESS_HANDBOOKS_BASE); the harness
+#    checksum follows the handbook's Git base, which is now copied at each start;
+#  - naila.md names the three proposal tools and read_text, and the hand-off pointer for a private worker, once each;
+#  - assets/naila/avatars/worker.png exists (call 23: the default avatar), a copy of test.png;
+#  - the prod, test-phase and staging renders differ from <git-ref>'s only in workers by plan's lists (Task 13's: the read,
+#    write and docs hooks' files, harness-start.sh's hook commands, private-folder self-test and user-scope vault; Task 18's:
+#    harness-workers.json's version, restart and texts, the handbooks volume, mount and env, harness-start.sh, naila.md in
+#    harness-CLAUDE.md) and the checksums.
+python3 - "$ref" "$tmp/prod.yaml" "$tmp/prod-ref.yaml" "$tmp/new.yaml" "$tmp/old-harness.yaml" "$tmp/staging-on.yaml" "$tmp/real.yaml" "$tmp/staging.yaml" "$tmp/staging-ref.yaml" <<'PY'
+import sys, yaml, json, os, re, subprocess, copy, tempfile, shutil, signal, time
+ref = sys.argv[1]
+def load(p): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(open(p)) if d}
+def loads(s): return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(s) if d}
+prod, prod_ref, test, test_ref, staging_on, real, staging, staging_ref = (load(p) for p in sys.argv[2:10])
+H, HC, CC, RC = ("Deployment", "assistant-harness"), ("ConfigMap", "assistant-harness"), ("ConfigMap", "assistant-claude"), ("Deployment", "assistant-claude")
+def spec(r):
+    try: return json.loads(r[HC]["data"]["harness-workers.json"])
+    except (KeyError, ValueError): return None
+def pod(r): return r[H]["spec"]["template"]["spec"]
+def ctr(r, name): return next((c for c in pod(r)["containers"] if c["name"] == name), None)
+def checksum(r, d=H): return r[d]["spec"]["template"]["metadata"].get("annotations", {}).get("checksum/config") if d in r else None
+def render(*a): return subprocess.run(["helm", "template", "helm/assistant", "-f", "helm/assistant/values.yaml", "-f", "helm/assistant/values.prod.yaml", *a], capture_output=True, text=True)
+NW = os.environ.get("NAILA_WORKTREE", "")
+DIST = f"{NW}/packages/harness/dist"
+HAVE = bool(NW) and os.path.isfile(f"{DIST}/workers-spec.js")
+if not HAVE: print("NOTICE: NAILA_WORKTREE has no built dist: the roles spec 6 was not run through naila's parser")
+bad = []
+
+RESTART, TEXTS = {"maxWaitMinutes": 20, "minGapMinutes": 10}, {"maxChars": 40000}
+tag = "the workers JSON is version 6 with restart and texts"
+for label, r in (("prod", prod), ("test phase", test), ("real phase", real), ("staging (harness on)", staging_on)):
+    s = spec(r)
+    if s is None: bad.append(f"{tag}: the {label} render has no JSON harness-workers.json"); continue
+    if s.get("version") != 6: bad.append(f"{tag}: the {label} spec's version is {s.get('version')!r}, want 6")
+    if s.get("restart") != RESTART or s.get("texts") != TEXTS: bad.append(f"{tag}: the {label} spec's restart and texts are {s.get('restart')!r} and {s.get('texts')!r}, want {RESTART!r} and {TEXTS!r}")
+    if list(s) != ["version", "roles", "retired", "summary", "restart", "texts"]: bad.append(f"{tag}: the {label} spec's keys are {list(s)}")
+    held = [x.get("id") for x in s.get("roles", []) if "private" in x or "oneJob" in x]
+    if held: bad.append(f"{tag}: the {label} spec's roles {held} set private or oneJob (none does)")
+vtext = open("helm/assistant/values.yaml").read()
+for k_, rng in (("maxWaitMinutes: 20", "1 to 120"), ("minGapMinutes: 10", "1 to 60"), ("maxChars: 40000", "1000 to 60000")):
+    line = next((l for l in vtext.splitlines() if l.strip().startswith(k_)), "")
+    if f"# {rng}" not in line: bad.append(f"{tag}: values.yaml's {k_} line names no range {rng!r} in its comment: {line.strip()!r}")
+for what, args, says in (("restart.maxWaitMinutes a string", ["--set-json", 'harness.roleSpec.restart.maxWaitMinutes="20"'], "harness.roleSpec.restart.maxWaitMinutes must be a number"),
+                         ("restart.minGapMinutes null", ["--set-json", "harness.roleSpec.restart.minGapMinutes=null"], "harness.roleSpec.restart.minGapMinutes must be a number"),
+                         ("restart not a map", ["--set-json", "harness.roleSpec.restart=5"], "harness.roleSpec.restart.maxWaitMinutes and minGapMinutes must be numbers"),
+                         ("texts.maxChars a boolean", ["--set-json", "harness.roleSpec.texts.maxChars=true"], "harness.roleSpec.texts.maxChars must be a number"),
+                         ("texts absent", ["--set-json", "harness.roleSpec.texts=null"], "harness.roleSpec.texts.maxChars must be a number")):
+    p = render(*args)
+    if p.returncode == 0 or says not in p.stderr: bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()[-200:]!r}, want a failed render saying {says!r}")
+if HAVE:
+    JS = ("const [dist, dir] = process.argv.slice(1); const { loadWorkerSpecs } = await import(`${dist}/workers-spec.js`); "
+          "const s = loadWorkerSpecs((await import('node:path')).join(dir, 'harness-workers.json')); console.log(JSON.stringify({ restart: s.restart, texts: s.texts }))")
+    for label, r in (("prod", prod), ("test phase", test), ("staging (harness on)", staging_on)):
+        d = tempfile.mkdtemp()
+        try:
+            for cm in (CC, HC):
+                for k, v in ((r.get(cm) or {}).get("data") or {}).items(): open(os.path.join(d, k), "w").write(v)
+            p = subprocess.run(["node", "--input-type=module", "-e", JS, DIST, d], capture_output=True, text=True)
+        finally: shutil.rmtree(d)
+        if p.returncode != 0 or json.loads(p.stdout or "null") != {"restart": RESTART, "texts": TEXTS}: bad.append(f"{tag}: the built image reads the {label} spec as {(p.stdout or p.stderr).strip()[-300:]!r}")
+
+# harness-start.sh, as rendered: prepare_runs and the tail
+start = prod[HC]["data"]["harness-start.sh"]
+sl = start.splitlines()
+tag = "harness-start runs the core as its child, preparing the runs again on a planned restart"
+fn = [i for i, l in enumerate(sl) if l == "prepare_runs() {"]
+fe = [j for j in range(fn[0], len(sl)) if sl[j] == "}"][:1] if len(fn) == 1 else []
+tl = [i for i, l in enumerate(sl) if l == "prepare_runs"]
+TAIL = ['prepare_runs', 'pid=', 'stop() { trap - TERM INT; local code=143; if [ -n "$pid" ]; then kill -TERM "$pid" 2>/dev/null || true; code=0; wait "$pid" || code=$?; fi; exit "$code"; }',
+        'trap stop TERM INT', 'while :; do', '  node "$MAIN" & pid=$!', '  code=0; wait "$pid" || code=$?', '  [ "$code" = 75 ] || exit "$code"', '  echo "harness-start: planned restart"', '  prepare_runs', 'done']
+if any(l.startswith("exec node") for l in sl): bad.append(f"{tag}: harness-start still execs the core")
+if len(fn) != 1 or not fe or len(tl) != 1 or sl[tl[0]:] != TAIL: bad.append(f"{tag}: want one prepare_runs function and the tail {TAIL!r}, got {sl[tl[0]:] if len(tl) == 1 else len(tl)!r}")
+else:
+    body = "\n".join(sl[fn[0]:fe[0] + 1])
+    PREP_CALL = '  out=$(node "$PREPARE" --spec /config/harness-workers.json --claude-dir "$C" --work-dir "$W" --db "$HARNESS_HOME/harness.db" --phase "$HARNESS_PHASE" "${note[@]}" --handbooks-base /config/handbooks --handbooks-out /handbooks) || die "prepare.js refused the worker spec (its reason is above)"'
+    if PREP_CALL not in body.splitlines(): bad.append(f"{tag}: prepare_runs does not call {PREP_CALL.strip()!r}")
+    def tail_run(codes, phase="real", term=False):
+        """The rendered prepare_runs and tail under bash with a stub node: prepare.js counts its runs and prints three dirs,
+        the .claude.json writer does nothing, and the core exits with the next of `codes` (or, with `term`, waits for SIGTERM
+        and exits 7). Returns (exit code, stdout, stderr, prepare runs, the core's runs, the args of each prepare.js run)."""
+        d = tempfile.mkdtemp()
+        try:
+            os.makedirs(f"{d}/bin"); os.makedirs(f"{d}/c"); os.makedirs(f"{d}/home"); open(f"{d}/home/.claude.json", "w").write("{}")
+            open(f"{d}/codes", "w").write("\n".join(str(c) for c in codes) + "\n")
+            open(f"{d}/bin/node", "w").write("#!/bin/sh\n"
+                f'case "$1" in\n  /p.js) printf "%s\\n" "$*" >> {d}/prepare.log; printf "%s\\n" /h/work/naila /h/work/_summary /h/work/ops-oncall ;;\n'
+                f'  /m.js) echo run >> {d}/main.log\n'
+                + (f'    trap \'echo term >> {d}/main.log; exit 7\' TERM; : > {d}/ready; while :; do sleep 0.1; done ;;\n' if term else
+                   f'    c=$(head -n1 {d}/codes); sed -i 1d {d}/codes; exit "$c" ;;\n')
+                + '  -e) exit 0 ;;\n  *) echo "stub node: $*" >&2; exit 9 ;;\nesac\n')
+            os.chmod(f"{d}/bin/node", 0o755)
+            pre = (f'set -eu\ndie() {{ echo "harness-start: $*" >&2; exit 2; }}\nC={d}/c; HOME={d}/home; HARNESS_HOME=/h; HARNESS_PHASE={phase}; W=/h/work\n'
+                   'PREPARE=/p.js; MAIN=/m.js; wcreds=; DOCS_BY_CORE=1\n')
+            script = pre + body + "\n" + "\n".join(TAIL) + "\n"
+            env = {"PATH": f"{d}/bin:/usr/bin:/bin"}
+            if term:
+                p_ = subprocess.Popen(["bash", "-c", script], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                for _ in range(100):
+                    if os.path.exists(f"{d}/ready"): break
+                    time.sleep(0.1)
+                p_.send_signal(signal.SIGTERM)
+                out, err = p_.communicate(timeout=30); rc = p_.returncode
+            else:
+                p = subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True, timeout=60); rc, out, err = p.returncode, p.stdout, p.stderr
+            read = lambda f: open(f).read().splitlines() if os.path.exists(f) else []
+            return rc, out, err, len(read(f"{d}/prepare.log")), read(f"{d}/main.log"), read(f"{d}/prepare.log")
+        finally: shutil.rmtree(d)
+    tag = "a stub main that exits 75 twice, then 0, makes harness-start re-run prepare twice and exit 0"
+    rc, out, err, preps, mains, args = tail_run([75, 75, 0])
+    if (rc, preps, len(mains), out.count("harness-start: planned restart\n")) != (0, 3, 3, 2): bad.append(f"{tag}: exit {rc}, {preps} prepare runs, {len(mains)} core runs, out {out!r}, err {err.strip()!r}; want exit 0, 3, 3 and two planned-restart lines")
+    WANT = "/p.js --spec /config/harness-workers.json --claude-dir {c} --work-dir /h/work --db /h/harness.db --phase {ph}{note} --handbooks-base /config/handbooks --handbooks-out /handbooks"
+    if args and not all(re.fullmatch(WANT.format(c=r"\S+/c", ph="real", note=""), a) for a in args): bad.append(f"{tag}: prepare.js ran with {args!r}")
+    tag = "prepare_runs gives the test phase's prepare.js its --test-note"
+    rc, out, err, preps, mains, args = tail_run([0], phase="test")
+    if rc != 0 or len(args) != 1 or not re.fullmatch(WANT.format(c=r"\S+/c", ph="test", note=" --test-note /config/finance-test-note"), args[0]): bad.append(f"{tag}: exit {rc} {err.strip()!r}, prepare.js ran with {args!r}")
+    tag = "a stub main that exits 1 ends harness-start with 1 and no second prepare"
+    rc, out, err, preps, mains, args = tail_run([1, 0])
+    if (rc, preps, len(mains)) != (1, 1, 1) or "planned restart" in out: bad.append(f"{tag}: exit {rc}, {preps} prepare runs, {len(mains)} core runs, out {out!r}; want exit 1, 1, 1 and no planned restart")
+    tag = "SIGTERM to harness-start reaches the stub main and harness-start exits with its code"
+    rc, out, err, preps, mains, args = tail_run([], term=True)
+    if rc != 7 or mains != ["run", "term"]: bad.append(f"{tag}: exit {rc}, the core's log {mains!r}, err {err.strip()!r}; want exit 7 and the core told TERM")
+
+tag = "a prepare.js whose usage names no --db fails the start"
+DB_DIE = "prepare.js predates workers by plan: deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+u0 = [i for i, l in enumerate(sl) if l == 'usage=$(node "$PREPARE" 2>&1 </dev/null) || true']
+if len(u0) != 1 or not sl[u0[0] + 1].startswith("printf '%s' \"$usage\" | grep -qF -- '[--db ' || die ") or DB_DIE not in sl[u0[0] + 1] or not (fn and u0[0] < fn[0]):
+    bad.append(f"{tag}: want one usage line, then the --db check naming {DB_DIE!r}, before prepare_runs")
+else:
+    for what, usage, ok in (("this image's prepare.js", "prepare: usage: prepare --spec <worker spec> --claude-dir <dir> --work-dir <dir> [--db <harness.db>] [--phase test|real] [--test-note <file>] [--handbooks-base <dir>] [--handbooks-out <dir>]", True),
+                            ("plan 7b's prepare.js", "prepare: usage: prepare --spec <worker spec> --claude-dir <dir> --work-dir <dir>", False), ("a prepare.js that prints nothing", "", False)):
+        d = tempfile.mkdtemp(); os.makedirs(f"{d}/bin")
+        open(f"{d}/bin/node", "w").write(f"#!/bin/sh\necho {json.dumps(usage)} >&2\nexit 2\n"); os.chmod(f"{d}/bin/node", 0o755)
+        p = subprocess.run(["bash", "-c", 'set -eu; die() { echo "harness-start: $*" >&2; exit 2; }; PREPARE=/p.js\n' + "\n".join(sl[u0[0]:u0[0] + 2]) + "\necho started"], env={"PATH": f"{d}/bin:/usr/bin:/bin"}, capture_output=True, text=True)
+        shutil.rmtree(d)
+        if ok and (p.returncode != 0 or p.stdout.strip() != "started"): bad.append(f"{tag}: {what} fails the start: {p.stderr.strip()!r}")
+        if not ok and (p.returncode != 2 or f"harness-start: {DB_DIE}" not in p.stderr or "started" in p.stdout): bad.append(f"{tag}: {what}: exit {p.returncode} {p.stderr.strip()!r}, want 2 saying {DB_DIE!r}")
+code = "\n".join(l for l in sl if not l.lstrip().startswith("#"))
+for gone, why_ in (("TEST COPY", "harness-start's own TEST COPY loop"), ("/config/finance-test-note; }", "the note appended by hand"), ("r?.servers", "the roles' bearer list")):
+    if gone in code: bad.append(f"harness-start.sh still holds {why_} ({gone!r}): prepare.js does it (Task 5)")
+
+tag = "handbooks is an emptyDir at /handbooks and the ConfigMap is at /config/handbooks"
+for label, r, r0 in (("prod", prod, prod_ref), ("test phase", test, test_ref), ("staging (harness on)", staging_on, None)):
+    vols = {v["name"]: v for v in pod(r)["volumes"]}
+    if vols.get("handbooks") != {"name": "handbooks", "emptyDir": {"sizeLimit": "16Mi"}}: bad.append(f"{tag}: the {label} volume handbooks is {vols.get('handbooks')!r}")
+    srcs = vols.get("config", {}).get("projected", {}).get("sources", [])
+    items = [x for s_ in srcs for x in (s_.get("configMap") or {}).get("items", []) if (s_.get("configMap") or {}).get("name") == "assistant-claude"]
+    if items != [{"key": "actual-handbook.md", "path": "handbooks/actual.md"}]: bad.append(f"{tag}: the {label} config volume projects {items!r}, want actual-handbook.md at handbooks/actual.md")
+    if any((v.get("configMap") or {}).get("items") for v in vols.values()): bad.append(f"{tag}: the {label} render still mounts a handbook ConfigMap volume of its own")
+    h_ = ctr(r, "harness")
+    hm = [m for m in h_["volumeMounts"] if m["name"] == "handbooks"]
+    if hm != [{"name": "handbooks", "mountPath": "/handbooks"}]: bad.append(f"{tag}: the {label} harness container mounts handbooks as {hm!r}, want rw at /handbooks")
+    env = [e for e in h_["env"] if e["name"] == "HARNESS_HANDBOOKS_BASE"]
+    if env != [{"name": "HARNESS_HANDBOOKS_BASE", "value": "/config/handbooks"}]: bad.append(f"{tag}: the {label} harness container's HARNESS_HANDBOOKS_BASE is {env!r}")
+    for c_ in pod(r)["containers"] + pod(r).get("initContainers", []):
+        if c_["name"] == "harness": continue
+        for m in c_.get("volumeMounts", []):
+            if m["name"] == "handbooks" and m.get("readOnly") is not True: bad.append(f"{tag}: the {label} {c_['name']} container mounts handbooks writable")
+    if r0 is not None:
+        before = {c_["name"] for c_ in pod(r0)["containers"] + pod(r0).get("initContainers", []) if c_["name"] != "harness" and any(m["mountPath"] == "/handbooks" for m in c_.get("volumeMounts", []))}
+        for n_ in before:
+            m_ = [m for m in (ctr(r, n_) or {}).get("volumeMounts", []) if m["mountPath"] == "/handbooks"]
+            if not m_ or any(m.get("readOnly") is not True for m in m_): bad.append(f"{tag}: the {label} {n_} container mounted /handbooks at {ref} and now {m_!r}, want it ro")
+tag = "the harness checksum follows the handbook's Git base"
+hb = "helm/assistant/files/actual-handbook.md"
+tmp_ = tempfile.mkdtemp(); shutil.copytree("helm/assistant", f"{tmp_}/a")
+open(f"{tmp_}/a/files/actual-handbook.md", "a").write("\nan edit\n")
+p = subprocess.run(["helm", "template", f"{tmp_}/a", "-f", f"{tmp_}/a/values.yaml", "-f", f"{tmp_}/a/values.prod.yaml"], capture_output=True, text=True)
+shutil.rmtree(tmp_)
+if p.returncode != 0 or checksum(loads(p.stdout)) == checksum(prod): bad.append(f"{tag}: an edit of {hb} leaves the harness checksum {checksum(prod)!r}")
+
+tag = "naila.md names the proposal tools, read_text and the private worker's pointer, once each"
+NAILA_LINES = ["- To add, retire or change a worker, or to change a handbook, use propose_worker, propose_retire or propose_handbook_edit: each only files a decision for the owner; read the current text with read_text first.",
+               "- A private worker is never asked: when the owner raises something it handles, answer only with a pointer to its place, like \"This is one for wellbeing: #wellbeing.\", naming its place's label."]
+nmd = open("helm/assistant/files/modes/harness/naila.md").read().splitlines()
+for l_ in NAILA_LINES:
+    if nmd.count(l_) != 1: bad.append(f"{tag}: naila.md holds {l_[:60]!r}… {nmd.count(l_)} times")
+    if prod[CC]["data"].get("harness-CLAUDE.md", "").count(l_) != 1: bad.append(f"{tag}: the rendered harness-CLAUDE.md holds {l_[:60]!r}… other than once")
+
+tag = "the avatar worker.png exists"
+av = "assets/naila/avatars"
+if not os.path.isfile(f"{av}/worker.png") or open(f"{av}/worker.png", "rb").read() != open(f"{av}/test.png", "rb").read(): bad.append(f"{tag}: {av}/worker.png is missing or not a copy of test.png")
+
+# the whole render: <git-ref>'s but for workers by plan's lists (Tasks 13 and 18) and the checksums
+WORKERS_LINES = set(NAILA_LINES)
+HOOKS = ("read-guard.mjs", "harness-write-guard.mjs", "docs-grant.mjs")
+def strip(r, now):
+    r = copy.deepcopy(r)
+    if HC in r:
+        r[HC]["data"].pop("harness-start.sh", None)
+        w = spec(r)
+        if w is not None:
+            if now: w["version"] = 5; w.pop("restart", None); w.pop("texts", None)
+            r[HC]["data"]["harness-workers.json"] = w
+    if CC in r:
+        d = r[CC]["data"]
+        for k_ in HOOKS: d.pop(k_, None)   # Task 13: --private-root (tests/floor-conformance.sh and docs-grant.sh run them)
+        if now and "harness-CLAUDE.md" in d: d["harness-CLAUDE.md"] = "\n".join(l for l in d["harness-CLAUDE.md"].split("\n") if l not in WORKERS_LINES)
+    if H in r:
+        r[H]["spec"]["template"]["metadata"].get("annotations", {}).pop("checksum/config", None)
+        p_ = r[H]["spec"]["template"]["spec"]
+        for v in p_["volumes"]:
+            if v["name"] == "handbooks": v.clear(); v["name"] = "handbooks"
+            if v["name"] == "config" and now: v["projected"]["sources"] = [s_ for s_ in v["projected"]["sources"] if not (s_.get("configMap") or {}).get("items")]
+        for c_ in p_["containers"]:
+            if c_["name"] == "harness":
+                c_["env"] = [e for e in c_["env"] if e["name"] != "HARNESS_HANDBOOKS_BASE"]
+                c_["volumeMounts"] = [m for m in c_["volumeMounts"] if m["name"] != "handbooks"]
+    for d_ in (RC,):
+        if d_ in r: r[d_]["spec"]["template"]["metadata"].get("annotations", {}).pop("checksum/config", None)
+    return r
+for label, a, b in (("prod", prod, prod_ref), ("test phase", test, test_ref), ("staging", staging, staging_ref)):
+    tag = f"the {label} render differs from {ref}'s only in workers by plan's lists (the workers JSON, the handbooks volumes and env, harness-start.sh, the hook files, naila.md) and the checksums"
+    if spec(b) is not None and spec(b).get("version") == 6: print(f"NOTICE: the {ref} {label} render already has roles spec 6: its whole-render diff was skipped"); continue
+    sa, sb = strip(a, True), strip(b, False)
+    for k in sorted(set(sa) | set(sb)):
+        if sa.get(k) != sb.get(k): bad.append(f"{tag}: {k[0]}/{k[1]} differs{'' if k in sa and k in sb else ' (on one side only)'}")
+    if H in a and checksum(a) == checksum(b): bad.append(f"{tag}: the harness checksum is unchanged")
+if bad:
+    print("FAIL:\n  " + "\n  ".join(bad)); sys.exit(1)
+print("workers by plan: roles spec 6 with restart and texts" + (" (naila's parser reads them)" if HAVE else "") + "; harness-start runs the core as its child, prepares again on 75, ends on any other code and passes SIGTERM on; "
+      "prepare.js takes --db and the handbooks; /handbooks is an emptyDir prepare fills from /config/handbooks; naila.md names the proposals and the private pointer; worker.png is there; "
+      f"the render is {ref}'s but for those")
 PY

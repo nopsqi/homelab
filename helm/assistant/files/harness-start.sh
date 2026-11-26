@@ -8,7 +8,7 @@
 # image's setup.js below): Harness-test, Finance and Naila/Workspace in production.
 # The runs' CLAUDE_CONFIG_DIR is ~/.claude itself: the login page (the login sidecar, naila.nopsqi.dev/harness) logs in
 # there, and a run that renews the token writes it back to the same file, so the pod has one login. Under ~/.claude only
-# uploads/<the run's origin channel>/ and tool-results/ are open to the runs (read-guard.mjs --by-origin, Ruling 16): the
+# uploads/<the run's origin channel>/ and its own session's tool-results/ are open to the runs (read-guard.mjs --by-origin, Ruling 16): the
 # login, the agent files with the bearers, harness.db (HARNESS_HOME) and other channels' uploads are not. Only the core keeps the write credentials
 # (the image's WRITE_CREDENTIALS: the finance write bearer); the workers get the read-only one.
 set -eu
@@ -22,21 +22,21 @@ case "${HARNESS_PHASE:-}" in test|real) ;; *) die "HARNESS_PHASE must be test or
 # The worker spec (chart) and the claude-code adapter that writes the agent files from it (image) come together: roll back both.
 [ -f "$PREPARE" ] || die "$PREPARE is missing: this naila image predates the worker spec"
 [ -f /config/harness-workers.json ] || die "/config/harness-workers.json is missing: this chart predates the worker spec"
-# The roles config (harness-workers.json version 5, plan 7b: the summary's trigger, summary.maxChars, beside its brain; since
-# pure-core phase 5 every role permanent or temporary, a temporary one hired by the lead for one job and released, `hireable`
-# on a temporary role) and the image that reads it come together. An image without workers-spec.js, or whose
-# ROLES_SPEC_VERSION is below 5 or no number, predates the chart (the import error printed first): it would refuse the spec
-# at start, or misread it. One whose ROLES_SPEC_VERSION is above 5 is newer than the chart, and says so (the image refuses an
-# older chart's spec in turn, naming the chart). Each fails the start. The roles' instructions files are the spec's to name:
-# prepare.js refuses one that is missing.
+# The roles config (harness-workers.json version 6, workers by plan: the planned restart's settings, restart, and the texts'
+# limit, texts, beside plan 7b's summary trigger; since pure-core phase 5 every role permanent or temporary, a temporary one
+# hired by the lead for one job and released, `hireable` on a temporary role) and the image that reads it come together. An
+# image without workers-spec.js, or whose ROLES_SPEC_VERSION is below 6 or no number, predates the chart (the import error
+# printed first): it would refuse the spec at start, or misread it. One whose ROLES_SPEC_VERSION is above 6 is newer than the
+# chart, and says so (the image refuses an older chart's spec in turn, naming the chart). Each fails the start. The roles'
+# instructions files are the spec's to name: prepare.js refuses one that is missing.
 SPEC_JS=/naila/packages/harness/dist/workers-spec.js
 node -e '
 const fail = (m) => { console.error(`harness-start: ${m}`); process.exit(2) }
-const old = "this naila image predates plan 7b (roles spec 5: the summary size): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
+const old = "this naila image predates workers by plan (roles spec 6): deploy the image that ships with this chart, or roll both back (revert the promote merge)"
 import(process.argv[1]).then((m) => {
-if (m.ROLES_SPEC_VERSION === 5) return
+if (m.ROLES_SPEC_VERSION === 6) return
 const v = m.ROLES_SPEC_VERSION
-if (Number.isInteger(v) && v > 5) fail(`this naila image is newer than this chart (roles spec ${v}): deploy the chart that ships with it`)
+if (Number.isInteger(v) && v > 6) fail(`this naila image is newer than this chart (roles spec ${v}): deploy the chart that ships with it`)
 fail(old)
 }, (e) => fail(`cannot load ${process.argv[1]}: ${e?.message ?? e}: ${old}`))' "$SPEC_JS"
 # PAIRING: the image's services
@@ -169,15 +169,16 @@ for (const t of [...own, "123456", "12 345 678", "150 million", "BI rate"]) {
 const m = /^const RESEARCHED_MARKER = \x27([^\x27]+)\x27$/m.exec(fs.readFileSync(wguard, "utf8"))
 if (!m || m[1] !== img.WEB_RESEARCHED_MARKER) fail(`harness-write-guard.mjs stops on another marker than WEB_RESEARCHED_MARKER: ${differ}`)
 })().catch((e) => fail(`${e.message}: ${differ}`))' "$WEB_RULES" /naila/packages/harness/dist/providers/claude-code/adapter.js /config/web-guard.mjs /config/harness-write-guard.mjs /config/harness-setup.json
-# The bearers (P6): every role server's bearer in the roles config, plus every enabled service's write credentials (the core's
-# own, HARNESS_SERVICES, checked against the image above), each set and not empty. A chart with finance disabled names no
-# finance bearer, so none is needed.
+# The bearers (P6): every enabled service's write credentials (the core's own, HARNESS_SERVICES, checked against the image
+# above), each set and not empty. A chart with finance disabled names no finance bearer, so none is needed. The roles' own
+# bearers are prepare.js's to check (workers by plan Task 5, for the runtime roles too): a Git role's unset bearer refuses the
+# start there, a runtime role's is left out of it.
 bearers=$(node -e '
-const spec = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")), on = JSON.parse(process.env.HARNESS_SERVICES).services
-const names = [...(spec.roles ?? []).flatMap((r) => (r?.servers ?? []).filter((x) => x?.bearer !== undefined).map((x) => x.bearer)), ...Object.values(on).flatMap((x) => x.writeCredentials)]
+const on = JSON.parse(process.env.HARNESS_SERVICES).services
+const names = Object.values(on).flatMap((x) => x.writeCredentials)
 const bad = names.filter((n) => typeof n !== "string" || !/^[A-Z][A-Z0-9_]*$/.test(n))
 if (bad.length) { console.error(`harness-start: a bearer name is not an env name: ${JSON.stringify(bad)}`); process.exit(2) }
-console.log([...new Set(names)].join(" "))' /config/harness-workers.json) || die "could not list the bearers from /config/harness-workers.json and HARNESS_SERVICES"
+console.log([...new Set(names)].join(" "))') || die "could not list the write credentials from HARNESS_SERVICES"
 missing=; for b in $bearers; do [ -n "${!b:-}" ] || missing="${missing:+$missing, }$b"; done
 [ -z "$missing" ] || die "a bearer is missing ($missing)"
 
@@ -215,38 +216,47 @@ if [ ! -f "$C/.credentials.json" ]; then
   sleep 10   # let `claude auth login` finish writing ~/.claude.json
 fi
 
-# Workers from the worker spec (/config/harness-workers.json, already resolved for this phase by the chart): the claude-code
+# Workers from the effective roster (workers by plan): the Git base (/config/harness-workers.json, already resolved for this
+# phase by the chart) plus the roles and texts the owner approved, which the core keeps in harness.db (--db). The claude-code
 # adapter replaces ~/.claude/agents/ with one agent file per worker (its frontmatter from the spec, the read-only bearer of this
-# phase's finance server and the ops one filled in from the env; its instructions file verbatim), writes each worker's work dir
-# (HARNESS_HOME/work/<worker>: the core runs it there) with its agent and model, and _summary's, and prints the dirs to
-# trust. It writes no CLAUDE.md (plan 7a): the core appends the lead's instructions (the spec's instructions file) to each of
-# its runs' system prompt, and prepare.js removes a CLAUDE.md an older image left in a work dir, so they arrive once. It
-# refuses (exit 2, nothing written) an unset bearer or an agent file that would hold the finance write bearer. In the test
-# phase every role with a server named finance (the bookkeeper today) is also told its budget is a test copy: the roles come
-# from the spec, no file name is written here, and a listed role without an agent file fails the start.
+# phase's finance server and the ops one filled in from the env; its effective instructions text as the body), writes each
+# worker's work dir (HARNESS_HOME/work/<worker>: the core runs it there) with its agent and model, and _summary's, the effective
+# handbooks into /handbooks (--handbooks-out; their Git base --handbooks-base /config/handbooks) and prepared.json (what it
+# prepared: the core runs only those), and prints the dirs to trust. It writes no CLAUDE.md (plan 7a): the core appends the
+# lead's instructions to each of its runs' system prompt, and prepare.js removes a CLAUDE.md an older image left in a work dir,
+# so they arrive once. It refuses (exit 2, nothing written) a Git role's unset bearer or a Git role's agent file that would
+# hold a write credential; a runtime role with either is left out. In the test phase every role with a server that serves a
+# test copy (the finance server: the bookkeeper today) is also told its budget is a test copy (--test-note: moved into
+# prepare.js, so it covers the runtime roles too). prepare_runs runs it, the checks on what it wrote, and the .claude.json
+# projects list from the dirs it printed: once before the core's first start, and again before each planned restart (the
+# tail). An image whose prepare.js takes no --db predates workers by plan: it would write the Git base only, and the core
+# would leave out every approved worker, so the start fails instead.
 W=$HARNESS_HOME/work
-out=$(node "$PREPARE" --spec /config/harness-workers.json --claude-dir "$C" --work-dir "$W") || die "prepare.js refused the worker spec (its reason is above)"
-[ -n "$out" ] || die "prepare.js printed no work dirs"
-mapfile -t dirs <<< "$out"
-# TEST COPY: every role with a finance server
-fin=$([ "$HARNESS_PHASE" != test ] || node -e '
-const s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))
-for (const r of s.roles ?? []) if ((r.servers ?? []).some((x) => x?.name === "finance")) {
-  if (typeof r.id !== "string" || !/^[a-z][a-z0-9-]{0,31}$/.test(r.id)) { console.error(`harness-start: a role with a finance server has the id ${JSON.stringify(r.id)}`); process.exit(2) }
-  console.log(r.id)
-}' /config/harness-workers.json) || die "could not list the roles with a finance server from /config/harness-workers.json"
-for id in $fin; do
-  [ -f "$C/agents/$id.md" ] || die "$id has a finance server but no agent file to tell its budget is a TEST COPY"
-  if ! grep -q 'TEST COPY' "$C/agents/$id.md"; then
-    { echo; cat /config/finance-test-note; } >> "$C/agents/$id.md"
-  fi
-done
-! grep -l '__MCP_' "$C"/agents/*.md >/dev/null || die "unfilled bearer placeholder in $(grep -l '__MCP_' "$C"/agents/*.md | xargs -n1 basename)"
-if [ "$HARNESS_PHASE" = test ] && grep -q '//assistant-finance:' "$C"/agents/*.md; then die "a worker still points at the real finance server"; fi
+usage=$(node "$PREPARE" 2>&1 </dev/null) || true
+printf '%s' "$usage" | grep -qF -- '[--db ' || die "prepare.js predates workers by plan: deploy the image that ships with this chart, or roll both back (revert the promote merge)"
 # No agent file holds a write credential: every one the image declares (WRITE_CREDENTIALS), enabled or not, whose value is in
 # the env (only the core keeps them).
 wcreds=$(node -e 'import(process.argv[1]).then((m) => { if (!Array.isArray(m.WRITE_CREDENTIALS) || !m.WRITE_CREDENTIALS.every((n) => typeof n === "string" && /^[A-Z][A-Z0-9_]*$/.test(n))) process.exit(2); console.log(m.WRITE_CREDENTIALS.join(" ")) }, (e) => { console.error(String(e?.message ?? e)); process.exit(2) })' "$SERVICES_JS") || die "could not read WRITE_CREDENTIALS from $SERVICES_JS"
-for k in $wcreds; do [ -z "${!k:-}" ] || ! grep -qF -- "${!k}" "$C"/agents/*.md || die "a worker holds a write credential ($k)"; done
+prepare_runs() {
+  local out note=()
+  [ "$HARNESS_PHASE" != test ] || note=(--test-note /config/finance-test-note)
+  out=$(node "$PREPARE" --spec /config/harness-workers.json --claude-dir "$C" --work-dir "$W" --db "$HARNESS_HOME/harness.db" --phase "$HARNESS_PHASE" "${note[@]}" --handbooks-base /config/handbooks --handbooks-out /handbooks) || die "prepare.js refused the worker spec (its reason is above)"
+  [ -n "$out" ] || die "prepare.js printed no work dirs"
+  mapfile -t dirs <<< "$out"
+  ! grep -l '__MCP_' "$C"/agents/*.md >/dev/null || die "unfilled bearer placeholder in $(grep -l '__MCP_' "$C"/agents/*.md | xargs -n1 basename)"
+  if [ "$HARNESS_PHASE" = test ] && grep -q '//assistant-finance:' "$C"/agents/*.md; then die "a worker still points at the real finance server"; fi
+  for k in $wcreds; do [ -z "${!k:-}" ] || ! grep -qF -- "${!k}" "$C"/agents/*.md || die "a worker holds a write credential ($k)"; done
+  # projects: only the trusted work dirs (user-scope MCP: see below). Written to ~/.claude.json and copied to
+  # ~/.claude/.claude.json, where Claude Code looks once CLAUDE_CONFIG_DIR is set.
+  node -e '
+const fs = require("fs"), [f, byCore, ...dirs] = process.argv.slice(1), c = JSON.parse(fs.readFileSync(f, "utf8"))
+const want = byCore === "1" ? [] : ["docs"]
+if (want.some((s) => !c.mcpServers?.[s])) { console.error(`harness-start: claude mcp add did not write the ${want.join(" and ")} server(s)`); process.exit(2) }
+c.mcpServers = Object.fromEntries(want.map((s) => [s, c.mcpServers[s]]))
+c.projects = Object.fromEntries(dirs.map((d) => [d, { hasTrustDialogAccepted: true }]))
+fs.writeFileSync(f, JSON.stringify(c, null, 2))' "$HOME/.claude.json" "$DOCS_BY_CORE" "${dirs[@]}"
+  cp "$HOME/.claude.json" "$C/.claude.json"
+}
 
 # Settings: Naila's (/config/settings.json) plus harness mode's (harness-settings.json: no "ask", since nobody is there to
 # answer). The static deny is the floor (whatever a run's switches say) plus Naila's; the static allow is only the core tools
@@ -267,7 +277,10 @@ for k in $wcreds; do [ -z "${!k:-}" ] || ! grep -qF -- "${!k}" "$C"/agents/*.md 
 # folder, none without HARNESS_ORIGIN, as the core narrows each run's Read allow; `|| exit 2` makes a crash a block. WebFetch
 # and WebSearch go through web-guard.mjs --by-worker alone (a quarantined role's web, by the run's switches; the RC lines' entry, which refuses every
 # call, is dropped): it and the write guard get a 30 s timeout and onFailure "block", since Claude Code lets a call through
-# when a hook times out or fails otherwise (each guard also refuses by itself after 15 s). Test
+# when a hook times out or fails otherwise (each guard also refuses by itself after 15 s). Workers by plan Task 13: the read,
+# write and docs hooks also take --private-root <VAULT_ROOT>/Private (after --by-origin, after --root, and after --root before
+# --desk/--exclude): every role but a private one in its own folder there is kept out of it, and no search starts at the vault
+# root or above Private. Test
 # phase: no file-tool rule reaches the vault outside /vault/<test folder> (the real finance folder and every other top-level
 # entry denied). Real phase: no file tool reads a VAULT_EXCLUDE folder.
 case "$VAULT_ROOT" in /*) ;; *) die "VAULT_ROOT must be an absolute path, got '$VAULT_ROOT'" ;; esac
@@ -302,9 +315,10 @@ const every = (e) => e.matcher === undefined || e.matcher === null || e.matcher 
 if (pre.some(every)) { console.error("harness-start: settings.json has a PreToolUse entry with no matcher, \"\" or \"*\" (every tool): give it a matcher"); process.exit(2) }
 // each guarded tool keeps one hook: its own entries go, the web guard of the RC lines (no --by-worker) among them
 s.hooks.PreToolUse = pre.filter((e) => !/docs|Write|Edit|Read|Glob|Grep|WebFetch|WebSearch/.test(e.matcher))
-s.hooks.PreToolUse.push({ matcher: "Read|Glob|Grep", hooks: [{ type: "command", command: "node /config/read-guard.mjs --by-origin || exit 2" }] })
-s.hooks.PreToolUse.push({ matcher: "mcp__docs__convert", hooks: [{ type: "command", command: `node ${grant} --by-caps --uploads ${uploads} --root ${root}${docsDesk}${docsExclude} || exit 2` }] })
-s.hooks.PreToolUse.push({ matcher: "^(Write|Edit|MultiEdit|NotebookEdit|mcp__vault__write_inbox|mcp__vault__append_daily|mcp__vault__workers_write|mcp__finance-notes__.*)$", hooks: [{ type: "command", command: `node /config/harness-write-guard.mjs --root ${root}/${workspaces} || exit 2`, timeout: 30, onFailure: "block" }] })
+// workers by plan Task 13: every vault hook takes the private folders of the roles, <VAULT_ROOT>/Private, at a fixed position
+s.hooks.PreToolUse.push({ matcher: "Read|Glob|Grep", hooks: [{ type: "command", command: `node /config/read-guard.mjs --by-origin --private-root ${root}/Private || exit 2` }] })
+s.hooks.PreToolUse.push({ matcher: "mcp__docs__convert", hooks: [{ type: "command", command: `node ${grant} --by-caps --uploads ${uploads} --root ${root} --private-root ${root}/Private${docsDesk}${docsExclude} || exit 2` }] })
+s.hooks.PreToolUse.push({ matcher: "^(Write|Edit|MultiEdit|NotebookEdit|mcp__vault__write_inbox|mcp__vault__append_daily|mcp__vault__workers_write|mcp__finance-notes__.*)$", hooks: [{ type: "command", command: `node /config/harness-write-guard.mjs --root ${root}/${workspaces} --private-root ${root}/Private || exit 2`, timeout: 30, onFailure: "block" }] })
 s.hooks.PreToolUse.push({ matcher: "WebFetch|WebSearch", hooks: [{ type: "command", command: "node /config/web-guard.mjs --by-worker || exit 2", timeout: 30, onFailure: "block" }] })
 fs.writeFileSync(dst, JSON.stringify(s, null, 2))' /config/settings.json /config/harness-settings.json "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/docs-grant.mjs "$C/uploads" "${VAULT_EXCLUDE:-}" "$TEST_FOLDER" "$FINANCE_FOLDER" "$WORKSPACES" "${HARNESS_DESK_ROOT:-}"
 # The check, failing startup: no test-phase rule reaches the real vault; docs conversion follows the run's switches under this
@@ -339,8 +353,8 @@ const hooksOf = (tool) => s.hooks.PreToolUse.filter((e) => every(e) || new RegEx
 const hooked = (tool) => hooksOf(tool).map((x) => x.command)
 const docs = hooked("mcp__docs__convert")
 const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-if (docs.length !== 1 || !new RegExp(`^node \\S+/docs-grant\\.mjs --by-caps --uploads /\\S+ --root ${esc(root)}( --desk /\\S+)?( --exclude \\S+)? \\|\\| exit 2$`).test(docs[0]))
-  fail("mcp__docs__convert does not follow the run\x27s switches under the phase roots (docs-grant.mjs --by-caps --root VAULT_ROOT)")
+if (docs.length !== 1 || !new RegExp(`^node \\S+/docs-grant\\.mjs --by-caps --uploads /\\S+ --root ${esc(root)} --private-root ${esc(root)}/Private( --desk /\\S+)?( --exclude \\S+)? \\|\\| exit 2$`).test(docs[0]))
+  fail("mcp__docs__convert does not follow the run\x27s switches under the phase roots (docs-grant.mjs --by-caps --root VAULT_ROOT --private-root VAULT_ROOT/Private)")
 // file actions: the desk is a docs root exactly when the pod has one (HARNESS_DESK_ROOT), and then as itself
 const hasDesk = / --desk (\S+)( --exclude \S+)? \|\| exit 2$/.exec(docs[0])
 if ((hasDesk?.[1] ?? "") !== (desk ?? "")) fail(`mcp__docs__convert takes the desk ${hasDesk?.[1] ?? "(none)"}, HARNESS_DESK_ROOT is ${desk || "(unset)"}`)
@@ -388,7 +402,7 @@ const missing = [...new Set(floor.filter((r) => !deny.includes(r)))]
 if (missing.length) fail(`the runs\x27 settings do not deny the floor: ${missing.join(", ")}`)
 const extra = allow.filter((r) => !h.allow.includes(r) || !/^mcp__core__[a-z_]+$/.test(r))
 if (extra.length) fail(`the static allow holds more than the core tools: ${extra.join(", ")}`)
-const guard = `node /config/harness-write-guard.mjs --root ${root}/${workspaces} || exit 2`
+const guard = `node /config/harness-write-guard.mjs --root ${root}/${workspaces} --private-root ${root}/Private || exit 2`
 // the write and web guards: a 30 s timeout well above the 15 s deadline of each guard, and a guard that fails (times out,
 // crashes, prints no verdict) blocks the call (onFailure "block"; without it Claude Code lets the call through)
 const blocks = (h) => h.timeout === 30 && h.onFailure === "block"
@@ -408,8 +422,8 @@ for (const t of ["WebFetch", "WebSearch"]) {
   if (!blocks(c[0])) fail(`${t}\x27s web guard has no 30 s timeout with onFailure block`)
   exact(t, c[0])
 }
-const rguard = "node /config/read-guard.mjs --by-origin || exit 2"
-for (const t of ["Read", "Glob", "Grep"]) { const c = hooked(t); if (c.length !== 1 || c[0] !== rguard) fail(`${t} does not go through the read guard narrowed to the run\x27s origin (read-guard.mjs --by-origin)`) }
+const rguard = `node /config/read-guard.mjs --by-origin --private-root ${root}/Private || exit 2`
+for (const t of ["Read", "Glob", "Grep"]) { const c = hooked(t); if (c.length !== 1 || c[0] !== rguard) fail(`${t} does not go through the read guard narrowed to the run\x27s origin and kept out of the private folders (read-guard.mjs --by-origin --private-root ${root}/Private)`) }
 })().catch((e) => fail(e.message))' "$C/settings.json" "$HARNESS_PHASE" "$VAULT_ROOT" /config/harness-settings.json /naila/packages/harness/dist/capabilities.js /naila/packages/harness/dist/providers/claude-code/compile.js "$SERVICES_JS" "$TEST_FOLDER" "$WORKSPACES" "${HARNESS_DESK_ROOT:-}"
 
 # The work dirs are prepare.js's (above), the lead's named by the spec (its one role with lead: true); the finance notes
@@ -436,7 +450,7 @@ let open
 try {
   fs.writeFileSync(path.join(slots, "researched"), "")
   for (const t of WRITE_GUARD_TOOLS) {
-    const r = spawnSync(process.execPath, [guard, "--root", `${root}/${workspaces}`], { input: JSON.stringify({ tool_name: t }), encoding: "utf8", timeout: 20000,
+    const r = spawnSync(process.execPath, [guard, "--root", `${root}/${workspaces}`, "--private-root", `${root}/Private`], { input: JSON.stringify({ tool_name: t }), encoding: "utf8", timeout: 20000,
       env: { PATH: process.env.PATH, HARNESS_WORKER: lead, HARNESS_WEB_SLOTS: slots } })
     let o
     try { o = JSON.parse(r.stdout).hookSpecificOutput } catch {}
@@ -445,36 +459,47 @@ try {
 } finally { fs.rmSync(slots, { recursive: true, force: true }) }
 if (open !== undefined) fail(`harness-write-guard.mjs does not stop ${open} in a run marked researched: ship them together`)
 })().catch((e) => fail(`${e?.message ?? e}: harness-write-guard.mjs and the image\x27s WRITE_GUARD_TOOLS could not be compared`))' "$SERVICES_JS" /naila/packages/harness/dist/research.js /config/harness-write-guard.mjs "$VAULT_ROOT" "$LEAD" "$WORKSPACES"
+# Workers by plan Task 13: the chart's read guard keeps the lead out of the private folders. Run as the lead (no private folder
+# of its own: the core names one only for a private role's run) with --by-origin --private-root <VAULT_ROOT>/Private, it must
+# deny a Read under Private/<the lead's id>/ and under Private/<a probe>/ with the image's PRIVATE_REFUSAL, and a Grep of the
+# vault root with its PRIVATE_SEARCH_REFUSAL (floor/paths.js). A guard that lets one through is older than the image.
+node -e '
+const { spawnSync } = require("child_process")
+const [guard, paths, root, lead] = process.argv.slice(1)
+const fail = (m) => { console.error(`harness-start: ${m}`); process.exit(2) }
+;(async () => {
+const { PRIVATE_REFUSAL, PRIVATE_SEARCH_REFUSAL } = await import(paths).catch((e) => fail(`cannot load ${paths} (PRIVATE_REFUSAL): ${e?.message ?? e}`))
+if (typeof PRIVATE_REFUSAL !== "string" || !PRIVATE_REFUSAL || typeof PRIVATE_SEARCH_REFUSAL !== "string" || !PRIVATE_SEARCH_REFUSAL) fail(`${paths} has no PRIVATE_REFUSAL or PRIVATE_SEARCH_REFUSAL: this naila image is older than the chart`)
+if (!/^[a-z][a-z0-9-]*$/.test(lead ?? "")) fail("read-guard.mjs does not deny the private folders: ship it with the image")
+const pr = `${root}/Private`
+for (const [call, want] of [[{ tool_name: "Read", tool_input: { file_path: `${pr}/${lead}/x.md` } }, PRIVATE_REFUSAL],
+                            [{ tool_name: "Read", tool_input: { file_path: `${pr}/harness-start-probe/x.md` } }, PRIVATE_REFUSAL],
+                            [{ tool_name: "Grep", tool_input: { pattern: "x", path: root } }, PRIVATE_SEARCH_REFUSAL]]) {
+  const r = spawnSync(process.execPath, [guard, "--by-origin", "--private-root", pr], { input: JSON.stringify({ ...call, cwd: "/" }), encoding: "utf8", timeout: 20000,
+    env: { PATH: process.env.PATH, HARNESS_WORKER: lead } })
+  let o
+  try { o = JSON.parse(r.stdout).hookSpecificOutput } catch {}
+  if (r.status !== 0 || o?.permissionDecision !== "deny" || o?.permissionDecisionReason !== want) fail("read-guard.mjs does not deny the private folders: ship it with the image")
+}
+})().catch((e) => fail(`${e?.message ?? e}: read-guard.mjs and the image\x27s private texts could not be compared`))' /config/read-guard.mjs /naila/packages/harness/dist/floor/paths.js "$VAULT_ROOT" "$LEAD"
 # The core reads the same spec: its workers, their models (engine_info) and servers.
 export HARNESS_WORKER_SPEC=/config/harness-workers.json
 
-# User-scope MCP: only vault (rooted at this phase's vault); projects: only the trusted work dirs. Written to ~/.claude.json
-# and copied to ~/.claude/.claude.json, where Claude Code looks once CLAUDE_CONFIG_DIR is set.
+# User-scope MCP: none (workers by plan Task 13, call 12: each run gets its own vault server from the core, in its own MCP
+# config, with VAULT_OWNER for a private role's run; a user-scope one an older chart added is removed); projects: only the
+# trusted work dirs, which prepare_runs writes (above) after each prepare.
 # Docs (Rulings 19, 21): the sidecar listens only on its socket in /run/docs-sock and answers only the bearer in /run/docs-token; the core
 # alone gives each run docs, as the stdio relay (docs-relay.js) in the run's own MCP config, which reads the bearer itself. So
 # docs has no user-scope entry, and the bearer never lands on the home volume, in a config, an env or a command line. An image
 # older than that core (no dist/docs-relay.js, P24) runs the old docs server too, on 127.0.0.1 with no bearer: it keeps the
 # user-scope entry with none, as before this chart.
 claude mcp remove vault --scope user >/dev/null 2>&1 || true
-vault_env=(-e VAULT_ROOT="$VAULT_ROOT" -e TZ="$TZ")
-[ -z "${VAULT_EXCLUDE:-}" ] || vault_env+=(-e VAULT_EXCLUDE="$VAULT_EXCLUDE")   # real phase: the test folder stays out
-vault_env+=(-e VAULT_WORKERS_WRITE=0)   # the runs never get workers_write (the floor denies it too); checked supported above
-[ -z "$SETUP_VAULT_PATHS" ] || vault_env+=(-e VAULT_PATHS="$SETUP_VAULT_PATHS")   # the profile's paths, when not production's
-claude mcp add vault --scope user "${vault_env[@]}" -- node "$VAULT_SERVER" >/dev/null
 claude mcp remove docs --scope user >/dev/null 2>&1 || true
 DOCS_BY_CORE=1; [ -f /naila/packages/harness/dist/docs-relay.js ] || DOCS_BY_CORE=0
 if [ "$DOCS_BY_CORE" = 0 ]; then
   echo "harness-start: this naila image predates the docs bearer (Ruling 19): the runs keep the user-scope docs entry, with no bearer"
   claude mcp add --transport http docs --scope user http://127.0.0.1:3002/mcp >/dev/null
 fi
-node -e '
-const fs = require("fs"), [f, byCore, ...dirs] = process.argv.slice(1), c = JSON.parse(fs.readFileSync(f, "utf8"))
-const want = byCore === "1" ? ["vault"] : ["vault", "docs"]
-if (want.some((s) => !c.mcpServers?.[s])) { console.error(`harness-start: claude mcp add did not write the ${want.join(" and ")} server(s)`); process.exit(2) }
-c.mcpServers = Object.fromEntries(want.map((s) => [s, c.mcpServers[s]]))
-c.projects = Object.fromEntries(dirs.map((d) => [d, { hasTrustDialogAccepted: true }]))
-fs.writeFileSync(f, JSON.stringify(c, null, 2))' "$HOME/.claude.json" "$DOCS_BY_CORE" "${dirs[@]}"
-cp "$HOME/.claude.json" "$C/.claude.json"
 
 # The core keeps MCP_FINANCE_READ_TOKEN and MCP_OPS_TOKEN: its own loop opens the workers' servers with them, by name.
 # No child inherits them (stdio servers get a base env plus their named env, Claude Code runs an explicit list; its
@@ -483,4 +508,19 @@ cp "$HOME/.claude.json" "$C/.claude.json"
 for v in $(compgen -v | grep -E '^GATEWAY_[A-Z0-9_]+_SECRET$'); do unset "$v"; done
 export CLAUDE_CONFIG_DIR=$C CLAUDE_BIN=$HOME/.npm-global/bin/claude
 cd "$HARNESS_HOME"
-exec node "$MAIN"
+# The core runs as this script's child (workers by plan §4): on a planned restart (exit 75, once the core is quiet after an
+# approved worker or text change) the runs are prepared again from the effective roster and the core starts again, in the same
+# container (no kubelet restart, no backoff, no restart alert). Any other exit ends the container as before (the login
+# sidecar's restart: it stops the core, the container ends, kubelet starts it again). SIGTERM and SIGINT go on to the core,
+# and the container exits with the core's code.
+prepare_runs
+pid=
+stop() { trap - TERM INT; local code=143; if [ -n "$pid" ]; then kill -TERM "$pid" 2>/dev/null || true; code=0; wait "$pid" || code=$?; fi; exit "$code"; }
+trap stop TERM INT
+while :; do
+  node "$MAIN" & pid=$!
+  code=0; wait "$pid" || code=$?
+  [ "$code" = 75 ] || exit "$code"
+  echo "harness-start: planned restart"
+  prepare_runs
+done

@@ -255,7 +255,7 @@ harness:
       keepDays: 7           # ceiling 7: how long an unfetched file is kept
     types:
       remove: []            # allowlisted types turned off (rules.json types), e.g. [heic, heif]
-  # The roles config (naila packages/harness/src/workers-spec.ts, ROLES_SPEC_VERSION 5): templates/harness.yaml renders it as
+  # The roles config (naila packages/harness/src/workers-spec.ts, ROLES_SPEC_VERSION 6): templates/harness.yaml renders it as
   # harness-workers.json beside each role's instructions (/config), the core installs its roles from it at start (in this
   # order, the lead first), and the claude-code adapter's prepare.js writes the agent files from it. `roles` is an ordered
   # list: each role's `id` (immutable once rows are written under it), `lead: true` on exactly one (listed first), `lifecycle`
@@ -281,7 +281,9 @@ harness:
   # of any service in services above, enabled or not (MCP_FINANCE_TOKEN, the finance write bearer): the render fails. So do
   # a duplicate id, no lead or two, a lead not listed first, a retired id that roles also lists, a lifecycle other than
   # permanent or temporary, a misplaced or non-boolean hireable, a temporary lead, and a temporary role in workers[] or in
-  # harness.places.
+  # harness.places. Spec 6 (workers by plan): the core adds approved runtime roles and texts to these at each start (its
+  # database's, never this file's), `private` and `oneJob` are role keys none of these sets, and restart and texts below are
+  # the planned restart's settings and the texts' limit.
   roleSpec:
     roles:
       - id: naila
@@ -342,6 +344,15 @@ harness:
     summary:
       brain: { provider: claude-subscription, model: default }
       maxChars: 60000          # the summary trigger, moved from naila's code (plan 7b), unchanged
+    # The planned restart (spec 6, workers by plan §4): an approved worker or text change applies by the engine restarting in
+    # place (harness-start.sh runs prepare.js again, kubelet sees no container restart) once it is quiet. The render fails on a
+    # value that is no number; the core checks the ranges at start (and that minGapMinutes is at most maxWaitMinutes).
+    restart:
+      maxWaitMinutes: 20       # 1 to 120: pending this long, new owner turns are accepted but held until the restart
+      minGapMinutes: 10        # 1 to 60: two planned restarts are at least this far apart (changes approved between wait)
+    # The instructions and handbook texts (spec 6): no text, Git's or a proposed one, is longer than maxChars characters.
+    texts:
+      maxChars: 40000          # 1000 to 60000
 ops:
   enabled: false           # on-call tool server (cluster-mcp over HTTP, read-only ServiceAccount); the `ops` subagent calls it
   # Namespaces whose pod logs ops may read. Never: assistant (Naila's terminal), sealed-secrets, argocd, kube-system.

@@ -1760,9 +1760,14 @@ PLAIN_WORD = re.compile(r"[A-Za-z_/][A-Za-z0-9_./-]*")
 PLAIN_URL = re.compile(r"https?://[A-Za-z0-9._~:/?&=%+@-]+")
 def quote(v): return re.sub("[\u007f-\u009f  ﻿]", lambda m: f"\\u{ord(m.group(0)):04x}", json.dumps(v, ensure_ascii=False))
 def scalar(v, plain): return v if plain.fullmatch(v) and not YAML_WORD.fullmatch(v) else quote(v)
+def run_ceiling(s):
+    """naila's runCeiling (the one-way hand-off): the ceiling plus mcp__core__hand_off, but for a quarantined or temporary role."""
+    c = list(s["ceiling"])
+    if s.get("quarantined") or s.get("lifecycle") == "temporary" or "mcp__core__hand_off" in c: return c
+    return c + ["mcp__core__hand_off"]
 def agent_file(name, s, body):
     out = ["---", f"name: {name}", f"description: {scalar(s['description'], PLAIN_TEXT)}", f"model: {scalar(s['brain']['model'], PLAIN_WORD)}",
-           f"tools: {', '.join(s['ceiling'])}", "mcpServers:"]
+           f"tools: {', '.join(run_ceiling(s))}", "mcpServers:"]
     for x in s["servers"]:
         out.append(f"  - {scalar(x['name'], PLAIN_WORD)}:")
         if x["transport"] == "http":
@@ -1842,6 +1847,20 @@ def file_actions(w, line):
     end = "\n" if line.endswith("\n") else ""
     if line.count(WS_DELETE) != 1: raise ValueError(f"the ref's {w} tools hold {line.count(WS_DELETE)} {WS_DELETE!r}")
     return line.rstrip("\n").replace(WS_DELETE, WS_DELETE + WS_NEW) + "".join(f", {t}" for t in CEILING_ADDS[w]) + end
+# the one-way hand-off (naila 78b74bb..06d05cf): every agent file's tools: line ends with mcp__core__hand_off, which the core
+# adds past the ceiling for each role but a quarantined or temporary one; the chart's ceilings stay as they are
+HAND_OFF = ", mcp__core__hand_off"
+def no_hand_off(line):
+    """A ref's tools: line without the hand-off tool the gate's own model put at its end (the ref's image had none)."""
+    end = "\n" if line.endswith("\n") else ""
+    t = line.rstrip("\n")
+    return (t[:-len(HAND_OFF)] if t.endswith(HAND_OFF) else t) + end
+def hand_off(line):
+    """A tools: line of an agent file with the hand-off tool at its end, once (a line the gate's own model wrote has it)."""
+    end = "\n" if line.endswith("\n") else ""
+    if line.rstrip("\n").endswith(HAND_OFF): return line
+    if HAND_OFF in line: raise ValueError(f"the ref's tools hold {HAND_OFF!r} other than at the end")
+    return line.rstrip("\n") + HAND_OFF + end
 def no_web(text, w):
     """The file with its tools: line minus WebSearch and WebFetch (researcher Task 12), which the ref's line must hold, plus
     the memory tools after self_note_undo (plan 7b Task 18), which it must hold once, and file actions' additions."""
@@ -1849,7 +1868,7 @@ def no_web(text, w):
     at = [i for i, l in enumerate(lines) if l.startswith("tools: ")]
     if len(at) != 1 or lines[at[0]].count(WEB_IN_TOOLS) != 1: raise ValueError(f"the ref's file has no single tools: line holding {WEB_IN_TOOLS!r}")
     if lines[at[0]].count(NOTE_UNDO) != 1: raise ValueError(f"the ref's file has no single tools: line holding {NOTE_UNDO!r}")
-    lines[at[0]] = file_actions(w, ceiling_now(lines[at[0]]))
+    lines[at[0]] = hand_off(file_actions(w, ceiling_now(no_hand_off(lines[at[0]]))))
     return "".join(lines)
 def phase2(files):
     """The ref's agent files as this chart must write them: each tools: line loses WebSearch and WebFetch (researcher Task
@@ -1866,7 +1885,7 @@ def only_allowed(w, ref, now):
     """The file differs from the ref's in exactly its tools: line losing WebSearch and WebFetch (and gaining the memory tools,
     plan 7b Task 18), plus, in the advisor's, the extra NOTES_RO line (unless the ref has it already); nothing else."""
     old_t = next((l for l in ref.splitlines() if l.startswith("tools: ")), "")
-    want_ = ["- " + old_t, "+ " + file_actions(w, ceiling_now(old_t))]
+    want_ = ["- " + old_t, "+ " + hand_off(file_actions(w, ceiling_now(no_hand_off(old_t))))]
     if w == "finance-advisor" and NOTES_RO not in ref.splitlines(): want_.append("+ " + NOTES_RO)
     return WEB_IN_TOOLS in old_t and [l for l in difflib.ndiff(ref.splitlines(), now.splitlines()) if l[:1] in "+-"] == want_
 # The researcher's agent file: its frontmatter (naila's golden, claude-agents/<phase>/researcher.frontmatter.txt: the web and
